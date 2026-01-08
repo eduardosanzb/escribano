@@ -1,0 +1,25 @@
+{
+  "platform": "MacOS",
+  "pretty_name": "Example Test Recording",
+  "sharing": {
+    "id": "test123",
+    "link": "http://localhost:3000/s/test123"
+  },
+  "segments": [
+    {
+      "display": {
+        "path": "content/segments/segment-0/display.mp4",
+        "fps": 30,
+        "start_time": 0
+      },
+      "mic": {
+        "path": "content/segments/segment-0/audio-input.ogg",
+        "start_time": 0,
+        "device_id": "Test Device"
+      }
+    }
+  ],
+  "status": {
+    "status": "Complete"
+  }
+}

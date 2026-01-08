@@ -1,0 +1,21 @@
+{
+  "platform": "MacOS",
+  "pretty_name": "Mock Cap Recording",
+  "sharing": {
+    "id": "mock123",
+    "link": "http://localhost:3000/s/mock123"
+  },
+  "segments": [
+    {
+      "display": {
+        "path": "content/segments/segment-0/display.mp4"
+      },
+      "mic": {
+        "path": "content/segments/segment-0/audio-input.ogg"
+      }
+    }
+  ],
+  "status": {
+    "status": "Complete"
+  }
+}

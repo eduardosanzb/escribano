@@ -27,7 +27,8 @@ export async function processSession(
     recording,
     transcript,
     status: 'transcribed',
-    type: null, // Will be classified later
+    type: null,
+    classification: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };

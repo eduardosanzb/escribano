@@ -15,7 +15,9 @@
     "check": "biome ci .",
     "escribano": "tsx src/index.ts",
     "list": "tsx src/index.ts list",
-    "transcribe-latest": "tsx src/index.ts transcribe-latest"
+    "transcribe-latest": "tsx src/index.ts transcribe-latest",
+    "classify-latest": "tsx src/index.ts classify-latest",
+    "classify": "tsx src/index.ts classify"
   },
   "keywords": [],
   "author": "",

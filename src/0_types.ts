@@ -50,12 +50,39 @@ export type Transcript = z.infer<typeof transcriptSchema>;
 // SESSION
 // =============================================================================
 
+// =============================================================================
+// CLASSIFICATION & ENTITIES
+// =============================================================================
+
+export const entitySchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  value: z.string(),
+  segmentId: z.string(),
+  timestamp: z.number(),
+});
+
+export type Entity = z.infer<typeof entitySchema>;
+
+export const classificationSchema = z.object({
+  type: z.enum(['meeting', 'debugging', 'tutorial', 'learning']),
+  confidence: z.number().min(0).max(1),
+  entities: z.array(entitySchema),
+});
+
+export type Classification = z.infer<typeof classificationSchema>;
+
+// =============================================================================
+// SESSION
+// =============================================================================
+
 export const sessionSchema = z.object({
   id: z.string(),
   recording: recordingSchema,
   transcript: transcriptSchema.nullable(),
   status: z.enum(['raw', 'transcribed', 'classified', 'complete']),
   type: z.enum(['meeting', 'debugging', 'tutorial', 'learning']).nullable(),
+  classification: classificationSchema.nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -75,13 +102,17 @@ export interface CaptureSource {
 }
 
 export interface IntelligenceService {
-  classify(
-    transcript: Transcript
-  ): Promise<{ type: string; confidence: number }>;
+  classify(transcript: Transcript): Promise<Classification>;
   generate(
     prompt: string,
     context: { transcript: Transcript }
   ): Promise<string>;
+}
+
+export interface StorageService {
+  saveSession(session: Session): Promise<void>;
+  loadSession(sessionId: string): Promise<Session | null>;
+  listSessions(): Promise<Session[]>;
 }
 
 // =============================================================================
@@ -103,3 +134,12 @@ export const whisperConfigSchema = z.object({
   language: z.string().optional(),
 });
 export type WhisperConfig = z.infer<typeof whisperConfigSchema>;
+
+export const intelligenceConfigSchema = z.object({
+  provider: z.enum(['ollama', 'mlx']).default('ollama'),
+  endpoint: z.string().default('http://localhost:11434/v1/chat/completions'),
+  model: z.string().default('qwen3:32b'),
+  maxRetries: z.number().default(3),
+  timeout: z.number().default(30000),
+});
+export type IntelligenceConfig = z.infer<typeof intelligenceConfigSchema>;

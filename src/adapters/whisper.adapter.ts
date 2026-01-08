@@ -34,7 +34,7 @@ async function convertToWavIfNeeded(audioPath: string): Promise<string> {
     console.log(`Converting ${audioPath} to WAV format...`);
     await execAsync(
       `ffmpeg -i "${audioPath}" -f wav -ar 16000 -ac 1 "${outputPath}" -y`,
-      { timeout: 10 * 60 * 1000 },
+      { timeout: 10 * 60 * 1000 }
     );
     console.log(`Conversion complete: ${outputPath}`);
     return outputPath;
@@ -104,9 +104,10 @@ async function transcribeWithWhisper(
       timeout: 10 * 60 * 1000, // 10 minute timeout
     });
 
-    const hasError = stderr.includes('error:') ||
-                 stderr.includes('Error:') ||
-                 stderr.includes('failed to');
+    const hasError =
+      stderr.includes('error:') ||
+      stderr.includes('Error:') ||
+      stderr.includes('failed to');
 
     if (hasError) {
       if (audioToProcess !== audioPath) {
@@ -137,7 +138,9 @@ async function transcribeWithWhisper(
     if (audioToProcess && audioToProcess !== audioPath) {
       await unlink(audioToProcess).catch(() => {});
     }
-    throw new Error(`Whisper transcription failed: ${(error as Error).message}`);
+    throw new Error(
+      `Whisper transcription failed: ${(error as Error).message}`
+    );
   }
 }
 

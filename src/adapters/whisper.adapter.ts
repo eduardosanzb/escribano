@@ -6,6 +6,7 @@
  *
  * Prerequisites:
  * - whisper.cpp installed: brew install whisper-cpp
+ * - ffmpeg installed: brew install ffmpeg (for audio format conversion)
  * - Or Python whisper: pip install openai-whisper
  */
 
@@ -19,6 +20,31 @@ import type {
 } from '../0_types.js';
 
 const execAsync = promisify(exec);
+
+async function convertToWavIfNeeded(audioPath: string): Promise<string> {
+  const ext = audioPath.toLowerCase().split('.').pop();
+
+  if (['wav', 'flac', 'mp3'].includes(ext || '')) {
+    return audioPath;
+  }
+
+  const outputPath = `${audioPath}.converted.wav`;
+
+  try {
+    console.log(`Converting ${audioPath} to WAV format...`);
+    await execAsync(
+      `ffmpeg -i "${audioPath}" -f wav -ar 16000 -ac 1 "${outputPath}" -y`,
+      { timeout: 10 * 60 * 1000 },
+    );
+    console.log(`Conversion complete: ${outputPath}`);
+    return outputPath;
+  } catch (error) {
+    console.error(`Audio conversion failed for ${audioPath}`);
+    throw new Error(
+      `Failed to convert audio to WAV: ${(error as Error).message}`
+    );
+  }
+}
 
 // Whisper JSON output format (from whisper.cpp)
 interface WhisperJsonOutput {
@@ -60,16 +86,16 @@ async function transcribeWithWhisper(
   audioPath: string,
   config: WhisperConfig
 ): Promise<Transcript> {
+  const audioToProcess = await convertToWavIfNeeded(audioPath);
+
   const args = [
     `-m ${config.model}`,
-    `-f "${audioPath}"`,
+    `-f "${audioToProcess}"`,
     '-oj', // Output JSON
     config.language ? `-l ${config.language}` : '',
   ].filter(Boolean);
 
   const command = `${config.binaryPath} ${args.join(' ')}`;
-
-  console.log(`Running: ${command}`);
 
   try {
     const { stdout, stderr } = await execAsync(command, {
@@ -78,35 +104,40 @@ async function transcribeWithWhisper(
       timeout: 10 * 60 * 1000, // 10 minute timeout
     });
 
-    console.log(stderr);
-    if (stderr && !stderr.includes('whisper_')) {
-      console.warn(`Whisper stderr: ${stderr}`);
+    const hasError = stderr.includes('error:') ||
+                 stderr.includes('Error:') ||
+                 stderr.includes('failed to');
+
+    if (hasError) {
+      if (audioToProcess !== audioPath) {
+        await unlink(audioToProcess).catch(() => {});
+      }
+      throw new Error(`Whisper transcription failed:\n${stderr}`);
     }
 
     // whisper-cpp outputs JSON to a file named <input>.json
-    const jsonOutputPath = `${audioPath}.json`;
-    console.log('Looking for Whisper JSON output at:');
-    console.log(jsonOutputPath);
+    const jsonOutputPath = `${audioToProcess}.json`;
 
     try {
       const jsonContent = await readFile(jsonOutputPath, 'utf-8');
-      console.log('Whisper JSON output read successfully');
-      console.log(jsonContent);
       const whisperOutput: WhisperJsonOutput = JSON.parse(jsonContent);
 
-      // Clean up the temp JSON file
+      // Clean up the temp JSON file and converted audio
       await unlink(jsonOutputPath).catch(() => {});
+      if (audioToProcess !== audioPath) {
+        await unlink(audioToProcess).catch(() => {});
+      }
 
       return parseWhisperOutput(whisperOutput);
     } catch {
       // Fallback: try to parse stdout as the transcript
-      console.warn(
-        'Could not read JSON output, falling back to stdout parsing'
-      );
       return parseWhisperStdout(stdout);
     }
   } catch (error) {
-    throw new Error(`Whisper transcription failed: ${error}`);
+    if (audioToProcess && audioToProcess !== audioPath) {
+      await unlink(audioToProcess).catch(() => {});
+    }
+    throw new Error(`Whisper transcription failed: ${(error as Error).message}`);
   }
 }
 

@@ -207,6 +207,7 @@ async function transcribeRecording(recording: Recording): Promise<void> {
   console.log(`Duration:   ${formatDuration(recording.duration)}s`);
   console.log(`Audio:      ${recording.audioPath}`);
   console.log('');
+  console.log('Processing transcription...');
 
   const transcriber = createWhisperTranscriber({
     binaryPath: 'whisper-cli',
@@ -253,7 +254,8 @@ function showHelp(): void {
   console.log('');
   console.log('Prerequisites:');
   console.log('  whisper-cli: brew install whisper-cpp');
-  console.log('  Cap: https://cap.so');
+  console.log('  ffmpeg:     brew install ffmpeg');
+  console.log('  Cap:        https://cap.so');
   console.log('');
 }
 

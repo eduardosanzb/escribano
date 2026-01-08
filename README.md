@@ -10,6 +10,9 @@ AI-powered session intelligence tool that automatically captures, transcribes, c
 # Install dependencies
 pnpm install
 
+# Install prerequisites
+brew install whisper-cpp ffmpeg
+
 # Run tests
 pnpm test
 
@@ -80,3 +83,48 @@ src/
 - **Functions over classes** - Adapters are factory functions returning interfaces
 - **Go-style** - Pure functions with explicit dependencies
 - **Minimal viable** - Build just what's needed for the milestone
+
+## Prerequisites
+
+### System Dependencies
+
+- **whisper-cli**: `brew install whisper-cpp`
+- **ffmpeg**: `brew install ffmpeg` (required for audio format conversion)
+
+### Installation
+
+```bash
+# Install Node.js dependencies
+pnpm install
+
+# Install system dependencies
+brew install whisper-cpp ffmpeg
+```
+
+## Audio Format Support
+
+whisper-cli natively supports: `wav`, `flac`, `mp3`
+
+Other audio formats (ogg, m4a, opus, etc.) from Cap recordings are automatically converted to WAV (16kHz, mono) using ffmpeg before transcription.
+
+### Conversion Process
+
+1. Detect unsupported format from file extension
+2. Convert to WAV using ffmpeg (timeout: 10 minutes for large files)
+3. Transcribe converted file with whisper-cli
+4. Clean up temporary converted file
+
+### Example Conversions
+
+| Input Format | Converted Path | Result |
+|--------------|------------------|--------|
+| `audio-input.ogg` | `audio-input.ogg.converted.wav` | Transcribed |
+| `audio.m4a` | `audio.m4a.converted.wav` | Transcribed |
+| `audio.wav` | `audio.wav` | Direct transcription (no conversion) |
+| `audio.mp3` | `audio.mp3` | Direct transcription (no conversion) |
+
+### Notes
+
+- **Timeout**: 10 minutes is set for conversion, sufficient for 1-3 hour files
+- **Cleanup**: Temporary `.converted.wav` files are automatically deleted after successful transcription
+- **Error handling**: Conversion failures are logged and throw clear error messages

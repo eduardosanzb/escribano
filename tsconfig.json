@@ -3,7 +3,7 @@
     "module": "ESNext",
     "target": "ESNext",
     "strict": true,
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "rootDir": "src",

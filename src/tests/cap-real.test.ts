@@ -4,7 +4,7 @@
  * Tests against actual Cap recordings on this machine.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createCapSource } from '../adapters/cap.adapter';
 
 describe('Cap Adapter - Real Recordings', () => {
@@ -25,12 +25,15 @@ describe('Cap Adapter - Real Recordings', () => {
 
       expect(first.id).toBeDefined();
       expect(first.source.type).toBe('cap');
-      expect(first.audioPath).toContain('audio-input');
+      expect(first.audioPath).toContain('audio');
+      expect(first.videoPath).toContain('display.mp4');
+      expect(first.duration).toBe(0);
 
       console.log('First recording:', {
         id: first.id,
-        prettyName: first.source.metadata?.prettyName,
+        prettyName: first.source.metadata?.pretty_name,
         audioPath: first.audioPath,
+        videoPath: first.videoPath,
         duration: first.duration,
       });
     }
@@ -46,9 +49,25 @@ describe('Cap Adapter - Real Recordings', () => {
     console.log('Latest recording:', latest);
 
     if (latest) {
-      expect(latest).toBeDefined();
       expect(latest.audioPath).toBeDefined();
+      expect(latest.videoPath).toContain('display.mp4');
+      expect(latest.duration).toBe(0);
       expect(latest.capturedAt).toBeInstanceOf(Date);
     }
+  }, 30000);
+
+  it('should only return recordings with audio', async () => {
+    const capSource = createCapSource({
+      recordingsPath: '~/Library/Application Support/so.cap.desktop/recordings',
+    });
+
+    const recordings = await capSource.listRecordings(10);
+
+    console.log(`Found ${recordings.length} recordings with audio`);
+
+    recordings.forEach((recording) => {
+      expect(recording.audioPath).not.toBeNull();
+      expect(recording.audioPath).toContain('audio');
+    });
   }, 30000);
 });

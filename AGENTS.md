@@ -4,54 +4,45 @@
 
 **Escribano** ("The Scribe") is an AI-powered session intelligence tool that transforms recordings into actionable knowledge. It automatically captures, transcribes, classifies, and generates artifacts from work sessions.
 
-## Architecture
-
-This project follows **Domain-Driven Design (DDD)** and **Clean Architecture** principles.
-
-### Bounded Contexts
-
-1. **Capture Context** - Detecting and ingesting recordings from various sources
-2. **Transcription Context** - Converting audio/video to text
-3. **Intelligence Context** - Classifying sessions and understanding content
-4. **Artifact Context** - Generating outputs (runbooks, summaries, etc.)
-5. **Publishing Context** - Delivering artifacts to destinations
-6. **Interaction Context** - User interaction and approval workflows
-
-### Layer Structure
-
-```
-Domain Layer (innermost)
-  └── Entities: Session, Artifact
-  └── Value Objects: Recording, Transcript, Classification, AutomationPolicy
-  └── Domain Events: SessionRecorded, SessionTranscribed, SessionClassified, ArtifactGenerated
-
-Application Layer
-  └── Use Cases: ProcessSession, Classify, GenerateArtifact, Publish, DeterminePolicy
-
-Ports (Interfaces)
-  └── TranscriptionPort, IntelligencePort, StoragePort, PublishingPort, InteractionPort
-
-Adapters (Infrastructure) - outermost
-  └── CapAdapter, WhisperAdapter, OllamaAdapter, OutlineAdapter, GitHubAdapter, S3Adapter
-```
-
-### Key Principle: Ports & Adapters
-
-External systems are accessed through **ports** (interfaces). Multiple **adapters** can implement each port:
-
-- **TranscriptionPort**: WhisperAdapter, FasterWhisperAdapter, DeepgramAdapter
-- **IntelligencePort**: OllamaAdapter, ClaudeApiAdapter
-- **StoragePort**: LocalFileSystemAdapter, HetznerS3Adapter
-- **PublishingPort**: OutlineApiAdapter, GitHubProjectsAdapter
-- **RecordingWatcherPort**: CapAdapter, MeetilyAdapter, FileSystemWatcherAdapter
-
 ## Technology Stack
 
 - **Language**: TypeScript
-- **Runtime**: Node.js / Bun
-- **Integration**: OpenCode Plugin
-- **LLM**: Ollama (local) or Claude API
-- **Transcription**: whisper.cpp (via Cap/Meetily) or standalone
+- **Runtime**: Node.js
+- **Module System**: ES Modules (package.json: "type": "module")
+- **Development**: tsx (for running TypeScript directly)
+- **Testing**: Vitest
+- **Linting/Formatting**: Biome
+- **Transcription**: whisper.cpp (via Cap)
+- **LLM**: Future: Ollama (local) or Claude API
+
+## Architecture
+
+This project follows **Clean Architecture** principles with a simplified flat structure.
+
+### Current Implementation (Milestone 1)
+
+```
+src/
+├── 0_types.ts                    # All types, interfaces, Zod schemas
+├── index.ts                      # CLI entry point
+├── actions/
+│   └── process-session.ts        # Recording → Transcript → Session
+├── adapters/
+│   ├── cap.adapter.ts            # Cap recording source
+│   └── whisper.adapter.ts        # Whisper transcription
+└── tests/
+    ├── integration.test.ts        # Full pipeline tests
+    ├── cap.adapter.test.ts       # Cap adapter unit tests
+    └── cap-real.test.ts         # Cap adapter integration tests
+```
+
+### Key Principle: Port Interfaces
+
+External systems are accessed through **port interfaces** defined in `0_types.ts`:
+
+- **TranscriptionService**: WhisperAdapter (and future adapters)
+- **CaptureSource**: CapAdapter (and future adapters)
+- **IntelligenceService**: Future - OllamaAdapter, ClaudeApiAdapter
 
 ## Session Types
 
@@ -71,6 +62,31 @@ External systems are accessed through **ports** (interfaces). Multiple **adapter
 4. **Full Auto** - Everything automatic
 
 ## Code Conventions
+
+### ES Module Rules
+- ALL imports must include `.js` extensions: `import { thing } from './0_types.js'`
+- Use `tsx` for development (not `ts-node`)
+- Build with `tsc` before running with `node dist/index.js`
+
+### Domain Layer Rules
+- NO external dependencies
+- Pure TypeScript, no I/O
+- Entities have identity and lifecycle
+- Value Objects are immutable
+
+### Application Layer Rules
+- Orchestrates domain objects
+- Depends only on Domain and Ports (interfaces)
+- One use case per file
+- Use cases are the only entry points for operations
+
+### Adapter Rules
+- Implement port interfaces
+- Handle all external I/O
+- Can be swapped without changing business logic
+- Each adapter in its own file
+
+## File Structure
 
 ### Domain Layer Rules
 - NO external dependencies
@@ -92,91 +108,30 @@ External systems are accessed through **ports** (interfaces). Multiple **adapter
 
 ## File Structure
 
-```
-src/
-├── domain/
-│   ├── entities/
-│   │   ├── Session.ts
-│   │   └── Artifact.ts
-│   ├── valueObjects/
-│   │   ├── Recording.ts
-│   │   ├── Transcript.ts
-│   │   ├── Classification.ts
-│   │   └── AutomationPolicy.ts
-│   └── events/
-│       └── DomainEvents.ts
-├── application/
-│   ├── useCases/
-│   │   ├── ProcessSessionUseCase.ts
-│   │   ├── ClassifySessionUseCase.ts
-│   │   ├── GenerateArtifactUseCase.ts
-│   │   └── PublishArtifactUseCase.ts
-│   └── services/
-│       └── AutomationService.ts
-├── ports/
-│   ├── TranscriptionPort.ts
-│   ├── IntelligencePort.ts
-│   ├── StoragePort.ts
-│   ├── PublishingPort.ts
-│   └── RecordingWatcherPort.ts
-├── adapters/
-│   ├── capture/
-│   │   ├── CapAdapter.ts
-│   │   ├── MeetilyAdapter.ts
-│   │   └── FileSystemWatcherAdapter.ts
-│   ├── transcription/
-│   │   └── WhisperAdapter.ts
-│   ├── intelligence/
-│   │   └── OllamaAdapter.ts
-│   ├── storage/
-│   │   ├── LocalFileSystemAdapter.ts
-│   │   └── S3Adapter.ts
-│   └── publishing/
-│       ├── OutlineAdapter.ts
-│       └── GitHubProjectsAdapter.ts
-└── infrastructure/
-    ├── config/
-    │   └── ConfigLoader.ts
-    └── logging/
-        └── Logger.ts
-```
+See Architecture section above for current flat structure. Future milestones will add:
+- `src/adapters/` - More capture sources, transcription services, intelligence adapters
+- `src/actions/` - Classification, artifact generation, publishing actions
+- `src/infrastructure/` - Config, logging
+
+## Integration with Cap
 
 ## Integration with Cap
 
 Cap (https://github.com/CapSoftware/Cap) is the primary capture source. The CapAdapter:
 
-1. Watches `~/.config/Cap/recordings/` for `.cap` directories
+1. Watches `~/Library/Application Support/so.cap.desktop/recordings/` for `.cap` directories
 2. Parses `recording-meta.json` for video/audio paths
-3. Reads `captions.json` for pre-computed transcripts
-4. Returns Session with Recording + Transcript already populated
+3. Finds audio files (supports .ogg, .mp3, .wav, .m4a)
+4. Finds video files (supports .mp4, .webm, .mov)
+5. Returns Recording objects with metadata
 
-### Cap Transcript Format
-```json
-{
-  "segments": [
-    {
-      "id": "segment-0-0",
-      "start": 0.5,
-      "end": 2.3,
-      "text": "Hello world",
-      "words": [
-        {"text": "Hello", "start": 0.5, "end": 0.9},
-        {"text": "world", "start": 1.0, "end": 2.3}
-      ]
-    }
-  ]
-}
-```
+### Cap Recording Structure
+Each `.cap` directory contains:
+- `recording-meta.json` - Metadata with video/audio file references
+- Audio/video files - Actual media files
+- (Optional) Other metadata files
 
-## LLM Prompts
-
-Classification and generation prompts are stored in `/prompts/`:
-
-- `classify-session.md` - Determines session type from transcript
-- `generate-summary.md` - Meeting summaries
-- `generate-runbook.md` - Debugging runbooks
-- `generate-tutorial.md` - Step-by-step tutorials
-- `extract-actions.md` - Action item extraction
+## OpenCode Plugin
 
 ## OpenCode Plugin
 
@@ -193,19 +148,67 @@ The OpenCode plugin exposes these tools to Claude:
 - Application layer: Integration tests with mock adapters
 - Adapters: Integration tests with real services (where feasible)
 
+## Linting and Formatting
+
+This project uses **Biome** for fast linting and formatting.
+
+### Usage
+- `pnpm lint` - Check code for issues
+- `pnpm lint:fix` - Auto-fix linting issues
+- `pnpm format` - Format all files
+- `pnpm check` - CI-ready check (fails if changes needed)
+
+### Integration
+Biome runs via Neovim LSP for real-time diagnostics and formatting on save.
+
 ## Common Tasks
 
 ### Adding a New Capture Source
-1. Create adapter in `src/adapters/capture/`
-2. Implement `RecordingWatcherPort` interface
+1. Create adapter in `src/adapters/`
+2. Implement `CaptureSource` interface
 3. Register in configuration
 
 ### Adding a New Artifact Type
 1. Add type to `ArtifactType` enum in domain
 2. Create generation prompt in `/prompts/`
-3. Update `GenerateArtifactUseCase` to handle new type
+3. Update action to handle new type
 
 ### Adding a New Publishing Destination
-1. Create adapter in `src/adapters/publishing/`
+1. Create adapter in `src/adapters/`
 2. Implement `PublishingPort` interface
 3. Add configuration options
+
+## Running the Application
+
+### Development
+```bash
+# Run directly with tsx (no build needed)
+pnpm run list
+pnpm run transcribe-latest
+
+# Or use tsx directly
+npx tsx src/index.ts list
+npx tsx src/index.ts transcribe-latest
+```
+
+### Production
+```bash
+# Build TypeScript to JavaScript
+pnpm build
+
+# Run from built files
+node dist/index.js list
+node dist/index.js transcribe-latest
+```
+
+### Testing
+```bash
+# Run all tests
+pnpm test
+
+# Run with UI
+pnpm test:ui
+
+# Lint and typecheck
+pnpm lint && pnpm typecheck
+```

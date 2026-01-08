@@ -4,20 +4,36 @@
  * Tests: Cap Adapter → Process Session → Output
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('Integration: CLI Pipeline', () => {
   it('should list recordings', async () => {
     const mockRecording = {
       id: 'test-recording-1',
       source: {
-        type: 'cap',
+        type: 'cap' as const,
         originalPath: '~/test.cap',
-        metadata: {},
+        metadata: {
+          platform: 'MacOS',
+          pretty_name: 'Test Recording',
+          segments: [
+            {
+              display: {
+                path: 'content/segments/segment-0/display.mp4',
+                fps: 37,
+              },
+              mic: {
+                path: 'content/segments/segment-0/audio-input.ogg',
+                start_time: 0,
+              },
+              cursor: 'content/segments/segment-0/cursor.json',
+            },
+          ],
+        },
       },
-      videoPath: null,
-      audioPath: '/tmp/test-audio.ogg',
-      duration: 300,
+      videoPath: '~/test.cap/content/segments/segment-0/display.mp4',
+      audioPath: '~/test.cap/content/segments/segment-0/audio-input.ogg',
+      duration: 0,
       capturedAt: new Date('2025-01-08T12:00:00.000Z'),
     };
 
@@ -36,13 +52,30 @@ describe('Integration: CLI Pipeline', () => {
     const mockRecording = {
       id: 'latest-recording',
       source: {
-        type: 'cap',
-        originalPath: '~/Library/Application Support/so.cap.desktop/recordings/test.cap',
-        metadata: {},
+        type: 'cap' as const,
+        originalPath:
+          '~/Library/Application Support/so.cap.desktop/recordings/test.cap',
+        metadata: {
+          platform: 'MacOS',
+          pretty_name: 'Latest Recording',
+          segments: [
+            {
+              display: {
+                path: 'content/segments/segment-0/display.mp4',
+                fps: 37,
+              },
+              mic: {
+                path: 'content/segments/segment-0/audio-input.ogg',
+                start_time: 0,
+              },
+              cursor: 'content/segments/segment-0/cursor.json',
+            },
+          ],
+        },
       },
       videoPath: '/tmp/video.mp4',
       audioPath: '/tmp/audio.ogg',
-      duration: 180,
+      duration: 0,
       capturedAt: new Date('2025-01-08T14:30:00.000Z'),
     };
 

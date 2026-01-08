@@ -5,7 +5,7 @@
  * Simple flow: Recording → Transcript → Session
  */
 
-import type { Recording, Transcript, Session, TranscriptionService } from '../0_types';
+import type { Recording, Session, TranscriptionService } from '../0_types.js';
 
 /**
  * Process a recording by transcribing it

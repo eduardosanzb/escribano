@@ -5,20 +5,19 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import path from 'node:path';
+import { mkdir } from 'node:fs/promises';
 import os from 'node:os';
-
+import path from 'node:path';
+import type { Recording } from './0_types.js';
+import { processSession } from './actions/process-session.js';
 import { createCapSource } from './adapters/cap.adapter.js';
 import { createWhisperTranscriber } from './adapters/whisper.adapter.js';
-import { processSession } from './actions/process-session.js';
-import type { Recording } from './0_types.js';
 
 const MODELS_DIR = path.join(os.homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
 const MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
-const MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/' + MODEL_FILE;
+const MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_FILE}`;
 
 interface ParsedArgs {
   command: string;
@@ -65,8 +64,8 @@ function parseArgs(argsArray: string[]): ParsedArgs {
     case 'list':
       return {
         command: 'list',
-        limit: argsArray[1] ? parseInt(argsArray[1]) : 10,
-        recordingId: undefined
+        limit: argsArray[1] ? parseInt(argsArray[1], 10) : 10,
+        recordingId: undefined,
       };
 
     case 'transcribe-latest':
@@ -79,7 +78,7 @@ function parseArgs(argsArray: string[]): ParsedArgs {
       return {
         command: 'transcribe',
         recordingId: argsArray[1],
-        limit: 10
+        limit: 10,
       };
 
     default:
@@ -98,22 +97,22 @@ async function executeList(limit: number): Promise<void> {
     return;
   }
 
-  console.log('Found ' + recordings.length + ' recordings:\n');
+  console.log(`Found ${recordings.length} recordings:\n`);
 
   recordings.forEach((recording, index) => {
     console.log('='.repeat(60));
-    console.log('[' + (index + 1) + '] ' + recording.id);
+    console.log(`[${index + 1}] ${recording.id}`);
     console.log('');
-    console.log('  Captured:  ' + formatDate(recording.capturedAt));
-    console.log('  Duration:   ' + formatDuration(recording.duration));
-    console.log('  Audio:      ' + recording.audioPath);
+    console.log(`  Captured:  ${formatDate(recording.capturedAt)}`);
+    console.log(`  Duration:   ${formatDuration(recording.duration)}`);
+    console.log(`  Audio:      ${recording.audioPath}`);
     if (recording.videoPath) {
-      console.log('  Video:      ' + recording.videoPath);
+      console.log(`  Video:      ${recording.videoPath}`);
     }
   });
 }
 
-async function executeTranscribeLatest(args: ParsedArgs): Promise<void> {
+async function executeTranscribeLatest(_args: ParsedArgs): Promise<void> {
   await ensureModel();
 
   console.log('Fetching latest Cap recording...');
@@ -137,7 +136,7 @@ async function executeTranscribeById(args: ParsedArgs): Promise<void> {
 
   await ensureModel();
 
-  console.log('Searching for recording: ' + args.recordingId);
+  console.log(`Searching for recording: ${args.recordingId}`);
 
   const capSource = createCapSource();
   const recordings = await capSource.listRecordings(100);
@@ -145,7 +144,7 @@ async function executeTranscribeById(args: ParsedArgs): Promise<void> {
   const recording = recordings.find((r) => r.id === args.recordingId);
 
   if (recording === undefined) {
-    console.error('Recording not found: ' + args.recordingId);
+    console.error(`Recording not found: ${args.recordingId}`);
     console.log('Use "escribano list" to see available recordings.');
     process.exit(1);
   }
@@ -160,8 +159,8 @@ async function ensureModel(): Promise<void> {
 
   if (!existsSync(MODEL_PATH)) {
     console.log('Model not found. Downloading...');
-    console.log('From: ' + MODEL_URL);
-    console.log('To:   ' + MODEL_PATH);
+    console.log(`From: ${MODEL_URL}`);
+    console.log(`To:   ${MODEL_PATH}`);
     console.log('');
 
     await downloadModel();
@@ -177,7 +176,8 @@ function downloadModel(): Promise<void> {
     const child = spawn('curl', [
       '-L',
       '--progress-bar',
-      '-o', MODEL_PATH,
+      '-o',
+      MODEL_PATH,
       MODEL_URL,
     ]);
 
@@ -193,7 +193,7 @@ function downloadModel(): Promise<void> {
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error('Download failed with code ' + code));
+        reject(new Error(`Download failed with code ${code}`));
       }
     });
 
@@ -202,10 +202,10 @@ function downloadModel(): Promise<void> {
 }
 
 async function transcribeRecording(recording: Recording): Promise<void> {
-  console.log('\nTranscribing: ' + recording.id);
-  console.log('Captured:  ' + formatDate(recording.capturedAt));
-  console.log('Duration:   ' + formatDuration(recording.duration) + 's');
-  console.log('Audio:      ' + recording.audioPath);
+  console.log(`\nTranscribing: ${recording.id}`);
+  console.log(`Captured:  ${formatDate(recording.capturedAt)}`);
+  console.log(`Duration:   ${formatDuration(recording.duration)}s`);
+  console.log(`Audio:      ${recording.audioPath}`);
   console.log('');
 
   const transcriber = createWhisperTranscriber({
@@ -217,19 +217,19 @@ async function transcribeRecording(recording: Recording): Promise<void> {
 
   const session = await processSession(recording, transcriber);
 
-  console.log('\n' + JSON.stringify(session, null, 2));
+  console.log(`\n${JSON.stringify(session, null, 2)}`);
 }
 
 function formatDate(date: Date): string {
   const isoDate = date.toISOString().split('T')[0];
   const timePart = date.toTimeString().split(' ')[0];
-  return isoDate + ' ' + timePart;
+  return `${isoDate} ${timePart}`;
 }
 
 function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
-  return minutes + 'm ' + secs + 's';
+  return `${minutes}m ${secs}s`;
 }
 
 function showHelp(): void {
@@ -237,8 +237,12 @@ function showHelp(): void {
   console.log('Escribano - Session Intelligence Tool');
   console.log('');
   console.log('Usage:');
-  console.log('  escribano list [limit]                    List recordings (default: 10)');
-  console.log('  escribano transcribe-latest                Transcribe most recent');
+  console.log(
+    '  escribano list [limit]                    List recordings (default: 10)'
+  );
+  console.log(
+    '  escribano transcribe-latest                Transcribe most recent'
+  );
   console.log('  escribano transcribe <id>                 Transcribe by ID');
   console.log('');
   console.log('Examples:');

@@ -75,8 +75,13 @@ export interface CaptureSource {
 }
 
 export interface IntelligenceService {
-  classify(transcript: Transcript): Promise<{ type: string; confidence: number }>;
-  generate(prompt: string, context: { transcript: Transcript }): Promise<string>;
+  classify(
+    transcript: Transcript
+  ): Promise<{ type: string; confidence: number }>;
+  generate(
+    prompt: string,
+    context: { transcript: Transcript }
+  ): Promise<string>;
 }
 
 // =============================================================================
@@ -84,7 +89,9 @@ export interface IntelligenceService {
 // =============================================================================
 
 export const capConfigSchema = z.object({
-  recordingsPath: z.string().default('~/Library/Application Support/so.cap.desktop/recordings').optional(),
+  recordingsPath: z
+    .string()
+    .default('~/Library/Application Support/so.cap.desktop/recordings'),
 });
 export type CapConfig = z.infer<typeof capConfigSchema>;
 

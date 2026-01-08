@@ -12,8 +12,11 @@
 import { exec } from 'node:child_process';
 import { readFile, unlink } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { basename, dirname, join } from 'node:path';
-import type { TranscriptionService, Transcript, WhisperConfig } from '../0_types';
+import type {
+  Transcript,
+  TranscriptionService,
+  WhisperConfig,
+} from '../0_types.js';
 
 const execAsync = promisify(exec);
 
@@ -75,15 +78,20 @@ async function transcribeWithWhisper(
       timeout: 10 * 60 * 1000, // 10 minute timeout
     });
 
+    console.log(stderr);
     if (stderr && !stderr.includes('whisper_')) {
       console.warn(`Whisper stderr: ${stderr}`);
     }
 
     // whisper-cpp outputs JSON to a file named <input>.json
     const jsonOutputPath = `${audioPath}.json`;
+    console.log('Looking for Whisper JSON output at:');
+    console.log(jsonOutputPath);
 
     try {
       const jsonContent = await readFile(jsonOutputPath, 'utf-8');
+      console.log('Whisper JSON output read successfully');
+      console.log(jsonContent);
       const whisperOutput: WhisperJsonOutput = JSON.parse(jsonContent);
 
       // Clean up the temp JSON file
@@ -92,7 +100,9 @@ async function transcribeWithWhisper(
       return parseWhisperOutput(whisperOutput);
     } catch {
       // Fallback: try to parse stdout as the transcript
-      console.warn('Could not read JSON output, falling back to stdout parsing');
+      console.warn(
+        'Could not read JSON output, falling back to stdout parsing'
+      );
       return parseWhisperStdout(stdout);
     }
   } catch (error) {
@@ -131,7 +141,8 @@ function parseWhisperStdout(stdout: string): Transcript {
   const lines = stdout.split('\n').filter((l) => l.trim());
   const segments: Transcript['segments'] = [];
 
-  const timestampRegex = /\[(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})\]\s*(.*)/;
+  const timestampRegex =
+    /\[(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})\]\s*(.*)/;
 
   for (const line of lines) {
     const match = line.match(timestampRegex);
@@ -182,4 +193,3 @@ function parseTimestamp(timestamp: string): number {
     parseInt(ms, 10) / 1000
   );
 }
-

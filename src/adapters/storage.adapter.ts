@@ -7,7 +7,7 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import { join } from 'node:path';
-import type { Session, StorageService } from '../0_types.js';
+import type { Artifact, Session, StorageService } from '../0_types.js';
 
 const SESSIONS_DIR = join(os.homedir(), '.escribano', 'sessions');
 
@@ -16,6 +16,8 @@ export function createStorageService(): StorageService {
     saveSession,
     loadSession,
     listSessions,
+    saveArtifact,
+    loadArtifacts,
   };
 }
 
@@ -57,4 +59,48 @@ async function listSessions(): Promise<Session[]> {
   }
 
   return sessions;
+}
+
+async function saveArtifact(
+  sessionId: string,
+  artifact: Artifact
+): Promise<void> {
+  const artifactsDir = join(SESSIONS_DIR, sessionId, 'artifacts');
+  await mkdir(artifactsDir, { recursive: true });
+
+  const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+  const extension = artifact.format === 'markdown' ? 'md' : artifact.format;
+  const filename = `${artifact.type}-${timestamp}.${extension}`;
+  const artifactPath = join(artifactsDir, filename);
+
+  await writeFile(artifactPath, artifact.content, 'utf-8');
+}
+
+async function loadArtifacts(sessionId: string): Promise<Artifact[]> {
+  const artifactsDir = join(SESSIONS_DIR, sessionId, 'artifacts');
+
+  try {
+    const files = await readdir(artifactsDir);
+    const artifacts: Artifact[] = [];
+
+    for (const file of files) {
+      const content = await readFile(join(artifactsDir, file), 'utf-8');
+      const match = file.match(/^(\w+)-(.+)\.md$/);
+      if (!match) continue;
+
+      const [, type] = match;
+
+      artifacts.push({
+        id: `${sessionId}-${file.replace('.md', '')}`,
+        type: type as any,
+        content,
+        format: 'markdown',
+        createdAt: new Date(),
+      });
+    }
+
+    return artifacts;
+  } catch {
+    return [];
+  }
 }

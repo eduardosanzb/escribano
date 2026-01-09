@@ -88,6 +88,8 @@ export async function classifySession(
     transcripts: session.transcripts,
     status: 'classified',
     classification,
+    metadata: null,
+    artifacts: session.artifacts || [],
     createdAt: session.createdAt,
     updatedAt: new Date(),
   };

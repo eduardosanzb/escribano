@@ -18,7 +18,10 @@
     "transcribe-latest": "tsx src/index.ts transcribe-latest",
     "classify-latest": "tsx src/index.ts classify-latest",
     "classify": "tsx src/index.ts classify",
-    "test-prompts": "tsx src/test-classification-prompts.ts"
+    "extract-metadata-latest": "tsx src/index.ts extract-metadata-latest",
+    "extract-metadata": "tsx src/index.ts extract-metadata",
+    "list-artifacts": "tsx src/index.ts list-artifacts",
+    "generate-artifact": "tsx src/index.ts generate-artifact"
   },
   "keywords": [],
   "author": "",

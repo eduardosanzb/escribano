@@ -295,60 +295,78 @@ System automatically classifies sessions with multi-label scores:
 
 **Description:** Generate structured artifacts based on session type: summaries, action items, runbooks, step-by-step guides, screenshots, notes.
 
-### Tasks (Not Started)
+### Status: In Progress 🛠️
 
-- [ ] **Generate Artifact Action (`src/actions/generate-artifact.ts`)**
-   - [ ] `generateArtifact()` pure function
-   - [ ] Takes Session, IntelligenceService, and ArtifactType as parameters
-   - [ ] Routes to appropriate prompt based on artifact type
-   - [ ] Calls `intelligence.generate()` with context
-   - [ ] Returns generated artifact
+#### Phase 1: CLI "Recommender" & Targeted Generation
+- [x] **Artifact Status & Recommendation Engine**
+  - Mapping: `meeting` > 50% → Summary/Action Items, `debugging` > 50% → Runbook, etc.
+- [x] **CLI Command: `list-artifacts <id>`**
+  - Show session scores and recommended artifacts (Score > 50% threshold).
+  - Display current status: e.g., `Summary: [Pending]`, `Notes: [Generated]`.
+- [x] **CLI Command: `generate-artifact <id> <type>`**
+  - Allow manual trigger for specific artifact generation.
+  - Auto-extract metadata if not present.
 
-- [ ] **Artifact Types Support**
-   - [ ] Summary - concise meeting overview
-   - [ ] Action Items - extracted TODOs with owners
-   - [ ] Runbook - step-by-step debugging guide
-   - [ ] Screenshots - capture key frames from video
-   - [ ] Step-by-step - tutorial guide
-   - [ ] Notes - learning session notes
+#### Phase 2: Prompt Engineering (Content & Language)
+- [ ] **Configuration Updates**
+  - Add `maxScreenshots` to `ArtifactConfig` (default: 10).
+- [ ] **Language Constraint:** English structure/headings + Original transcript language for content.
+- [ ] **Core Prompts** in `prompts/`:
+  - `summary.md` (concise overview).
+  - `action-items.md` (extracted tasks/owners).
+  - `notes.md` (study/research notes).
+- [ ] **Technical/Creative Prompts**:
+  - `runbook.md` (troubleshooting for debugging).
+  - `step-by-step.md` (tutorial guide).
+  - `code-snippets.md` (working session code).
+  - `blog-research.md` (research synthesis).
+  - `blog-draft.md` (narrative draft).
 
-- [ ] **Screenshots Adapter (`src/adapters/ffmpeg.adapter.ts`)**
-   - [ ] Extract frames from video at specific timestamps
-   - [ ] Support multiple formats (mp4, webm, mov)
-   - [ ] Handle Cap's cursor.json for precise cursor tracking
-   - [ ] Save screenshots to output directory
+#### Phase 3: Visuals (FFmpeg Integration) - *Deferred*
+- [ ] **Implement `src/adapters/ffmpeg.adapter.ts`**
+  - Logic to extract high-quality frames at specific timestamps.
+  - Support for `.mp4`, `.webm`, `.mov`.
+- [ ] **Screenshot Orchestration**
+  - Select top `maxScreenshots` based on importance from `metadata.keyMoments`.
+  - Save to `~/.escribano/sessions/<id>/artifacts/screenshots/`.
+  - Auto-embed links: `![timestamp](./screenshots/time.jpg)`.
 
-- [ ] **Storage Adapter (`src/adapters/storage.adapter.ts`)**
-   - [ ] Save sessions to filesystem/JSON
-   - [ ] Save artifacts to files with naming convention
-   - [ ] Configure output directory (default: `~/Documents/escribano`)
-   - [ ] Handle file conflicts (overwrite/append strategies)
-
-- [ ] **Tests**
-   - [ ] Unit tests for each artifact type
-   - [ ] Integration test: Full flow to artifact generation
-   - [ ] Validate artifact content quality
+#### Phase 4: Integration & Verification
+- [ ] **Storage Persistence**
+  - Save all assets (`.md`, `.jpg`) in the session directory alongside `session.json`.
+- [ ] **End-to-End Pipeline Test**
+  - Recording → Classification → Metadata → Artifacts.
 
 ### Final Output for Milestone 3
 
-Automatic artifact generation for each session:
-```javascript
-{
-  "id": "session-123",
-  "status": "complete",
-  "artifacts": [
-    {
-      "type": "summary",
-      "content": "Discussed feature X, decided on approach Y...",
-      "createdAt": "2026-01-08T01:05:00.000Z"
-    },
-    {
-      "type": "actionItems",
-      "content": ["Implement feature X", "Review documentation", ...],
-      "createdAt": "2026-01-08T01:05:00.000Z"
-    }
-  ]
-}
+Interactive artifact generation workflow:
+```bash
+# List what can be generated for a session
+escribano list-artifacts 2026-01-09--01.28 PM.cap
+
+# Expected output:
+📊 Session: 2026-01-09--01.28 PM.cap
+   meeting: 85% ████████████████
+   learning: 45% ████████
+
+💡 Recommended Artifacts:
+   ✓ Summary (meeting > 50%)
+   ✓ Action Items (meeting > 50%)
+
+# Generate a specific artifact
+escribano generate-artifact 2026-01-09--01.28 PM.cap summary
+```
+
+Generated artifacts will be saved to:
+```
+~/.escribano/sessions/<id>/
+├── session.json
+└── artifacts/
+    ├── summary.md
+    ├── action-items.md
+    └── screenshots/
+        ├── 120.jpg
+        └── 450.jpg
 ```
 
 ---

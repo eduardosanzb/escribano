@@ -12,6 +12,8 @@ const mockConfig: IntelligenceConfig = {
   model: 'qwen3:32b',
   maxRetries: 3,
   timeout: 30000,
+  keepAlive: '10m',
+  maxContextSize: 131072,
 };
 
 const mockTranscript: Transcript = {
@@ -57,6 +59,8 @@ describe('IntelligenceService', () => {
           working: 5,
         }),
       },
+      done: true,
+      done_reason: 'stop',
     });
 
     global.fetch = vi.fn().mockResolvedValue({
@@ -72,14 +76,6 @@ describe('IntelligenceService', () => {
     expect(result.tutorial).toBe(15);
     expect(result.learning).toBe(20);
     expect(result.working).toBe(5);
-  });
-
-  it('should throw on generate() - not implemented', async () => {
-    const service = createIntelligenceService(mockConfig);
-
-    await expect(
-      service.generate(mockTranscript.fullText, { transcript: mockTranscript })
-    ).rejects.toThrow('generate() not implemented - Milestone 3');
   });
 
   it('should retry on API failures', async () => {
@@ -101,6 +97,8 @@ describe('IntelligenceService', () => {
               working: 5,
             }),
           },
+          done: true,
+          done_reason: 'stop',
         }),
       };
     });
@@ -122,7 +120,7 @@ describe('IntelligenceService', () => {
     const service = createIntelligenceService(mockConfig);
 
     await expect(service.classify(mockTranscript)).rejects.toThrow(
-      'Classification failed after 3 retries'
+      'Request failed after 3 retries'
     );
   });
 });

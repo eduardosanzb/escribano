@@ -12,6 +12,11 @@ import path from 'node:path';
 import { inspect } from 'node:util';
 import type { Recording, Session } from './0_types.js';
 import { classifySession } from './actions/classify-session.js';
+import { extractMetadata } from './actions/extract-metadata.js';
+import {
+  generateArtifact,
+  getRecommendedArtifacts,
+} from './actions/generate-artifact.js';
 import { processSession } from './actions/process-session.js';
 import { createCapSource } from './adapters/cap.adapter.js';
 import { createIntelligenceService } from './adapters/intelligence.adapter.js';
@@ -28,6 +33,7 @@ interface ParsedArgs {
   limit: number;
   recordingId?: string;
   sessionId?: string;
+  artifactType?: string;
 }
 
 function main(): void {
@@ -53,6 +59,22 @@ function main(): void {
 
       case 'classify':
         executeClassifyById(args);
+        break;
+
+      case 'extract-metadata-latest':
+        executeExtractMetadataLatest(args);
+        break;
+
+      case 'extract-metadata':
+        executeExtractMetadataById(args);
+        break;
+
+      case 'list-artifacts':
+        executeListArtifacts(args);
+        break;
+
+      case 'generate-artifact':
+        executeGenerateArtifact(args);
         break;
 
       default:
@@ -108,6 +130,45 @@ function parseArgs(argsArray: string[]): ParsedArgs {
         sessionId: argsArray[1],
         limit: 10,
         recordingId: undefined,
+      };
+
+    case 'extract-metadata-latest':
+      return {
+        command: 'extract-metadata-latest',
+        limit: 10,
+        sessionId: undefined,
+      };
+
+    case 'extract-metadata':
+      if (argsArray.length < 2) {
+        return { command: 'help', limit: 10 };
+      }
+      return {
+        command: 'extract-metadata',
+        sessionId: argsArray[1],
+        limit: 10,
+        recordingId: undefined,
+      };
+
+    case 'list-artifacts':
+      if (argsArray.length < 2) {
+        return { command: 'help', limit: 10 };
+      }
+      return {
+        command: 'list-artifacts',
+        sessionId: argsArray[1],
+        limit: 10,
+      };
+
+    case 'generate-artifact':
+      if (argsArray.length < 3) {
+        return { command: 'help', limit: 10 };
+      }
+      return {
+        command: 'generate-artifact',
+        sessionId: argsArray[1],
+        artifactType: argsArray[2],
+        limit: 10,
       };
 
     default:
@@ -222,13 +283,7 @@ async function executeClassifyLatest(_args: ParsedArgs): Promise<void> {
     process.exit(1);
   }
 
-  const intelligence = createIntelligenceService({
-    provider: 'ollama',
-    endpoint: 'http://localhost:11434/api/chat',
-    model: 'qwen3:32b',
-    maxRetries: 3,
-    timeout: 300000,
-  });
+  const intelligence = createIntelligenceService({});
 
   console.log('\nClassifying session...');
   session = await classifySession(session, intelligence);
@@ -257,13 +312,7 @@ async function executeClassifyById(args: ParsedArgs): Promise<void> {
     process.exit(1);
   }
 
-  const intelligence = createIntelligenceService({
-    provider: 'ollama',
-    endpoint: 'http://localhost:11434/v1/chat/completions',
-    model: 'qwen3:32b',
-    maxRetries: 3,
-    timeout: 30000,
-  });
+  const intelligence = createIntelligenceService({});
 
   console.log('\nClassifying session...');
   const classifiedSession = await classifySession(session, intelligence);
@@ -460,6 +509,216 @@ function formatDuration(seconds: number): string {
   return `${minutes}m ${secs}s`;
 }
 
+async function executeExtractMetadataLatest(_args: ParsedArgs): Promise<void> {
+  console.log('Fetching latest classified session...');
+
+  const storage = createStorageService();
+  const sessions = await storage.listSessions();
+  const session = sessions.find((s) => s.classification !== null);
+
+  if (!session) {
+    console.error('No classified sessions found. Run classify-latest first.');
+    process.exit(1);
+  }
+
+  console.log(`\nExtracting metadata from session: ${session.id}\n`);
+
+  const intelligence = createIntelligenceService({});
+
+  const updated = await extractMetadata(session, intelligence);
+  await storage.saveSession(updated);
+
+  displayMetadata(updated.metadata);
+}
+
+async function executeExtractMetadataById(args: ParsedArgs): Promise<void> {
+  if (!args.sessionId) {
+    console.error('Usage: extract-metadata <session-id>');
+    process.exit(1);
+  }
+
+  console.log(`Loading session: ${args.sessionId}`);
+
+  const storage = createStorageService();
+  const session = await storage.loadSession(args.sessionId);
+
+  if (!session) {
+    console.error(`Session not found: ${args.sessionId}`);
+    process.exit(1);
+  }
+
+  const intelligence = createIntelligenceService({});
+
+  const updated = await extractMetadata(session, intelligence);
+  await storage.saveSession(updated);
+
+  displayMetadata(updated.metadata);
+}
+
+async function executeListArtifacts(args: ParsedArgs): Promise<void> {
+  if (!args.sessionId) {
+    console.error('Session ID required');
+    process.exit(1);
+  }
+
+  const storage = createStorageService();
+  const session = await storage.loadSession(args.sessionId);
+
+  if (!session) {
+    console.error(`Session not found: ${args.sessionId}`);
+    process.exit(1);
+  }
+
+  displayClassification(session);
+
+  const recommendations = getRecommendedArtifacts(session);
+  console.log('\n💡 Recommended Artifacts:');
+  if (recommendations.length === 0) {
+    console.log('   (No specific recommendations based on scores)');
+  } else {
+    for (const type of recommendations) {
+      const exists = session.artifacts?.some((a) => a.type === type);
+      const status = exists ? '[Generated]' : '[Pending]';
+      console.log(`   • ${type.padEnd(15)} ${status}`);
+    }
+  }
+
+  console.log(
+    '\nAvailable types: summary, action-items, runbook, step-by-step, notes, code-snippets, blog-research, blog-draft'
+  );
+}
+
+async function executeGenerateArtifact(args: ParsedArgs): Promise<void> {
+  if (!args.sessionId || !args.artifactType) {
+    console.error('Usage: generate-artifact <session-id> <artifact-type>');
+    process.exit(1);
+  }
+
+  const storage = createStorageService();
+  let session = await storage.loadSession(args.sessionId);
+
+  if (!session) {
+    console.error(`Session not found: ${args.sessionId}`);
+    process.exit(1);
+  }
+
+  if (!session.metadata) {
+    console.log('Metadata missing. Extracting metadata first...');
+    const intelligence = createIntelligenceService({});
+    session = await extractMetadata(session, intelligence);
+    await storage.saveSession(session);
+    console.log('✓ Metadata extracted.');
+  }
+
+  console.log(`\nGenerating ${args.artifactType} for session ${session.id}...`);
+
+  const intelligence = createIntelligenceService({});
+  const artifact = await generateArtifact(
+    session,
+    intelligence,
+    args.artifactType as any
+  );
+
+  // Update session with new artifact
+  if (!session.artifacts) {
+    session.artifacts = [];
+  }
+  const existingIndex = session.artifacts.findIndex(
+    (a) => a.type === args.artifactType
+  );
+  if (existingIndex >= 0) {
+    session.artifacts[existingIndex] = artifact;
+  } else {
+    session.artifacts.push(artifact);
+  }
+
+  await storage.saveSession(session);
+  await storage.saveArtifact(session.id, artifact);
+
+  console.log(`\n✅ ${args.artifactType} generated successfully!`);
+  console.log('Content preview:');
+  console.log('-'.repeat(40));
+  console.log(
+    artifact.content.substring(0, 500) +
+      (artifact.content.length > 500 ? '...' : '')
+  );
+  console.log('-'.repeat(40));
+}
+
+function displayMetadata(metadata: any | null): void {
+  if (!metadata) {
+    console.log('No metadata extracted');
+    return;
+  }
+
+  console.log('\n📊 Extracted Metadata:\n');
+
+  if (metadata.speakers?.length) {
+    console.log('👥 Speakers:');
+    for (const speaker of metadata.speakers) {
+      console.log(
+        `   • ${speaker.name}${speaker.role ? ` (${speaker.role})` : ''}`
+      );
+    }
+    console.log('');
+  }
+
+  if (metadata.keyMoments?.length) {
+    console.log('⭐ Key Moments:');
+    for (const moment of metadata.keyMoments) {
+      const time = formatTime(moment.timestamp);
+      const icon =
+        moment.importance === 'high'
+          ? '🔴'
+          : moment.importance === 'medium'
+            ? '🟡'
+            : '⚪';
+      console.log(`   ${icon} [${time}] ${moment.description}`);
+    }
+    console.log('');
+  }
+
+  if (metadata.actionItems?.length) {
+    console.log('✅ Action Items:');
+    for (const item of metadata.actionItems) {
+      const priority = item.priority ? ` [${item.priority}]` : '';
+      const owner = item.owner ? ` - ${item.owner}` : '';
+      console.log(`   • ${item.description}${priority}${owner}`);
+    }
+    console.log('');
+  }
+
+  if (metadata.technicalTerms?.length) {
+    console.log('🔧 Technical Terms:');
+    for (const term of metadata.technicalTerms.slice(0, 5)) {
+      console.log(`   • ${term.term} (${term.type})`);
+    }
+    if (metadata.technicalTerms.length > 5) {
+      console.log(`   ... and ${metadata.technicalTerms.length - 5} more`);
+    }
+    console.log('');
+  }
+
+  if (metadata.codeSnippets?.length) {
+    console.log('💻 Code Snippets:');
+    for (const snippet of metadata.codeSnippets.slice(0, 3)) {
+      console.log(
+        `   • ${snippet.language || 'code'}: ${snippet.description || 'snippet'}`
+      );
+    }
+    if (metadata.codeSnippets.length > 3) {
+      console.log(`   ... and ${metadata.codeSnippets.length - 3} more`);
+    }
+    console.log('');
+  }
+}
+
+function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
 function showHelp(): void {
   console.log('');
   console.log('Escribano - Session Intelligence Tool');
@@ -478,6 +737,18 @@ function showHelp(): void {
   console.log(
     '  escribano classify <id>                  Classify session by ID'
   );
+  console.log(
+    '  escribano extract-metadata-latest      Extract metadata from latest session'
+  );
+  console.log(
+    '  escribano extract-metadata <id>          Extract metadata from session by ID'
+  );
+  console.log(
+    '  escribano list-artifacts <id>           List recommended/existing artifacts'
+  );
+  console.log(
+    '  escribano generate-artifact <id> <type> Generate specific artifact'
+  );
   console.log('');
   console.log('Examples:');
   console.log('  escribano list');
@@ -486,6 +757,8 @@ function showHelp(): void {
   console.log('  escribano transcribe "Display 2025-01-08"');
   console.log('  escribano classify-latest');
   console.log('  escribano classify "session-123"');
+  console.log('  escribano extract-metadata-latest');
+  console.log('  escribano extract-metadata "session-123"');
   console.log('');
   console.log('Prerequisites:');
   console.log('  whisper-cli: brew install whisper-cpp');

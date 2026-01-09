@@ -48,6 +48,8 @@ const mockSession: Session = {
   ],
   status: 'transcribed',
   classification: null,
+  metadata: null,
+  artifacts: [],
   createdAt: new Date('2026-01-08'),
   updatedAt: new Date('2026-01-08'),
 };
@@ -61,12 +63,18 @@ const mockClassificationResult = {
 };
 
 const mockClassify = vi.fn();
-const mockGenerate = vi
-  .fn()
-  .mockRejectedValue(new Error('generate() not implemented - Milestone 3'));
+const mockExtractMetadata = vi.fn().mockResolvedValue({
+  speakers: [],
+  keyMoments: [],
+  actionItems: [],
+  technicalTerms: [],
+  codeSnippets: [],
+});
+const mockGenerate = vi.fn();
 
 const mockIntelligence: IntelligenceService = {
   classify: mockClassify,
+  extractMetadata: mockExtractMetadata,
   generate: mockGenerate,
 };
 

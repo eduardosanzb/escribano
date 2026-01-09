@@ -275,6 +275,11 @@ pnpm lint && pnpm typecheck
   - System prompt for JSON-only output
   - **Ultra-simple parser** (10 lines - extracts JSON & validates)
   - Handles multiple response formats (0-1 or 0-100 percentages)
+  - **Model warm-up**: Automatic loading on first request with `keep_alive`
+  - **JSON Schema validation**: Uses Ollama's `format` parameter with Zod schemas
+  - **Dynamic context sizing**: Automatically calculates `num_ctx` based on prompt length
+  - **Model**: Default changed to `qwen3:8b` (better structured output)
+  - **Configuration**: Added `keepAlive` (default: '10m') and `maxContextSize` (default: 131072)
 
 - **Multi-Label Classification**
   - **New format**: 5 scores 0-100 (meeting, debugging, tutorial, learning, working)

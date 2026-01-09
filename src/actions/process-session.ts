@@ -106,6 +106,8 @@ export async function processSession(
     transcripts,
     status: 'transcribed',
     classification: null,
+    metadata: null,
+    artifacts: [],
     createdAt: new Date(),
     updatedAt: new Date(),
   };

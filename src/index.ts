@@ -199,6 +199,7 @@ async function executeClassifyLatest(_args: ParsedArgs): Promise<void> {
 
   let session = await storage.loadSession(recording.id);
 
+  // TODO: Add CLI flag to skip cache and force re-transcription
   if (!session) {
     console.log('No existing session found, creating new session...');
     const transcriber = createWhisperTranscriber({

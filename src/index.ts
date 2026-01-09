@@ -5,25 +5,29 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import path from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-
-import { createCapSource } from './adapters/cap.adapter.js';
-import { createWhisperTranscriber } from './adapters/whisper.adapter.js';
+import path from 'node:path';
+import { inspect } from 'node:util';
+import type { Recording, Session } from './0_types.js';
+import { classifySession } from './actions/classify-session.js';
 import { processSession } from './actions/process-session.js';
-import type { Recording } from './0_types.js';
+import { createCapSource } from './adapters/cap.adapter.js';
+import { createIntelligenceService } from './adapters/intelligence.adapter.js';
+import { createStorageService } from './adapters/storage.adapter.js';
+import { createWhisperTranscriber } from './adapters/whisper.adapter.js';
 
 const MODELS_DIR = path.join(os.homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
 const MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
-const MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/' + MODEL_FILE;
+const MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_FILE}`;
 
 interface ParsedArgs {
   command: string;
   limit: number;
   recordingId?: string;
+  sessionId?: string;
 }
 
 function main(): void {
@@ -41,6 +45,14 @@ function main(): void {
 
       case 'transcribe':
         executeTranscribeById(args);
+        break;
+
+      case 'classify-latest':
+        executeClassifyLatest(args);
+        break;
+
+      case 'classify':
+        executeClassifyById(args);
         break;
 
       default:
@@ -65,12 +77,13 @@ function parseArgs(argsArray: string[]): ParsedArgs {
     case 'list':
       return {
         command: 'list',
-        limit: argsArray[1] ? parseInt(argsArray[1]) : 10,
-        recordingId: undefined
+        limit: argsArray[1] ? parseInt(argsArray[1], 10) : 10,
+        recordingId: undefined,
+        sessionId: undefined,
       };
 
     case 'transcribe-latest':
-      return { command: 'transcribe-latest', limit: 10 };
+      return { command: 'transcribe-latest', limit: 10, sessionId: undefined };
 
     case 'transcribe':
       if (argsArray.length < 2) {
@@ -79,7 +92,22 @@ function parseArgs(argsArray: string[]): ParsedArgs {
       return {
         command: 'transcribe',
         recordingId: argsArray[1],
-        limit: 10
+        limit: 10,
+        sessionId: undefined,
+      };
+
+    case 'classify-latest':
+      return { command: 'classify-latest', limit: 10, sessionId: undefined };
+
+    case 'classify':
+      if (argsArray.length < 2) {
+        return { command: 'help', limit: 10 };
+      }
+      return {
+        command: 'classify',
+        sessionId: argsArray[1],
+        limit: 10,
+        recordingId: undefined,
       };
 
     default:
@@ -98,22 +126,23 @@ async function executeList(limit: number): Promise<void> {
     return;
   }
 
-  console.log('Found ' + recordings.length + ' recordings:\n');
+  console.log(`Found ${recordings.length} recordings:\n`);
 
   recordings.forEach((recording, index) => {
     console.log('='.repeat(60));
-    console.log('[' + (index + 1) + '] ' + recording.id);
+    console.log(`[${index + 1}] ${recording.id}`);
     console.log('');
-    console.log('  Captured:  ' + formatDate(recording.capturedAt));
-    console.log('  Duration:   ' + formatDuration(recording.duration));
-    console.log('  Audio:      ' + recording.audioPath);
+    console.log(`  Captured:  ${formatDate(recording.capturedAt)}`);
+    console.log(`  Duration:   ${formatDuration(recording.duration)}`);
+    console.log(`  Mic Audio:      ${recording.audioMicPath}`);
+    console.log(`  System Audio:   ${recording.audioSystemPath}`);
     if (recording.videoPath) {
-      console.log('  Video:      ' + recording.videoPath);
+      console.log(`  Video:      ${recording.videoPath}`);
     }
   });
 }
 
-async function executeTranscribeLatest(args: ParsedArgs): Promise<void> {
+async function executeTranscribeLatest(_args: ParsedArgs): Promise<void> {
   await ensureModel();
 
   console.log('Fetching latest Cap recording...');
@@ -137,7 +166,7 @@ async function executeTranscribeById(args: ParsedArgs): Promise<void> {
 
   await ensureModel();
 
-  console.log('Searching for recording: ' + args.recordingId);
+  console.log(`Searching for recording: ${args.recordingId}`);
 
   const capSource = createCapSource();
   const recordings = await capSource.listRecordings(100);
@@ -145,12 +174,186 @@ async function executeTranscribeById(args: ParsedArgs): Promise<void> {
   const recording = recordings.find((r) => r.id === args.recordingId);
 
   if (recording === undefined) {
-    console.error('Recording not found: ' + args.recordingId);
+    console.error(`Recording not found: ${args.recordingId}`);
     console.log('Use "escribano list" to see available recordings.');
     process.exit(1);
   }
 
   await transcribeRecording(recording);
+}
+
+async function executeClassifyLatest(_args: ParsedArgs): Promise<void> {
+  console.log('Fetching latest Cap recording...');
+
+  const capSource = createCapSource({});
+  const recording = await capSource.getLatestRecording();
+
+  if (!recording) {
+    console.error('No recordings found.');
+    process.exit(1);
+  }
+
+  console.log(`\nRecording: ${recording.id}`);
+  console.log(`Captured:  ${formatDate(recording.capturedAt)}`);
+  console.log(`Duration:   ${formatDuration(recording.duration)}s`);
+
+  const storage = createStorageService();
+
+  let session = await storage.loadSession(recording.id);
+
+  // TODO: Add CLI flag to skip cache and force re-transcription
+  if (!session) {
+    console.log('No existing session found, creating new session...');
+    const transcriber = createWhisperTranscriber({
+      binaryPath: 'whisper-cli',
+      model: MODEL_PATH,
+      cwd: MODELS_DIR,
+      outputFormat: 'json',
+    });
+
+    session = await processSession(recording, transcriber);
+    await storage.saveSession(session);
+  } else {
+    console.log('Using existing session (with transcript)');
+  }
+
+  if (!session.transcripts || session.transcripts.length === 0) {
+    console.error('Session has no transcripts. Please transcribe it first.');
+    process.exit(1);
+  }
+
+  const intelligence = createIntelligenceService({
+    provider: 'ollama',
+    endpoint: 'http://localhost:11434/api/chat',
+    model: 'qwen3:32b',
+    maxRetries: 3,
+    timeout: 300000,
+  });
+
+  console.log('\nClassifying session...');
+  session = await classifySession(session, intelligence);
+
+  await storage.saveSession(session);
+  displayClassification(session);
+}
+
+async function executeClassifyById(args: ParsedArgs): Promise<void> {
+  if (!args.sessionId) {
+    console.error('Session ID required');
+    process.exit(1);
+  }
+
+  console.log(`Loading session: ${args.sessionId}`);
+
+  const session = await loadSession(args.sessionId);
+
+  if (!session) {
+    console.error(`Session not found: ${args.sessionId}`);
+    process.exit(1);
+  }
+
+  if (!session.transcripts || session.transcripts.length === 0) {
+    console.error('Session has no transcripts. Please transcribe it first.');
+    process.exit(1);
+  }
+
+  const intelligence = createIntelligenceService({
+    provider: 'ollama',
+    endpoint: 'http://localhost:11434/v1/chat/completions',
+    model: 'qwen3:32b',
+    maxRetries: 3,
+    timeout: 30000,
+  });
+
+  console.log('\nClassifying session...');
+  const classifiedSession = await classifySession(session, intelligence);
+
+  await saveSession(classifiedSession);
+
+  displayClassification(classifiedSession);
+}
+
+async function loadSession(sessionId: string): Promise<Session | null> {
+  const sessionDir = path.join(os.homedir(), '.escribano', 'sessions');
+  const sessionFile = path.join(sessionDir, `${sessionId}.json`);
+
+  try {
+    const content = readFileSync(sessionFile, 'utf-8');
+    return JSON.parse(content) as Session;
+  } catch {
+    return null;
+  }
+}
+
+async function saveSession(session: Session): Promise<void> {
+  const sessionDir = path.join(os.homedir(), '.escribano', 'sessions');
+  await mkdir(sessionDir, { recursive: true });
+
+  const sessionFile = path.join(sessionDir, `${session.id}.json`);
+  await writeFile(sessionFile, JSON.stringify(session, null, 2), 'utf-8');
+}
+
+function displayClassification(session: Session): void {
+  const classification = session.classification;
+  if (!classification) {
+    console.error('No classification found.');
+    return;
+  }
+
+  const RELEVANCE_THRESHOLD = 25;
+
+  console.log(`
+╔═════════════════════════════╗
+║     Session Classification Results            ║
+╚═════════════════════════════════════════╝
+
+  📝 Session ID: ${session.id}`);
+
+  const scores = Object.entries(classification)
+    .sort(([, a], [, b]) => b - a)
+    .filter(([, score]) => score >= RELEVANCE_THRESHOLD);
+
+  if (scores.length === 0) {
+    console.log('  ⚠️  No clear session type detected (all scores < 25%)');
+    return;
+  }
+
+  console.log('\n📊 Session Type Analysis:');
+  scores.forEach(([type, score], index) => {
+    const bar = '█'.repeat(Math.floor(score / 5));
+    const icon = index === 0 ? '🎯' : '📌';
+    console.log(`   ${icon} ${type.padEnd(10)} ${bar} ${score}%`);
+  });
+
+  if (scores.length > 1) {
+    const primaryType = scores[0][0];
+    const primaryScore = scores[0][1];
+    const secondary = scores
+      .slice(1)
+      .filter(([, s]) => s >= RELEVANCE_THRESHOLD);
+
+    console.log(
+      `\n🏷️  Primary Type: ${primaryType.toUpperCase()} (${primaryScore}%)`
+    );
+
+    if (secondary.length > 0) {
+      console.log(
+        `  📌 Secondary: ${secondary.map(([t, s]) => `${t} (${s}%)`).join(', ')}`
+      );
+    }
+  }
+
+  console.log('\n💡 Suggested Artifacts:');
+  if (classification.meeting > 50)
+    console.log('   • Meeting summary & action items');
+  if (classification.debugging > 50)
+    console.log('   • Debugging runbook & error screenshots');
+  if (classification.tutorial > 50)
+    console.log('   • Step-by-step guide & screenshots');
+  if (classification.learning > 50)
+    console.log('   • Study notes & resource links');
+  if (classification.working > 50)
+    console.log('   • Code snippets & commit message');
 }
 
 async function ensureModel(): Promise<void> {
@@ -160,8 +363,8 @@ async function ensureModel(): Promise<void> {
 
   if (!existsSync(MODEL_PATH)) {
     console.log('Model not found. Downloading...');
-    console.log('From: ' + MODEL_URL);
-    console.log('To:   ' + MODEL_PATH);
+    console.log(`From: ${MODEL_URL}`);
+    console.log(`To:   ${MODEL_PATH}`);
     console.log('');
 
     await downloadModel();
@@ -177,7 +380,8 @@ function downloadModel(): Promise<void> {
     const child = spawn('curl', [
       '-L',
       '--progress-bar',
-      '-o', MODEL_PATH,
+      '-o',
+      MODEL_PATH,
       MODEL_URL,
     ]);
 
@@ -193,7 +397,7 @@ function downloadModel(): Promise<void> {
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error('Download failed with code ' + code));
+        reject(new Error(`Download failed with code ${code}`));
       }
     });
 
@@ -202,11 +406,13 @@ function downloadModel(): Promise<void> {
 }
 
 async function transcribeRecording(recording: Recording): Promise<void> {
-  console.log('\nTranscribing: ' + recording.id);
-  console.log('Captured:  ' + formatDate(recording.capturedAt));
-  console.log('Duration:   ' + formatDuration(recording.duration) + 's');
-  console.log('Audio:      ' + recording.audioPath);
+  console.log(`\nTranscribing: ${recording.id}`);
+  console.log(`Captured:  ${formatDate(recording.capturedAt)}`);
+  console.log(`Duration:   ${formatDuration(recording.duration)}s`);
+  console.log(`Audio Mic:      ${recording.audioMicPath}`);
+  console.log(`Audio System:   ${recording.audioSystemPath}`);
   console.log('');
+  console.log('Processing transcription...');
 
   const transcriber = createWhisperTranscriber({
     binaryPath: 'whisper-cli',
@@ -217,19 +423,41 @@ async function transcribeRecording(recording: Recording): Promise<void> {
 
   const session = await processSession(recording, transcriber);
 
-  console.log('\n' + JSON.stringify(session, null, 2));
+  // Save the session after transcription
+  const storage = createStorageService();
+  await storage.saveSession(session);
+
+  // Display summary of transcription results
+  console.log('\n✅ Transcription complete!');
+  console.log(`Session ID: ${session.id}`);
+  console.log(`Session saved to: ~/.escribano/sessions/${session.id}.json\n`);
+
+  // Display info about each transcript
+  for (const taggedTranscript of session.transcripts) {
+    const { source, transcript } = taggedTranscript;
+    console.log(`${source.toUpperCase()} Audio Transcript:`);
+    console.log(`  - Duration: ${formatDuration(transcript.duration)}`);
+    console.log(`  - Segments: ${transcript.segments.length}`);
+    console.log(`  - Text length: ${transcript.fullText.length} characters`);
+    if (transcript.segments.length > 0) {
+      console.log(
+        `  - First segment: "${transcript.segments[0].text.substring(0, 50)}..."`
+      );
+    }
+    console.log('');
+  }
 }
 
 function formatDate(date: Date): string {
   const isoDate = date.toISOString().split('T')[0];
   const timePart = date.toTimeString().split(' ')[0];
-  return isoDate + ' ' + timePart;
+  return `${isoDate} ${timePart}`;
 }
 
 function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
-  return minutes + 'm ' + secs + 's';
+  return `${minutes}m ${secs}s`;
 }
 
 function showHelp(): void {
@@ -237,19 +465,38 @@ function showHelp(): void {
   console.log('Escribano - Session Intelligence Tool');
   console.log('');
   console.log('Usage:');
-  console.log('  escribano list [limit]                    List recordings (default: 10)');
-  console.log('  escribano transcribe-latest                Transcribe most recent');
+  console.log(
+    '  escribano list [limit]                    List recordings (default: 10)'
+  );
+  console.log(
+    '  escribano transcribe-latest                Transcribe most recent'
+  );
   console.log('  escribano transcribe <id>                 Transcribe by ID');
+  console.log(
+    '  escribano classify-latest                 Classify most recent session'
+  );
+  console.log(
+    '  escribano classify <id>                  Classify session by ID'
+  );
   console.log('');
   console.log('Examples:');
   console.log('  escribano list');
   console.log('  escribano list 20');
   console.log('  escribano transcribe-latest');
   console.log('  escribano transcribe "Display 2025-01-08"');
+  console.log('  escribano classify-latest');
+  console.log('  escribano classify "session-123"');
   console.log('');
   console.log('Prerequisites:');
   console.log('  whisper-cli: brew install whisper-cpp');
-  console.log('  Cap: https://cap.so');
+  console.log('  ffmpeg:     brew install ffmpeg');
+  console.log('  ollama:      brew install ollama && ollama pull qwen3:32b');
+  console.log('  Cap:        https://cap.so');
+  console.log('');
+  console.log('Ollama Setup:');
+  console.log('  1. Install: brew install ollama');
+  console.log('  2. Pull model: ollama pull qwen3:32b');
+  console.log('  3. Start server: ollama serve');
   console.log('');
 }
 

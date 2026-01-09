@@ -1,0 +1,16 @@
+# Biome cache
+biome-cache/
+
+# Dependencies
+node_modules
+
+# Build output
+dist/*
+
+# Test coverage
+coverage
+dist
+dist
+node_modules
+dist/
+node_modules/*

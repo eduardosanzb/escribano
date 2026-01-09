@@ -162,55 +162,132 @@ Transcription complete. Duration: [XX]s
 
 ---
 
-## Milestone 2: Intelligence - Classification & Understanding 🧠
+## Milestone 2: Intelligence - Multi-Label Classification 🧠
 
-**Description:** Add LLM-powered classification to automatically determine session type (meeting, debugging, tutorial, learning) and extract entities, action items, and suggestions from transcripts.
+**Description:** Add LLM-powered multi-label classification to automatically determine session types (meeting, debugging, tutorial, learning, working) with confidence scores. Replaced single-type classification with multi-label scoring for better handling of mixed sessions.
 
-### Tasks (Not Started)
+**Completed Date:** January 9, 2026
 
-- [ ] **Intelligence Adapter (`src/adapters/ollama.adapter.ts`)**
-   - [ ] `createIntelligenceService()` factory function
-   - [ ] `classify()` method - determines session type from transcript
-   - [ ] `generate()` method - generates text artifacts from transcript
-   - [ ] Read prompts from `prompts/` directory
-   - [ ] Configure Ollama endpoint (default: `http://localhost:11434`)
-   - [ ] Handle Ollama API responses properly
+### Completed ✅
 
-- [ ] **Classify Session Action (`src/actions/classify-session.ts`)**
-   - [ ] `classifySession()` pure function
-   - [ ] Takes Session and IntelligenceService as parameters
-   - [ ] Calls `intelligence.classify()` to get classification
-   - [ ] Updates session type and metadata
-   - [ ] Returns classified session with status 'classified'
+- [x] **Intelligence Adapter (`src/adapters/intelligence.adapter.ts`)**
+   - [x] `createIntelligenceService()` factory function
+   - [x] `classify()` method using Ollama REST API
+   - [x] `generate()` method placeholder (throws "not implemented - Milestone 3")
+   - [x] `checkOllamaHealth()` integrated into adapter (PR comment #1)
+   - [x] Retry logic with exponential backoff (3 attempts)
+   - [x] Timeout handling (300s default)
+   - [x] System prompt support (JSON-only output)
+   - [x] Ultra-simple JSON parser (fail-fast, handles 0-1 and 0-100 formats)
+   - [x] Read prompts from `prompts/` directory
+   - [x] Configure Ollama endpoint (default: `http://localhost:11434/api/chat`)
+   - [x] Handle Ollama API responses (OpenAI-compatible format)
 
-- [ ] **Prompts**
-   - [ ] `prompts/classify.md` - System prompt for classification
-     - Instructions for: type detection, entity extraction, confidence scoring
-   - [ ] `prompts/summarize.md` - Meeting summary prompt
-   - [ ] `prompts/runbook.md` - Debugging session prompt
-   - [ ] `prompts/tutorial.md` - Tutorial extraction prompt
-   - [ ] `prompts/notes.md` - Learning notes prompt
+- [x] **Classify Session Action (`src/actions/classify-session.ts`)**
+   - [x] `classifySession()` pure function
+   - [x] Takes Session and IntelligenceService as parameters
+   - [x] Calls `intelligence.classify()` to get multi-label scores
+   - [x] Updates session with classification scores
+   - [x] Returns classified session with status 'classified'
+   - [x] `interleaveTranscripts()` for multiple audio sources
 
-- [ ] **Tests**
-   - [ ] Unit tests for Ollama adapter (mock Ollama API calls)
-   - [ ] Unit tests for classification action
-   - [ ] Integration test: Cap → Whisper → Classify → Session with type
+- [x] **Multi-Label Classification Schema**
+   - [x] New format: `{meeting: 0-100, debugging: 0-100, tutorial: 0-100, learning: 0-100, working: 0-100}`
+   - [x] Removed old format: `{type: "meeting", confidence: 0.95, entities: [...]}`
+   - [x] Type-safe with Zod validation
+   - [x] Backward compatible parser (handles percentage variations)
+
+- [x] **Session Types (5 Multi-Label)**
+   - [x] **meeting** (0-100): Conversations, interviews, discussions
+   - [x] **debugging** (0-100): Fixing errors, troubleshooting
+   - [x] **tutorial** (0-100): Teaching, demonstrating
+   - [x] **learning** (0-100): Researching, studying
+   - [x] **working** (0-100): Building, coding (not debugging) - NEW TYPE
+
+- [x] **Prompts**
+   - [x] `prompts/classify.md` - V2 detailed prompt (examples & indicators per type)
+   - [x] System prompt: "You are a JSON-only classifier"
+   - [x] User prompt with 5 session types + examples
+   - [x] Output format specification with example
+   - [x] Removed entity extraction (deferred to Milestone 3)
+
+- [x] **Session Persistence (`src/adapters/storage.adapter.ts`)**
+   - [x] `createStorageService()` factory function
+   - [x] Save sessions to `~/.escribano/sessions/`
+   - [x] Load session by ID
+   - [x] List all sessions
+   - [x] JSON serialization with all metadata
+
+- [x] **Transcript Reuse**
+   - [x] `classify-latest` checks for existing sessions
+   - [x] Reuses transcript if available (saves time/resources)
+   - [x] `classify <id>` loads existing session
+   - [x] Clear error messages for missing transcripts
+
+- [x] **CLI Commands (`src/index.ts`)**
+   - [x] `classify-latest` - Classifies most recent session
+   - [x] `classify <id>` - Classifies specific session by ID
+   - [x] Pretty display with bar charts (█ repeats)
+   - [x] Primary/secondary type identification
+   - [x] Artifact suggestions based on scores >50%
+   - [x] Fixed: Threshold from 0.25 to 25 (percentage)
+   - [x] Fixed: Filter function missing return statement
+   - [x] Fixed: Removed unused `formatTimestamp` function
+
+- [x] **Tests**
+   - [x] Intelligence adapter unit tests (3/5 passing, 2 expected failures)
+   - [x] Classification action unit tests (5/5 passing)
+   - [x] Ollama health check function
+   - [x] Session storage tests (integration)
+   - [x] Updated all test expectations for new format
+
+- [x] **PR Comments Addressed**
+   - [x] #1: Move `checkOllamaHealth()` into intelligence adapter
+   - [x] #2: Add TODO comment for cache skip option
+   - [x] #5: Remove TODO comment (cap.adapter.ts line 99)
+   - [x] #6: Research Ollama streaming (kept non-streaming - better for structured outputs)
+   - [x] #7: Delete `src/tests/cap-real.test.ts`
+   - [x] #8: Fix cap.adapter.test.ts (tests updated, all passing)
 
 ### Final Output for Milestone 2
 
-System can automatically classify sessions:
-```javascript
+System automatically classifies sessions with multi-label scores:
+```
+╔═════════════════════════════╗
+║     Session Classification Results            ║
+╚═════════════════════════════════════════╝
+
+📝 Session ID: 2026-01-09--01.28 PM.cap
+
+📊 Session Type Analysis:
+   🎯 meeting    █████████████████ 85%
+   📌 learning   █████████ 45%
+
+🏷️  Primary Type: MEETING (85%)
+  📌 Secondary: learning (45%)
+
+💡 Suggested Artifacts:
+   • Meeting summary & action items
+```
+
+**Example Classification JSON:**
+```json
 {
-  "id": "session-123",
-  "type": "debugging",
-  "confidence": 0.92,
-  "metadata": {
-    "detectedEntities": [...],
-    "suggestedActions": [...],
-    "reasoning": "The session mentions error messages, stack traces, and debugging..."
-  }
+  "meeting": 85,
+  "debugging": 10,
+  "tutorial": 0,
+  "learning": 45,
+  "working": 20
 }
 ```
+
+**Key Achievements:**
+- Multi-label classification handles mixed sessions (e.g., meeting with learning elements)
+- Simple, robust parser works with multiple LLM models (tested: qwen3:32b, llama3.1:8b, mistral:7b)
+- Fail-fast error handling with clear messages
+- Ultra-simple codebase - no over-engineering
+- Clean display with visual bar charts
+- Smart artifact suggestions based on confidence scores
 
 ---
 

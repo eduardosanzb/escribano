@@ -10,6 +10,7 @@ const mockConfig: IntelligenceConfig = {
   provider: 'ollama',
   endpoint: 'http://localhost:11434/v1/chat/completions',
   model: 'qwen3:32b',
+  generationModel: 'qwen2.5:72b',
   maxRetries: 3,
   timeout: 30000,
   keepAlive: '10m',

@@ -3,15 +3,19 @@ import type {
   ArtifactType,
   IntelligenceService,
   Session,
+  VideoService,
 } from '../0_types.js';
+import path from 'node:path';
+import os from 'node:os';
 
 /**
- * Generates a specific artifact for a session
+ * Generates a specific artifact for a session, including on-demand screenshot extraction
  */
 export async function generateArtifact(
   session: Session,
   intelligence: IntelligenceService,
-  artifactType: ArtifactType
+  artifactType: ArtifactType,
+  videoService: VideoService
 ): Promise<Artifact> {
   if (!session.classification) {
     throw new Error('Session must be classified before generating artifacts');
@@ -29,9 +33,49 @@ export async function generateArtifact(
     },
     classification: session.classification,
     metadata: session.metadata,
+    visualLogs: session.visualLogs,
   };
 
-  const content = await intelligence.generate(artifactType, context);
+  let content = await intelligence.generate(artifactType, context);
+
+  // Post-process [SCREENSHOT: timestamp] tags for on-demand extraction
+  const screenshotRegex = /\[SCREENSHOT:\s*([\d.]+)\]/g;
+  const matches = [...content.matchAll(screenshotRegex)];
+
+  if (matches.length > 0 && session.recording.videoPath) {
+    console.log(
+      `Found ${matches.length} screenshot requests in artifact. Extracting...`
+    );
+    const timestamps = matches.map((m) => Number.parseFloat(m[1]));
+    const screenshotDir = path.join(
+      os.homedir(),
+      '.escribano',
+      'sessions',
+      session.id,
+      'artifacts',
+      'screenshots'
+    );
+
+    try {
+      const paths = await videoService.extractFrames(
+        session.recording.videoPath,
+        timestamps,
+        screenshotDir
+      );
+
+      // Replace tags with markdown images using relative paths
+      for (let i = 0; i < matches.length; i++) {
+        const match = matches[i];
+        if (paths[i]) {
+          const fileName = path.basename(paths[i]);
+          const markdownImage = `![Screenshot at ${match[1]}s](./screenshots/${fileName})`;
+          content = content.replace(match[0], markdownImage);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to extract screenshots for artifact:', error);
+    }
+  }
 
   return {
     id: `${session.id}-${artifactType}-${Date.now()}`,

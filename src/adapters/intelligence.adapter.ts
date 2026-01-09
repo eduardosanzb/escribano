@@ -17,6 +17,7 @@ import {
   type IntelligenceService,
   type Transcript,
   type TranscriptMetadata,
+  type VisualLog,
 } from '../0_types.js';
 
 /**
@@ -29,45 +30,54 @@ function toOllamaSchema(schema: any): object {
 }
 
 // Model warm state - ensures model is loaded before first real request
-let modelWarmed = false;
+const warmedModels = new Set<string>();
 
 export function createIntelligenceService(
   config: Partial<IntelligenceConfig> = {}
 ): IntelligenceService {
   const parsedConfig = intelligenceConfigSchema.parse(config);
   return {
-    classify: (transcript) => classifyWithOllama(transcript, parsedConfig),
-    extractMetadata: (transcript, classification) =>
-      extractMetadata(transcript, classification, parsedConfig),
+    classify: (transcript, visualLogs) =>
+      classifyWithOllama(transcript, parsedConfig, visualLogs),
+    extractMetadata: (transcript, classification, visualLogs) =>
+      extractMetadata(transcript, classification, parsedConfig, visualLogs),
     generate: (artifactType, context) =>
       generateArtifact(artifactType, context, parsedConfig),
   };
 }
 
-async function ensureModelWarmed(config: IntelligenceConfig): Promise<void> {
-  if (modelWarmed) return;
+async function ensureModelWarmed(
+  modelName: string,
+  config: IntelligenceConfig
+): Promise<void> {
+  if (warmedModels.has(modelName)) return;
 
   try {
-    console.log(`Warming up model: ${config.model}...`);
-    const response = await fetch(config.endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [],
-        keep_alive: config.keepAlive,
-      }),
-    });
+    console.log(`Warming up model: ${modelName}...`);
+    const response = await fetch(
+      config.endpoint.replace('/chat', '').replace('/generate', '') + '/chat',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelName,
+          messages: [],
+          keep_alive: config.keepAlive,
+        }),
+      }
+    );
 
     if (response.ok) {
-      modelWarmed = true;
-      console.log(`✓ Model ${config.model} loaded and ready.`);
+      warmedModels.add(modelName);
+      console.log(`✓ Model ${modelName} loaded and ready.`);
     }
   } catch (error) {
     // In tests, model warming may fail - continue anyway
     // The real request will retry if needed
-    console.log(`  (Model warmup skipped or failed, continuing...)`);
-    modelWarmed = true; // Mark as warmed to avoid repeated attempts
+    console.log(
+      `  (Model warmup for ${modelName} skipped or failed, continuing...)`
+    );
+    warmedModels.add(modelName); // Mark as warmed to avoid repeated attempts
   }
 }
 
@@ -118,7 +128,8 @@ function calculateContextSize(
 
 async function classifyWithOllama(
   transcript: Transcript,
-  config: IntelligenceConfig
+  config: IntelligenceConfig,
+  visualLogs?: VisualLog[]
 ): Promise<Classification> {
   console.log('Classifying transcript with Ollama...');
   const tick = setInterval(() => {
@@ -126,10 +137,11 @@ async function classifyWithOllama(
   }, 1000);
 
   await checkOllamaHealth();
-  const prompt = loadClassifyPrompt(transcript);
+  const prompt = loadClassifyPrompt(transcript, visualLogs);
   const raw = await callOllama(prompt, config, {
     expectJson: true,
     jsonSchema: toOllamaSchema(classificationSchema),
+    model: config.model,
   });
   clearInterval(tick);
   console.log('\nClassification completed.');
@@ -137,7 +149,10 @@ async function classifyWithOllama(
   return raw;
 }
 
-function loadClassifyPrompt(transcript: Transcript): string {
+function loadClassifyPrompt(
+  transcript: Transcript,
+  visualLogs?: VisualLog[]
+): string {
   const promptPath = join(process.cwd(), 'prompts', 'classify.md');
   let prompt = readFileSync(promptPath, 'utf-8');
 
@@ -148,6 +163,15 @@ function loadClassifyPrompt(transcript: Transcript): string {
   prompt = prompt.replace('{{TRANSCRIPT_ALL}}', transcript.fullText);
   prompt = prompt.replace('{{TRANSCRIPT_SEGMENTS}}', segmentsText);
 
+  if (visualLogs && visualLogs.length > 0) {
+    const visualSummary = visualLogs[0].entries
+      .map((e: any) => `[Visual Change] at ${e.timestamp}s`)
+      .join('\n');
+    prompt = prompt.replace('{{VISUAL_LOG}}', visualSummary);
+  } else {
+    prompt = prompt.replace('{{VISUAL_LOG}}', 'N/A');
+  }
+
   return prompt;
 }
 
@@ -157,17 +181,17 @@ async function callOllama(
   options: {
     expectJson: boolean;
     jsonSchema?: object;
-  } = { expectJson: true }
+    model: string;
+  }
 ): Promise<string | any> {
   // Model warm-up (errors handled gracefully, especially in tests)
   try {
-    await ensureModelWarmed(config);
+    await ensureModelWarmed(options.model, config);
   } catch {
     // Continue even if warmup fails - model will load on first request
   }
 
-  const { endpoint, model, maxRetries, timeout, keepAlive, maxContextSize } =
-    config;
+  const { endpoint, maxRetries, timeout, keepAlive, maxContextSize } = config;
 
   // Calculate optimal context size for this prompt
   const contextSize = calculateContextSize(prompt.length, maxContextSize);
@@ -185,7 +209,7 @@ async function callOllama(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model,
+          model: options.model,
           messages: [
             {
               role: 'system',
@@ -258,12 +282,14 @@ async function callOllama(
 async function extractMetadata(
   transcript: Transcript,
   classification: Classification,
-  config: IntelligenceConfig
+  config: IntelligenceConfig,
+  visualLogs?: VisualLog[]
 ): Promise<TranscriptMetadata> {
-  const prompt = loadMetadataPrompt(transcript, classification);
+  const prompt = loadMetadataPrompt(transcript, classification, visualLogs);
   const raw = await callOllama(prompt, config, {
     expectJson: true,
     jsonSchema: toOllamaSchema(transcriptMetadataSchema),
+    model: config.generationModel, // Metadata extraction benefits from larger model
   });
 
   return raw;
@@ -271,13 +297,14 @@ async function extractMetadata(
 
 function loadMetadataPrompt(
   transcript: Transcript,
-  classification: Classification
+  classification: Classification,
+  visualLogs?: VisualLog[]
 ): string {
   const promptPath = join(process.cwd(), 'prompts', 'extract-metadata.md');
   let prompt = readFileSync(promptPath, 'utf-8');
 
   const classificationSummary = Object.entries(classification)
-    .filter(([_, score]) => score >= 25)
+    .filter(([_, score]) => (score as number) >= 25)
     .map(([type, score]) => `${type}: ${score}%`)
     .join(', ');
 
@@ -289,6 +316,15 @@ function loadMetadataPrompt(
   prompt = prompt.replace('{{TRANSCRIPT_SEGMENTS}}', segmentsText);
   prompt = prompt.replace('{{TRANSCRIPT_ALL}}', transcript.fullText);
 
+  if (visualLogs && visualLogs.length > 0) {
+    const visualSummary = visualLogs[0].entries
+      .map((e: any) => `[Visual Change] at ${e.timestamp}s`)
+      .join('\n');
+    prompt = prompt.replace('{{VISUAL_LOG}}', visualSummary);
+  } else {
+    prompt = prompt.replace('{{VISUAL_LOG}}', 'N/A');
+  }
+
   return prompt;
 }
 
@@ -298,11 +334,15 @@ async function generateArtifact(
     transcript: Transcript;
     classification: Classification;
     metadata: TranscriptMetadata | null;
+    visualLogs?: VisualLog[];
   },
   config: IntelligenceConfig
 ): Promise<string> {
   const prompt = loadArtifactPrompt(artifactType, context);
-  const response = await callOllama(prompt, config, { expectJson: false });
+  const response = await callOllama(prompt, config, {
+    expectJson: false,
+    model: config.generationModel,
+  });
   return response;
 }
 
@@ -312,6 +352,7 @@ function loadArtifactPrompt(
     transcript: Transcript;
     classification: Classification;
     metadata: TranscriptMetadata | null;
+    visualLogs?: VisualLog[];
   }
 ): string {
   const promptPath = join(process.cwd(), 'prompts', `${artifactType}.md`);
@@ -330,6 +371,18 @@ function loadArtifactPrompt(
     .map(([type, score]) => `${type}: ${score}%`)
     .join(', ');
   prompt = prompt.replace('{{CLASSIFICATION_SUMMARY}}', classificationSummary);
+
+  if (context.visualLogs && context.visualLogs.length > 0) {
+    const visualSummary = context.visualLogs[0].entries
+      .map(
+        (e: any, i: number) =>
+          `[Scene ${i}] at ${e.timestamp}s: ${e.description || 'Action on screen'}`
+      )
+      .join('\n');
+    prompt = prompt.replace('{{VISUAL_LOG}}', visualSummary);
+  } else {
+    prompt = prompt.replace('{{VISUAL_LOG}}', 'N/A');
+  }
 
   if (context.metadata) {
     prompt = prompt.replace(

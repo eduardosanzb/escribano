@@ -79,13 +79,15 @@ export async function classifySession(
       : interleaveTranscripts(session.transcripts);
 
   const classification = await intelligence.classify(
-    transcriptForClassification
+    transcriptForClassification,
+    session.visualLogs
   );
 
   return {
     id: session.id,
     recording: session.recording,
     transcripts: session.transcripts,
+    visualLogs: session.visualLogs || [],
     status: 'classified',
     classification,
     metadata: null,

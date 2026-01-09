@@ -145,6 +145,24 @@ export const artifactSchema = z.object({
 export type Artifact = z.infer<typeof artifactSchema>;
 
 // =============================================================================
+// VISUAL LOG
+// =============================================================================
+
+export const visualLogEntrySchema = z.object({
+  timestamp: z.number(),
+  imagePath: z.string(),
+  description: z.string().optional(),
+  sceneScore: z.number().optional(),
+});
+export type VisualLogEntry = z.infer<typeof visualLogEntrySchema>;
+
+export const visualLogSchema = z.object({
+  entries: z.array(visualLogEntrySchema),
+  source: z.enum(['screen', 'camera']).default('screen'),
+});
+export type VisualLog = z.infer<typeof visualLogSchema>;
+
+// =============================================================================
 // SESSION
 // =============================================================================
 
@@ -152,6 +170,7 @@ export const sessionSchema = z.object({
   id: z.string(),
   recording: recordingSchema,
   transcripts: z.array(taggedTranscriptSchema),
+  visualLogs: z.array(visualLogSchema).default([]),
   status: z.enum([
     'raw',
     'transcribed',
@@ -181,10 +200,14 @@ export interface CaptureSource {
 }
 
 export interface IntelligenceService {
-  classify(transcript: Transcript): Promise<Classification>;
+  classify(
+    transcript: Transcript,
+    visualLogs?: VisualLog[]
+  ): Promise<Classification>;
   extractMetadata(
     transcript: Transcript,
-    classification: Classification
+    classification: Classification,
+    visualLogs?: VisualLog[]
   ): Promise<TranscriptMetadata>;
   generate(
     artifactType: ArtifactType,
@@ -192,6 +215,7 @@ export interface IntelligenceService {
       transcript: Transcript;
       classification: Classification;
       metadata: TranscriptMetadata | null;
+      visualLogs?: VisualLog[];
     }
   ): Promise<string>;
 }
@@ -202,6 +226,24 @@ export interface StorageService {
   listSessions(): Promise<Session[]>;
   saveArtifact(sessionId: string, artifact: Artifact): Promise<void>;
   loadArtifacts(sessionId: string): Promise<Artifact[]>;
+}
+
+export interface VideoService {
+  extractFrames(
+    videoPath: string,
+    timestamps: number[],
+    outputDir: string
+  ): Promise<string[]>;
+  detectAndExtractScenes(
+    videoPath: string,
+    threshold: number,
+    outputDir: string
+  ): Promise<Array<{ imagePath: string; timestamp: number }>>;
+  getMetadata(videoPath: string): Promise<{
+    duration: number;
+    width: number;
+    height: number;
+  }>;
 }
 
 // =============================================================================
@@ -228,6 +270,7 @@ export const intelligenceConfigSchema = z.object({
   provider: z.enum(['ollama', 'mlx']).default('ollama'),
   endpoint: z.string().default('http://localhost:11434/api/chat'),
   model: z.string().default('qwen3:8b'),
+  generationModel: z.string().default('qwen3:32b'),
   maxRetries: z.number().default(3),
   timeout: z.number().default(500000),
   keepAlive: z.string().default('10m'),

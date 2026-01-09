@@ -297,32 +297,25 @@ System automatically classifies sessions with multi-label scores:
 
 ### Status: In Progress 🛠️
 
-#### Phase 1: CLI "Recommender" & Targeted Generation
-- [x] **Artifact Status & Recommendation Engine**
-  - Mapping: `meeting` > 50% → Summary/Action Items, `debugging` > 50% → Runbook, etc.
-- [x] **CLI Command: `list-artifacts <id>`**
-  - Show session scores and recommended artifacts (Score > 50% threshold).
-  - Display current status: e.g., `Summary: [Pending]`, `Notes: [Generated]`.
-- [x] **CLI Command: `generate-artifact <id> <type>`**
-  - Allow manual trigger for specific artifact generation.
-  - Auto-extract metadata if not present.
+#### Phase 2: Prompt Engineering (Content & Language) ✅
+- [x] **Configuration Updates**
+  - [x] Added `generationModel` support for dual-model strategy (Classifier: 8b, Generator: 32b).
+  - [x] Add `maxScreenshots` to `ArtifactConfig` (default: 10).
+- [x] **Language Constraint:** English structure/headings + Original transcript language for content.
+- [x] **Core Prompts** in `prompts/`:
+  - [x] `summary.md` (Executive Summary with Cornell/SMART principles).
+  - [x] `action-items.md` (SMART task extraction).
+  - [x] `notes.md` (Deep-dive research notes).
+- [x] **Technical/Creative Prompts** (Improved via Hegel Dialectic):
+  - [x] `runbook.md` (SRE-style troubleshooting).
+  - [x] `step-by-step.md` (Diataxis-style how-to guide).
+  - [x] `code-snippets.md` (Literate programming documentation).
+  - [x] `blog-research.md` (Qualitative research synthesis).
+  - [x] `blog-draft.md` (Narrative storytelling blog).
+- [x] **Synthetic Verification Strategy**:
+  - [x] Created `src/scripts/seed-fixtures.ts` to test prompts against diverse session types.
 
-#### Phase 2: Prompt Engineering (Content & Language)
-- [ ] **Configuration Updates**
-  - Add `maxScreenshots` to `ArtifactConfig` (default: 10).
-- [ ] **Language Constraint:** English structure/headings + Original transcript language for content.
-- [ ] **Core Prompts** in `prompts/`:
-  - `summary.md` (concise overview).
-  - `action-items.md` (extracted tasks/owners).
-  - `notes.md` (study/research notes).
-- [ ] **Technical/Creative Prompts**:
-  - `runbook.md` (troubleshooting for debugging).
-  - `step-by-step.md` (tutorial guide).
-  - `code-snippets.md` (working session code).
-  - `blog-research.md` (research synthesis).
-  - `blog-draft.md` (narrative draft).
-
-#### Phase 3: Visuals (FFmpeg Integration) - *Deferred*
+#### Phase 3: Visuals (FFmpeg Integration) - *Pending*
 - [ ] **Implement `src/adapters/ffmpeg.adapter.ts`**
   - Logic to extract high-quality frames at specific timestamps.
   - Support for `.mp4`, `.webm`, `.mov`.

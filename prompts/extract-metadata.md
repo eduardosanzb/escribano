@@ -1,6 +1,9 @@
 # Transcript Metadata Extraction
 
-Extract structured metadata from this session transcript.
+Extract structured metadata from this session.
+
+## Visual Log (Significant Screen Changes)
+{{VISUAL_LOG}}
 
 ## Session Classification
 {{CLASSIFICATION_SUMMARY}}
@@ -29,6 +32,8 @@ List all participants mentioned in the conversation with their roles if provided
 
 ### 2. Key Moments (extract always)
 Important timestamps with descriptions of significant events, decisions, or insights.
+
+**CRITICAL:** If the transcript is silent, use the **Visual Log** to identify steps. A scene change at a specific timestamp usually indicates a new action or state.
 
 **Fields:**
 - `timestamp`: Time in seconds
@@ -138,6 +143,7 @@ Output ONLY valid JSON with the following structure. If a metadata type doesn't 
 }
 ```
 
-## Transcript
+## Input Data
 
+### Transcript Segments
 {{TRANSCRIPT_SEGMENTS}}

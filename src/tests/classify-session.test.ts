@@ -46,6 +46,7 @@ const mockSession: Session = {
       transcript: mockTranscript,
     },
   ],
+  visualLogs: [],
   status: 'transcribed',
   classification: null,
   metadata: null,

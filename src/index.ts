@@ -19,6 +19,7 @@ import {
 } from './actions/generate-artifact.js';
 import { processSession } from './actions/process-session.js';
 import { createCapSource } from './adapters/cap.adapter.js';
+import { createFfmpegVideoService } from './adapters/ffmpeg.adapter.js';
 import { createIntelligenceService } from './adapters/intelligence.adapter.js';
 import { createStorageService } from './adapters/storage.adapter.js';
 import { createWhisperTranscriber } from './adapters/whisper.adapter.js';
@@ -205,9 +206,6 @@ async function executeList(limit: number): Promise<void> {
 
 async function executeTranscribeLatest(_args: ParsedArgs): Promise<void> {
   await ensureModel();
-
-  console.log('Fetching latest Cap recording...');
-
   const capSource = createCapSource();
   const recording = await capSource.getLatestRecording();
 
@@ -226,17 +224,12 @@ async function executeTranscribeById(args: ParsedArgs): Promise<void> {
   }
 
   await ensureModel();
-
-  console.log(`Searching for recording: ${args.recordingId}`);
-
   const capSource = createCapSource();
   const recordings = await capSource.listRecordings(100);
-
   const recording = recordings.find((r) => r.id === args.recordingId);
 
   if (recording === undefined) {
     console.error(`Recording not found: ${args.recordingId}`);
-    console.log('Use "escribano list" to see available recordings.');
     process.exit(1);
   }
 
@@ -244,8 +237,6 @@ async function executeTranscribeById(args: ParsedArgs): Promise<void> {
 }
 
 async function executeClassifyLatest(_args: ParsedArgs): Promise<void> {
-  console.log('Fetching latest Cap recording...');
-
   const capSource = createCapSource({});
   const recording = await capSource.getLatestRecording();
 
@@ -254,41 +245,15 @@ async function executeClassifyLatest(_args: ParsedArgs): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`\nRecording: ${recording.id}`);
-  console.log(`Captured:  ${formatDate(recording.capturedAt)}`);
-  console.log(`Duration:   ${formatDuration(recording.duration)}s`);
+  let session = await getOrCreateSession(recording);
 
-  const storage = createStorageService();
-
-  let session = await storage.loadSession(recording.id);
-
-  // TODO: Add CLI flag to skip cache and force re-transcription
-  if (!session) {
-    console.log('No existing session found, creating new session...');
-    const transcriber = createWhisperTranscriber({
-      binaryPath: 'whisper-cli',
-      model: MODEL_PATH,
-      cwd: MODELS_DIR,
-      outputFormat: 'json',
-    });
-
-    session = await processSession(recording, transcriber);
-    await storage.saveSession(session);
-  } else {
-    console.log('Using existing session (with transcript)');
+  if (session.status === 'transcribed' || !session.classification) {
+    console.log('\nClassifying session...');
+    const intelligence = createIntelligenceService({});
+    session = await classifySession(session, intelligence);
+    await saveSession(session);
   }
 
-  if (!session.transcripts || session.transcripts.length === 0) {
-    console.error('Session has no transcripts. Please transcribe it first.');
-    process.exit(1);
-  }
-
-  const intelligence = createIntelligenceService({});
-
-  console.log('\nClassifying session...');
-  session = await classifySession(session, intelligence);
-
-  await storage.saveSession(session);
   displayClassification(session);
 }
 
@@ -298,28 +263,258 @@ async function executeClassifyById(args: ParsedArgs): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Loading session: ${args.sessionId}`);
+  const storage = createStorageService();
+  let session = await storage.loadSession(args.sessionId);
 
-  const session = await loadSession(args.sessionId);
+  if (!session) {
+    // Check if it's a recording ID instead
+    const capSource = createCapSource();
+    const recordings = await capSource.listRecordings(100);
+    const recording = recordings.find((r) => r.id === args.sessionId);
+    if (recording) {
+      session = await getOrCreateSession(recording);
+    } else {
+      console.error(`Session or Recording not found: ${args.sessionId}`);
+      process.exit(1);
+    }
+  }
+
+  if (session.status === 'transcribed' || !session.classification) {
+    console.log('\nClassifying session...');
+    const intelligence = createIntelligenceService({});
+    session = await classifySession(session, intelligence);
+    await saveSession(session);
+  }
+
+  displayClassification(session);
+}
+
+async function executeExtractMetadataLatest(_args: ParsedArgs): Promise<void> {
+  const capSource = createCapSource({});
+  const recording = await capSource.getLatestRecording();
+
+  if (!recording) {
+    console.error('No recordings found.');
+    process.exit(1);
+  }
+
+  let session = await getOrCreateSession(recording);
+
+  if (!session.classification) {
+    console.log('\nSession not classified. Classifying first...');
+    const intelligence = createIntelligenceService({});
+    session = await classifySession(session, intelligence);
+    await saveSession(session);
+    displayClassification(session);
+  }
+
+  if (session.status === 'classified' || !session.metadata) {
+    console.log(`\nExtracting metadata from session: ${session.id}\n`);
+    const intelligence = createIntelligenceService({});
+    session = await extractMetadata(session, intelligence);
+    await saveSession(session);
+  }
+
+  displayMetadata(session.metadata);
+}
+
+async function executeExtractMetadataById(args: ParsedArgs): Promise<void> {
+  if (!args.sessionId) {
+    console.error('Usage: extract-metadata <session-id>');
+    process.exit(1);
+  }
+
+  const storage = createStorageService();
+  let session = await storage.loadSession(args.sessionId);
 
   if (!session) {
     console.error(`Session not found: ${args.sessionId}`);
     process.exit(1);
   }
 
-  if (!session.transcripts || session.transcripts.length === 0) {
-    console.error('Session has no transcripts. Please transcribe it first.');
+  if (!session.classification) {
+    console.log('\nSession not classified. Classifying first...');
+    const intelligence = createIntelligenceService({});
+    session = await classifySession(session, intelligence);
+    await saveSession(session);
+  }
+
+  if (session.status === 'classified' || !session.metadata) {
+    console.log(`\nExtracting metadata from session: ${session.id}\n`);
+    const intelligence = createIntelligenceService({});
+    session = await extractMetadata(session, intelligence);
+    await saveSession(session);
+  }
+
+  displayMetadata(session.metadata);
+}
+
+async function executeGenerateArtifact(args: ParsedArgs): Promise<void> {
+  if (!args.sessionId || !args.artifactType) {
+    console.error('Usage: generate-artifact <session-id> <artifact-type>');
     process.exit(1);
   }
 
+  const storage = createStorageService();
+  let session = await storage.loadSession(args.sessionId);
+
+  if (!session) {
+    console.error(`Session not found: ${args.sessionId}`);
+    process.exit(1);
+  }
+
+  if (!session.classification) {
+    console.log('\nSession not classified. Classifying first...');
+    const intelligence = createIntelligenceService({});
+    session = await classifySession(session, intelligence);
+    await saveSession(session);
+  }
+
+  if (!session.metadata) {
+    console.log('Metadata missing. Extracting metadata first...');
+    const intelligence = createIntelligenceService({});
+    session = await extractMetadata(session, intelligence);
+    await saveSession(session);
+    console.log('✓ Metadata extracted.');
+  }
+
+  console.log(`\nGenerating ${args.artifactType} for session ${session.id}...`);
+
   const intelligence = createIntelligenceService({});
+  const videoService = createFfmpegVideoService();
+  const artifact = await generateArtifact(
+    session,
+    intelligence,
+    args.artifactType as any,
+    videoService
+  );
 
-  console.log('\nClassifying session...');
-  const classifiedSession = await classifySession(session, intelligence);
+  // Update session with new artifact
+  if (!session.artifacts) {
+    session.artifacts = [];
+  }
+  const existingIndex = session.artifacts.findIndex(
+    (a) => a.type === args.artifactType
+  );
+  if (existingIndex >= 0) {
+    session.artifacts[existingIndex] = artifact;
+  } else {
+    session.artifacts.push(artifact);
+  }
 
-  await saveSession(classifiedSession);
+  await saveSession(session);
+  await storage.saveArtifact(session.id, artifact);
 
-  displayClassification(classifiedSession);
+  console.log(`\n✅ ${args.artifactType} generated successfully!`);
+  console.log('Content preview:');
+  console.log('-'.repeat(40));
+  console.log(
+    artifact.content.substring(0, 500) +
+      (artifact.content.length > 500 ? '...' : '')
+  );
+  console.log('-'.repeat(40));
+}
+
+async function executeListArtifacts(args: ParsedArgs): Promise<void> {
+  if (!args.sessionId) {
+    console.error('Session ID required');
+    process.exit(1);
+  }
+
+  const storage = createStorageService();
+  const session = await storage.loadSession(args.sessionId);
+
+  if (!session) {
+    console.error(`Session not found: ${args.sessionId}`);
+    process.exit(1);
+  }
+
+  displayClassification(session);
+
+  const recommendations = getRecommendedArtifacts(session);
+  console.log('\n💡 Recommended Artifacts:');
+  if (recommendations.length === 0) {
+    console.log('   (No specific recommendations based on scores)');
+  } else {
+    for (const type of recommendations) {
+      const exists = session.artifacts?.some((a) => a.type === type);
+      const status = exists ? '[Generated]' : '[Pending]';
+      console.log(`   • ${type.padEnd(15)} ${status}`);
+    }
+  }
+
+  console.log(
+    '\nAvailable types: summary, action-items, runbook, step-by-step, notes, code-snippets, blog-research, blog-draft'
+  );
+}
+
+/**
+ * Helper to get an existing session or process a recording to create one
+ */
+async function getOrCreateSession(recording: Recording): Promise<Session> {
+  const storage = createStorageService();
+  let session = await storage.loadSession(recording.id);
+
+  if (!session) {
+    console.log('No existing session found, processing recording...');
+    await ensureModel(); // Ensure model is there if we need to transcribe
+    const transcriber = createWhisperTranscriber({
+      binaryPath: 'whisper-cli',
+      model: MODEL_PATH,
+      cwd: MODELS_DIR,
+      outputFormat: 'json',
+    });
+    const videoService = createFfmpegVideoService();
+
+    session = await processSession(recording, transcriber, videoService);
+    await saveSession(session);
+    console.log('✓ Session created and transcribed.');
+  }
+
+  return session;
+}
+
+async function transcribeRecording(recording: Recording): Promise<void> {
+  console.log(`\nTranscribing: ${recording.id}`);
+  console.log(`Captured:  ${formatDate(recording.capturedAt)}`);
+  console.log(`Duration:   ${formatDuration(recording.duration)}s`);
+  console.log(`Audio Mic:      ${recording.audioMicPath}`);
+  console.log(`Audio System:   ${recording.audioSystemPath}`);
+  console.log('');
+  console.log('Processing transcription...');
+
+  const transcriber = createWhisperTranscriber({
+    binaryPath: 'whisper-cli',
+    model: MODEL_PATH,
+    cwd: MODELS_DIR,
+    outputFormat: 'json',
+  });
+  const videoService = createFfmpegVideoService();
+
+  const session = await processSession(recording, transcriber, videoService);
+
+  // Save the session after transcription
+  await saveSession(session);
+
+  // Display summary of transcription results
+  console.log('\n✅ Transcription complete!');
+  console.log(`Session ID: ${session.id}`);
+  console.log(`Session saved to: ~/.escribano/sessions/${session.id}.json\n`);
+
+  // Display info about each transcript
+  for (const taggedTranscript of session.transcripts) {
+    const { source, transcript } = taggedTranscript;
+    console.log(`${source.toUpperCase()} Audio Transcript:`);
+    console.log(`  - Duration: ${formatDuration(transcript.duration)}`);
+    console.log(`  - Segments: ${transcript.segments.length}`);
+    console.log(`  - Text length: ${transcript.fullText.length} characters`);
+    if (transcript.segments.length > 0) {
+      console.log(
+        `  - First segment: "${transcript.segments[0].text.substring(0, 50)}..."`
+      );
+    }
+    console.log('');
+  }
 }
 
 async function loadSession(sessionId: string): Promise<Session | null> {
@@ -405,246 +600,6 @@ function displayClassification(session: Session): void {
     console.log('   • Code snippets & commit message');
 }
 
-async function ensureModel(): Promise<void> {
-  if (!existsSync(MODELS_DIR)) {
-    await mkdir(MODELS_DIR, { recursive: true });
-  }
-
-  if (!existsSync(MODEL_PATH)) {
-    console.log('Model not found. Downloading...');
-    console.log(`From: ${MODEL_URL}`);
-    console.log(`To:   ${MODEL_PATH}`);
-    console.log('');
-
-    await downloadModel();
-
-    console.log('\nModel downloaded successfully!');
-  } else {
-    console.log('Model already downloaded.');
-  }
-}
-
-function downloadModel(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('curl', [
-      '-L',
-      '--progress-bar',
-      '-o',
-      MODEL_PATH,
-      MODEL_URL,
-    ]);
-
-    child.stdout.on('data', (data) => {
-      process.stdout.write(data);
-    });
-
-    child.stderr.on('data', (data) => {
-      process.stderr.write(data);
-    });
-
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`Download failed with code ${code}`));
-      }
-    });
-
-    child.on('error', reject);
-  });
-}
-
-async function transcribeRecording(recording: Recording): Promise<void> {
-  console.log(`\nTranscribing: ${recording.id}`);
-  console.log(`Captured:  ${formatDate(recording.capturedAt)}`);
-  console.log(`Duration:   ${formatDuration(recording.duration)}s`);
-  console.log(`Audio Mic:      ${recording.audioMicPath}`);
-  console.log(`Audio System:   ${recording.audioSystemPath}`);
-  console.log('');
-  console.log('Processing transcription...');
-
-  const transcriber = createWhisperTranscriber({
-    binaryPath: 'whisper-cli',
-    model: MODEL_PATH,
-    cwd: MODELS_DIR,
-    outputFormat: 'json',
-  });
-
-  const session = await processSession(recording, transcriber);
-
-  // Save the session after transcription
-  const storage = createStorageService();
-  await storage.saveSession(session);
-
-  // Display summary of transcription results
-  console.log('\n✅ Transcription complete!');
-  console.log(`Session ID: ${session.id}`);
-  console.log(`Session saved to: ~/.escribano/sessions/${session.id}.json\n`);
-
-  // Display info about each transcript
-  for (const taggedTranscript of session.transcripts) {
-    const { source, transcript } = taggedTranscript;
-    console.log(`${source.toUpperCase()} Audio Transcript:`);
-    console.log(`  - Duration: ${formatDuration(transcript.duration)}`);
-    console.log(`  - Segments: ${transcript.segments.length}`);
-    console.log(`  - Text length: ${transcript.fullText.length} characters`);
-    if (transcript.segments.length > 0) {
-      console.log(
-        `  - First segment: "${transcript.segments[0].text.substring(0, 50)}..."`
-      );
-    }
-    console.log('');
-  }
-}
-
-function formatDate(date: Date): string {
-  const isoDate = date.toISOString().split('T')[0];
-  const timePart = date.toTimeString().split(' ')[0];
-  return `${isoDate} ${timePart}`;
-}
-
-function formatDuration(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${minutes}m ${secs}s`;
-}
-
-async function executeExtractMetadataLatest(_args: ParsedArgs): Promise<void> {
-  console.log('Fetching latest classified session...');
-
-  const storage = createStorageService();
-  const sessions = await storage.listSessions();
-  const session = sessions.find((s) => s.classification !== null);
-
-  if (!session) {
-    console.error('No classified sessions found. Run classify-latest first.');
-    process.exit(1);
-  }
-
-  console.log(`\nExtracting metadata from session: ${session.id}\n`);
-
-  const intelligence = createIntelligenceService({});
-
-  const updated = await extractMetadata(session, intelligence);
-  await storage.saveSession(updated);
-
-  displayMetadata(updated.metadata);
-}
-
-async function executeExtractMetadataById(args: ParsedArgs): Promise<void> {
-  if (!args.sessionId) {
-    console.error('Usage: extract-metadata <session-id>');
-    process.exit(1);
-  }
-
-  console.log(`Loading session: ${args.sessionId}`);
-
-  const storage = createStorageService();
-  const session = await storage.loadSession(args.sessionId);
-
-  if (!session) {
-    console.error(`Session not found: ${args.sessionId}`);
-    process.exit(1);
-  }
-
-  const intelligence = createIntelligenceService({});
-
-  const updated = await extractMetadata(session, intelligence);
-  await storage.saveSession(updated);
-
-  displayMetadata(updated.metadata);
-}
-
-async function executeListArtifacts(args: ParsedArgs): Promise<void> {
-  if (!args.sessionId) {
-    console.error('Session ID required');
-    process.exit(1);
-  }
-
-  const storage = createStorageService();
-  const session = await storage.loadSession(args.sessionId);
-
-  if (!session) {
-    console.error(`Session not found: ${args.sessionId}`);
-    process.exit(1);
-  }
-
-  displayClassification(session);
-
-  const recommendations = getRecommendedArtifacts(session);
-  console.log('\n💡 Recommended Artifacts:');
-  if (recommendations.length === 0) {
-    console.log('   (No specific recommendations based on scores)');
-  } else {
-    for (const type of recommendations) {
-      const exists = session.artifacts?.some((a) => a.type === type);
-      const status = exists ? '[Generated]' : '[Pending]';
-      console.log(`   • ${type.padEnd(15)} ${status}`);
-    }
-  }
-
-  console.log(
-    '\nAvailable types: summary, action-items, runbook, step-by-step, notes, code-snippets, blog-research, blog-draft'
-  );
-}
-
-async function executeGenerateArtifact(args: ParsedArgs): Promise<void> {
-  if (!args.sessionId || !args.artifactType) {
-    console.error('Usage: generate-artifact <session-id> <artifact-type>');
-    process.exit(1);
-  }
-
-  const storage = createStorageService();
-  let session = await storage.loadSession(args.sessionId);
-
-  if (!session) {
-    console.error(`Session not found: ${args.sessionId}`);
-    process.exit(1);
-  }
-
-  if (!session.metadata) {
-    console.log('Metadata missing. Extracting metadata first...');
-    const intelligence = createIntelligenceService({});
-    session = await extractMetadata(session, intelligence);
-    await storage.saveSession(session);
-    console.log('✓ Metadata extracted.');
-  }
-
-  console.log(`\nGenerating ${args.artifactType} for session ${session.id}...`);
-
-  const intelligence = createIntelligenceService({});
-  const artifact = await generateArtifact(
-    session,
-    intelligence,
-    args.artifactType as any
-  );
-
-  // Update session with new artifact
-  if (!session.artifacts) {
-    session.artifacts = [];
-  }
-  const existingIndex = session.artifacts.findIndex(
-    (a) => a.type === args.artifactType
-  );
-  if (existingIndex >= 0) {
-    session.artifacts[existingIndex] = artifact;
-  } else {
-    session.artifacts.push(artifact);
-  }
-
-  await storage.saveSession(session);
-  await storage.saveArtifact(session.id, artifact);
-
-  console.log(`\n✅ ${args.artifactType} generated successfully!`);
-  console.log('Content preview:');
-  console.log('-'.repeat(40));
-  console.log(
-    artifact.content.substring(0, 500) +
-      (artifact.content.length > 500 ? '...' : '')
-  );
-  console.log('-'.repeat(40));
-}
-
 function displayMetadata(metadata: any | null): void {
   if (!metadata) {
     console.log('No metadata extracted');
@@ -711,6 +666,67 @@ function displayMetadata(metadata: any | null): void {
     }
     console.log('');
   }
+}
+
+async function ensureModel(): Promise<void> {
+  if (!existsSync(MODELS_DIR)) {
+    await mkdir(MODELS_DIR, { recursive: true });
+  }
+
+  if (!existsSync(MODEL_PATH)) {
+    console.log('Model not found. Downloading...');
+    console.log(`From: ${MODEL_URL}`);
+    console.log(`To:   ${MODEL_PATH}`);
+    console.log('');
+
+    await downloadModel();
+
+    console.log('\nModel downloaded successfully!');
+  } else {
+    // console.log('Model already downloaded.');
+  }
+}
+
+function downloadModel(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('curl', [
+      '-L',
+      '--progress-bar',
+      '-o',
+      MODEL_PATH,
+      MODEL_URL,
+    ]);
+
+    child.stdout.on('data', (data) => {
+      process.stdout.write(data);
+    });
+
+    child.stderr.on('data', (data) => {
+      process.stderr.write(data);
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Download failed with code ${code}`));
+      }
+    });
+
+    child.on('error', reject);
+  });
+}
+
+function formatDate(date: Date): string {
+  const isoDate = date.toISOString().split('T')[0];
+  const timePart = date.toTimeString().split(' ')[0];
+  return `${isoDate} ${timePart}`;
+}
+
+function formatDuration(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${minutes}m ${secs}s`;
 }
 
 function formatTime(seconds: number): string {

@@ -21,8 +21,14 @@ export async function extractMetadata(
   console.log('Extracting metadata from transcript...');
 
   const metadata = await intelligence.extractMetadata(
-    session.transcripts[0].transcript,
-    session.classification
+    session.transcripts[0]?.transcript || {
+      fullText: '',
+      segments: [],
+      duration: session.recording.duration,
+      language: 'en',
+    },
+    session.classification,
+    session.visualLogs
   );
 
   console.log('✓ Metadata extraction complete');

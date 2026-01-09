@@ -32,7 +32,8 @@ describe('Integration: CLI Pipeline', () => {
         },
       },
       videoPath: '~/test.cap/content/segments/segment-0/display.mp4',
-      audioPath: '~/test.cap/content/segments/segment-0/audio-input.ogg',
+      audioMicPath: '~/test.cap/content/segments/segment-0/audio-input.ogg',
+      audioSystemPath: null,
       duration: 0,
       capturedAt: new Date('2025-01-08T12:00:00.000Z'),
     };
@@ -74,7 +75,8 @@ describe('Integration: CLI Pipeline', () => {
         },
       },
       videoPath: '/tmp/video.mp4',
-      audioPath: '/tmp/audio.ogg',
+      audioMicPath: '/tmp/audio.ogg',
+      audioSystemPath: null,
       duration: 0,
       capturedAt: new Date('2025-01-08T14:30:00.000Z'),
     };

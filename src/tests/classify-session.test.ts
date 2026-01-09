@@ -35,11 +35,17 @@ const mockSession: Session = {
       originalPath: '/test/path',
     },
     videoPath: '/test/video.mp4',
-    audioPath: '/test/audio.mp3',
+    audioMicPath: '/test/audio.mp3',
+    audioSystemPath: null,
     duration: 10,
     capturedAt: new Date('2026-01-08'),
   },
-  transcript: mockTranscript,
+  transcripts: [
+    {
+      source: 'mic',
+      transcript: mockTranscript,
+    },
+  ],
   status: 'transcribed',
   type: null,
   classification: null,
@@ -48,7 +54,7 @@ const mockSession: Session = {
 };
 
 const mockClassificationResult = {
-  type: 'debugging',
+  type: 'debugging' as const,
   confidence: 0.95,
   entities: [
     {
@@ -68,7 +74,7 @@ const mockClassificationResult = {
   ],
 };
 
-const mockClassify = vi.fn().mockResolvedValue(mockClassificationResult);
+const mockClassify = vi.fn();
 const mockGenerate = vi
   .fn()
   .mockRejectedValue(new Error('generate() not implemented - Milestone 3'));
@@ -81,14 +87,15 @@ const mockIntelligence: IntelligenceService = {
 describe('classifySession', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mockClassify.mockResolvedValue(mockClassificationResult);
   });
 
-  it('should throw error without transcript', async () => {
-    const sessionWithoutTranscript = { ...mockSession, transcript: null };
+  it('should throw error without transcripts', async () => {
+    const sessionWithoutTranscripts = { ...mockSession, transcripts: [] };
 
     await expect(
-      classifySession(sessionWithoutTranscript, mockIntelligence)
-    ).rejects.toThrow('Cannot classify session without transcript');
+      classifySession(sessionWithoutTranscripts, mockIntelligence)
+    ).rejects.toThrow('Cannot classify session without transcripts');
   });
 
   it('should classify session and update status', async () => {
@@ -117,6 +124,40 @@ describe('classifySession', () => {
   it('should call intelligence.classify with transcript', async () => {
     await classifySession(mockSession, mockIntelligence);
 
+    expect(mockClassify).toHaveBeenCalled();
+    // Since we only have one transcript, it should be called with the original
     expect(mockClassify).toHaveBeenCalledWith(mockTranscript);
+  });
+
+  it('should interleave multiple transcripts', async () => {
+    const sessionWithMultipleTranscripts: Session = {
+      ...mockSession,
+      transcripts: [
+        { source: 'mic', transcript: mockTranscript },
+        {
+          source: 'system',
+          transcript: {
+            ...mockTranscript,
+            segments: [
+              {
+                id: 'seg-sys-0',
+                start: 3,
+                end: 4,
+                text: 'Error notification sound',
+              },
+            ],
+            fullText: 'Error notification sound',
+          },
+        },
+      ],
+    };
+
+    await classifySession(sessionWithMultipleTranscripts, mockIntelligence);
+
+    expect(mockClassify).toHaveBeenCalled();
+    const calledWith = mockClassify.mock.calls[0][0];
+    // Should have interleaved the transcripts
+    expect(calledWith.fullText).toContain('[00:00 MIC]');
+    expect(calledWith.fullText).toContain('[00:03 SYSTEM]');
   });
 });

@@ -25,14 +25,18 @@ describe('Cap Adapter - Real Recordings', () => {
 
       expect(first.id).toBeDefined();
       expect(first.source.type).toBe('cap');
-      expect(first.audioPath).toContain('audio');
+      expect(first.audioMicPath || first.audioSystemPath).toBeTruthy();
+      if (first.audioMicPath) expect(first.audioMicPath).toContain('audio');
+      if (first.audioSystemPath)
+        expect(first.audioSystemPath).toContain('audio');
       expect(first.videoPath).toContain('display.mp4');
       expect(first.duration).toBe(0);
 
       console.log('First recording:', {
         id: first.id,
         prettyName: first.source.metadata?.pretty_name,
-        audioPath: first.audioPath,
+        audioMicPath: first.audioMicPath,
+        audioSystemPath: first.audioSystemPath,
         videoPath: first.videoPath,
         duration: first.duration,
       });
@@ -49,7 +53,7 @@ describe('Cap Adapter - Real Recordings', () => {
     console.log('Latest recording:', latest);
 
     if (latest) {
-      expect(latest.audioPath).toBeDefined();
+      expect(latest.audioMicPath || latest.audioSystemPath).toBeTruthy();
       expect(latest.videoPath).toContain('display.mp4');
       expect(latest.duration).toBe(0);
       expect(latest.capturedAt).toBeInstanceOf(Date);
@@ -66,8 +70,13 @@ describe('Cap Adapter - Real Recordings', () => {
     console.log(`Found ${recordings.length} recordings with audio`);
 
     recordings.forEach((recording) => {
-      expect(recording.audioPath).not.toBeNull();
-      expect(recording.audioPath).toContain('audio');
+      expect(recording.audioMicPath || recording.audioSystemPath).toBeTruthy();
+      if (recording.audioMicPath) {
+        expect(recording.audioMicPath).toContain('audio');
+      }
+      if (recording.audioSystemPath) {
+        expect(recording.audioSystemPath).toContain('audio');
+      }
     });
   }, 30000);
 });

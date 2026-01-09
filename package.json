@@ -17,7 +17,8 @@
     "list": "tsx src/index.ts list",
     "transcribe-latest": "tsx src/index.ts transcribe-latest",
     "classify-latest": "tsx src/index.ts classify-latest",
-    "classify": "tsx src/index.ts classify"
+    "classify": "tsx src/index.ts classify",
+    "test-prompts": "tsx src/test-classification-prompts.ts"
   },
   "keywords": [],
   "author": "",

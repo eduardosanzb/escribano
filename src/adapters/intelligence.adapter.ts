@@ -53,10 +53,20 @@ async function classifyWithOllama(
   transcript: Transcript,
   config: IntelligenceConfig
 ): Promise<Classification> {
+  console.log('Classifying transcript with Ollama...');
+  const tick = setInterval(() => {
+    process.stdout.write('.');
+  }, 1000);
+
   await checkOllamaHealth();
   const prompt = loadClassifyPrompt(transcript);
   const response = await callOllama(prompt, config);
-  const parsed = JSON.parse(response);
+  clearInterval(tick);
+  console.log('\nClassification completed.');
+
+  const parsed = cleanAndValidateJson(response);
+  console.log(parsed);
+
   return classificationSchema.parse(parsed);
 }
 
@@ -68,7 +78,7 @@ function loadClassifyPrompt(transcript: Transcript): string {
     .map((seg) => `[seg-${seg.id}] [${seg.start}s - ${seg.end}s] ${seg.text}`)
     .join('\n');
 
-  prompt = prompt.replace('{{TRANSCRIPT_FULL_TEXT}}', transcript.fullText);
+  prompt = prompt.replace('{{TRANSCRIPT_ALL}}', transcript.fullText);
   prompt = prompt.replace('{{TRANSCRIPT_SEGMENTS}}', segmentsText);
 
   return prompt;
@@ -115,8 +125,10 @@ async function callOllama(
       }
 
       const data = await response.json();
-      return data.message.content;
-    } catch (error) {
+      const content = data.message.content;
+
+      return cleanAndValidateJson(content);
+    } catch (error: any) {
       lastError = error as Error;
 
       if (error instanceof Error && error.name === 'AbortError') {
@@ -138,4 +150,38 @@ async function callOllama(
   throw new Error(
     `Classification failed after ${maxRetries} retries: ${lastError?.message}`
   );
+}
+
+function cleanAndValidateJson(content: string): string {
+  let cleaned = content;
+
+  cleaned = cleaned.replace(/^```json\s*/gm, '');
+  cleaned = cleaned.replace(/^```\s*$/gm, '');
+
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+  }
+
+  try {
+    const parsed = JSON.parse(cleaned);
+
+    if (
+      typeof parsed.meeting !== 'number' ||
+      typeof parsed.debugging !== 'number' ||
+      typeof parsed.tutorial !== 'number' ||
+      typeof parsed.learning !== 'number' ||
+      typeof parsed.working !== 'number'
+    ) {
+      throw new Error('Invalid classification format');
+    }
+
+    return cleaned;
+  } catch (error: any) {
+    console.error('Failed to parse LLM response:', content);
+    throw new Error(
+      `Invalid JSON from LLM: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }

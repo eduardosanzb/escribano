@@ -18,7 +18,8 @@ export const recordingSchema = z.object({
     metadata: z.record(z.string(), z.any()).optional(),
   }),
   videoPath: z.string().nullable(),
-  audioPath: z.string(),
+  audioMicPath: z.string().nullable(),
+  audioSystemPath: z.string().nullable(),
   duration: z.number(),
   capturedAt: z.date(),
 });
@@ -50,6 +51,14 @@ export type Transcript = z.infer<typeof transcriptSchema>;
 // SESSION
 // =============================================================================
 
+// Tagged transcript to identify audio source
+export const taggedTranscriptSchema = z.object({
+  source: z.enum(['mic', 'system']),
+  transcript: transcriptSchema,
+});
+
+export type TaggedTranscript = z.infer<typeof taggedTranscriptSchema>;
+
 // =============================================================================
 // CLASSIFICATION & ENTITIES
 // =============================================================================
@@ -65,9 +74,11 @@ export const entitySchema = z.object({
 export type Entity = z.infer<typeof entitySchema>;
 
 export const classificationSchema = z.object({
-  type: z.enum(['meeting', 'debugging', 'tutorial', 'learning']),
-  confidence: z.number().min(0).max(1),
-  entities: z.array(entitySchema),
+  meeting: z.number().min(0).max(100),
+  debugging: z.number().min(0).max(100),
+  tutorial: z.number().min(0).max(100),
+  learning: z.number().min(0).max(100),
+  working: z.number().min(0).max(100),
 });
 
 export type Classification = z.infer<typeof classificationSchema>;
@@ -79,9 +90,8 @@ export type Classification = z.infer<typeof classificationSchema>;
 export const sessionSchema = z.object({
   id: z.string(),
   recording: recordingSchema,
-  transcript: transcriptSchema.nullable(),
+  transcripts: z.array(taggedTranscriptSchema),
   status: z.enum(['raw', 'transcribed', 'classified', 'complete']),
-  type: z.enum(['meeting', 'debugging', 'tutorial', 'learning']).nullable(),
   classification: classificationSchema.nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
@@ -140,6 +150,6 @@ export const intelligenceConfigSchema = z.object({
   endpoint: z.string().default('http://localhost:11434/v1/chat/completions'),
   model: z.string().default('qwen3:32b'),
   maxRetries: z.number().default(3),
-  timeout: z.number().default(30000),
+  timeout: z.number().default(500000),
 });
 export type IntelligenceConfig = z.infer<typeof intelligenceConfigSchema>;

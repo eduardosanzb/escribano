@@ -1,60 +1,41 @@
-# Session Classification and Entity Extraction
+# Session Classification
 
-You are an expert at analyzing work session transcripts. Your task is to:
+Analyze this transcript and rate how much it matches each session type (0-100).
 
-1. **Classify session type** into one of four categories:
-   - `meeting` - Team discussions, client workshops, 1:1s, decision-making
-   - `debugging` - Fixing issues, troubleshooting, pair programming, error analysis
-   - `tutorial` - Teaching, explaining concepts, recording how-to guides
-   - `learning` - Exploring new technologies, researching, taking notes
+## Session Types with Examples:
 
-2. **Extract entities** mentioned in transcript with relevant types:
-   - `person` - People names, participants
-   - `date` - Dates, times, deadlines mentioned
-   - `decision` - Decisions made, conclusions reached
-   - `actionItem` - TODOs, follow-ups, tasks assigned
-   - `error` - Errors, exceptions, bugs mentioned
-   - `command` - Shell commands, terminal commands
-   - `file` - File paths, filenames, code files
-   - `technology` - Technologies, frameworks, libraries mentioned
-   - `tool` - Tools, software used
-   - `concept` - Concepts, ideas, topics discussed
-   - `resource` - Links, URLs, documentation references
-   - `question` - Questions raised, inquiries
+**meeting** - Conversations, interviews, discussions between people
+- Examples: Team standup, client call, 1-on-1, interview, planning session
+- Indicators: Multiple speakers, Q&A format, agenda items, decisions made
 
-3. **Assign confidence** (0.0-1.0) in your classification based on:
-   - How clearly the transcript matches one session type
-   - Strength of indicators (explicit statements vs implicit)
-   - Uniqueness (is it clearly one type vs ambiguous)
+**debugging** - Fixing issues, troubleshooting errors, resolving problems
+- Examples: Finding why code crashes, fixing failing tests, resolving performance issues
+- Indicators: Error messages, stack traces, "why is this not working", investigation steps
 
-## Important Notes:
-- Extract ALL entities of ALL relevant types - be comprehensive
-- Link each entity to transcript segment ID and timestamp where it was mentioned
-- Timestamp should be the segment's start time in seconds
-- If an entity type isn't relevant to this session type, skip it
-- Be precise with entity values - use exact text from transcript where possible
-- Segment IDs follow the pattern: `seg-{number}` where number matches the transcript segment order (0, 1, 2, ...)
+**tutorial** - Teaching, explaining, demonstrating how to do something
+- Examples: "How to use Git", "Setting up Docker", code walkthrough for learning
+- Indicators: Step-by-step instructions, "first do this, then...", explanations of concepts
+
+**learning** - Researching, studying, exploring new concepts
+- Examples: Reading documentation, exploring a new framework, studying code examples
+- Indicators: "Let me understand...", researching options, comparing approaches
+
+**working** - Active development, coding, creating, building (not debugging)
+- Examples: Writing new features, refactoring code, setting up project, writing tests
+- Indicators: Creating files, writing functions, "let's implement...", productive coding
 
 ## Output Format (JSON only):
 
+```json
 {
-  "type": "meeting|debugging|tutorial|learning",
-  "confidence": 0.0-1.0,
-  "entities": [
-    {
-      "id": "entity-{unique-number}",
-      "type": "entity-type-from-list-above",
-      "value": "exact text from transcript",
-      "segmentId": "seg-{segment-number}",
-      "timestamp": 0.0
-    }
-  ]
+  "meeting": 0-100,
+  "debugging": 0-100,
+  "tutorial": 0-100,
+  "learning": 0-100,
+  "working": 0-100
 }
+```
 
 ## Transcript to Analyze:
 
-{{TRANSCRIPT_FULL_TEXT}}
-
-## Transcript Segments (with IDs and timestamps):
-
-{{TRANSCRIPT_SEGMENTS}}
+{{TRANSCRIPT_ALL}}

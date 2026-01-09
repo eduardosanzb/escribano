@@ -16,6 +16,7 @@ import { createCapSource } from './adapters/cap.adapter.js';
 import { createIntelligenceService } from './adapters/intelligence.adapter.js';
 import { createStorageService } from './adapters/storage.adapter.js';
 import { createWhisperTranscriber } from './adapters/whisper.adapter.js';
+import { inspect } from 'node:util';
 
 const MODELS_DIR = path.join(os.homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
@@ -133,7 +134,8 @@ async function executeList(limit: number): Promise<void> {
     console.log('');
     console.log(`  Captured:  ${formatDate(recording.capturedAt)}`);
     console.log(`  Duration:   ${formatDuration(recording.duration)}`);
-    console.log(`  Audio:      ${recording.audioPath}`);
+    console.log(`  Mic Audio:      ${recording.audioMicPath}`);
+    console.log(`  System Audio:   ${recording.audioSystemPath}`);
     if (recording.videoPath) {
       console.log(`  Video:      ${recording.videoPath}`);
     }
@@ -215,8 +217,8 @@ async function executeClassifyLatest(_args: ParsedArgs): Promise<void> {
     console.log('Using existing session (with transcript)');
   }
 
-  if (!session.transcript) {
-    console.error('Session has no transcript. Please transcribe it first.');
+  if (!session.transcripts || session.transcripts.length === 0) {
+    console.error('Session has no transcripts. Please transcribe it first.');
     process.exit(1);
   }
 
@@ -233,6 +235,8 @@ async function executeClassifyLatest(_args: ParsedArgs): Promise<void> {
 
   await storage.saveSession(session);
 
+  console.log(inspect(session, { depth: null, colors: true }));
+  console.log('------------------');
   displayClassification(session);
 }
 
@@ -251,8 +255,8 @@ async function executeClassifyById(args: ParsedArgs): Promise<void> {
     process.exit(1);
   }
 
-  if (!session.transcript) {
-    console.error('Session has no transcript. Please transcribe it first.');
+  if (!session.transcripts || session.transcripts.length === 0) {
+    console.error('Session has no transcripts. Please transcribe it first.');
     process.exit(1);
   }
 
@@ -299,21 +303,138 @@ function displayClassification(session: Session): void {
     return;
   }
 
+  const RELEVANCE_THRESHOLD = 25;
+
   console.log(`
-╔═══════════════════════════════════════╗
+╔═════════════════════════════╗
 ║     Session Classification Results            ║
-╚═══════════════════════════════════════╝
+╚═════════════════════════════════════════╝
+ 
+  📝 Session ID: ${session.id}`);
 
-📝 Session ID: ${session.id}
-🏷️  Type: ${classification.type.toUpperCase()}
-📊 Confidence: ${(classification.confidence * 100).toFixed(1)}%
-📋 Entities: ${classification.entities.length}
-  `);
+  const scores = Object.entries(classification)
+    .sort(([,a], [,b]) => b - a)
+    .filter(([,score]) => score >= RELEVANCE_THRESHOLD);
 
-  if (classification.entities.length > 0) {
-    const grouped = groupEntitiesByType(classification.entities);
-    console.log(`\n${formatEntitiesTable(grouped)}`);
+  if (scores.length === 0) {
+    console.log('  ⚠️  No clear session type detected (all scores < 25%)');
+    return;
   }
+
+  console.log('\n📊 Session Type Analysis:');
+  scores.forEach(([type, score], index) => {
+    const bar = '█'.repeat(Math.floor(score / 5));
+    const icon = index === 0 ? '🎯' : '📌';
+    console.log(`   ${icon} ${type.padEnd(10)} ${bar} ${score}%`);
+  });
+
+  if (scores.length > 1) {
+    const primaryType = scores[0][0];
+    const primaryScore = scores[0][1];
+    const secondary = scores.slice(1).filter(([, s]) => s >= RELEVANCE_THRESHOLD);
+
+    console.log(`\n🏷️  Primary Type: ${primaryType.toUpperCase()} (${primaryScore}%)`);
+
+    if (secondary.length > 0) {
+      console.log(`  📌 Secondary: ${secondary.map(([t, s]) => `${t} (${s}%)`).join(', ')}`);
+    }
+  }
+
+  console.log('\n💡 Suggested Artifacts:');
+  if (classification.meeting > 50) console.log('   • Meeting summary & action items');
+  if (classification.debugging > 50) console.log('   • Debugging runbook & error screenshots');
+  if (classification.tutorial > 50) console.log('   • Step-by-step guide & screenshots');
+  if (classification.learning > 50) console.log('   • Study notes & resource links');
+  if (classification.working > 50) console.log('   • Code snippets & commit message');
+}
+
+  const RELEVANCE_THRESHOLD = 25;
+
+  console.log(`
+╔═════════════════════════════════╗
+║     Session Classification Results            ║
+╚═══════════════════════════════════╝
+ 
+  📝 Session ID: ${session.id}`);
+
+  const scores = Object.entries(classification)
+    .sort(([,a], [,b]) => b - a)
+    .filter(([,score]) => score >= RELEVANCE_THRESHOLD);
+
+  if (scores.length === 0) {
+    console.log('  ⚠️  No clear session type detected (all scores < 25%)');
+    return;
+  }
+
+  console.log('\n📊 Session Type Analysis:');
+  scores.forEach(([type, score], index) => {
+    const bar = '█'.repeat(Math.floor(score / 5));
+    const icon = index === 0 ? '🎯' : '📌';
+    console.log(`   ${icon} ${type.padEnd(10)} ${bar} ${score}%`);
+  });
+
+  if (scores.length > 1) {
+    const primaryType = scores[0][0];
+    const primaryScore = scores[0][1];
+    const secondary = scores.slice(1).filter(([,s]) => s >= RELEVANCE_THRESHOLD);
+
+    console.log(`\n🏷️  Primary Type: ${primaryType.toUpperCase()} (${primaryScore}%)`);
+
+    if (secondary.length > 0) {
+      console.log(`📌 Secondary: ${secondary.map(([t, s]) => `${t} (${s}%)`).join(', ')}`);
+    }
+  }
+
+  console.log('\n💡 Suggested Artifacts:');
+  if (classification.meeting > 50) console.log('   • Meeting summary & action items');
+  if (classification.debugging > 50) console.log('   • Debugging runbook & error screenshots');
+  if (classification.tutorial > 50) console.log('   • Step-by-step guide & screenshots');
+  if (classification.learning > 50) console.log('   • Study notes & resource links');
+  if (classification.working > 50) console.log('   • Code snippets & commit message');
+}
+
+  console.log(`
+╔═════════════════════════╗
+║     Session Classification Results            ║
+╚═════════════════════════════════╝
+ 
+  📝 Session ID: ${session.id}`);
+
+  const scores = Object.entries(classification)
+    .sort(([,a], [,b]) => b - a)
+    .filter(([,score]) => score >= RELEVANCE_THRESHOLD);
+
+  if (scores.length === 0) {
+    console.log('  ⚠️  No clear session type detected (all scores < 25%)');
+    return;
+  }
+
+  console.log('\n📊 Session Type Analysis:');
+  scores.forEach(([type, score], index) => {
+    const bar = '█'.repeat(Math.floor(score / 5));
+    const icon = index === 0 ? '🎯' : '📌';
+    console.log(`  ${icon} ${type.padEnd(10)} ${bar} ${score}%`);
+  });
+
+  if (scores.length > 1) {
+    const primaryType = scores[0][0];
+    const primaryScore = scores[0][1];
+    const secondary = scores.slice(1).filter(([, s]) => s >= RELEVANCE_THRESHOLD);
+
+    console.log(`\n🏷️  Primary Type: ${primaryType.toUpperCase()} (${primaryScore}%)`);
+
+    if (secondary.length > 0) {
+      console.log(`📌 Secondary: ${secondary.map(([t, s]) => `${t} (${s}%)`).join(', ')}`);
+    }
+  }
+
+  console.log('\n💡 Suggested Artifacts:');
+  if (classification.meeting > 50) console.log('  • Meeting summary & action items');
+  if (classification.debugging > 50) console.log('  • Debugging runbook & error screenshots');
+  if (classification.tutorial > 50) console.log('  • Step-by-step guide & screenshots');
+  if (classification.learning > 50) console.log('  • Study notes & resource links');
+  if (classification.working > 50) console.log('  • Code snippets & commit message');
+}
 }
 
 function groupEntitiesByType(entities: Entity[]): Record<string, Entity[]> {
@@ -407,7 +528,8 @@ async function transcribeRecording(recording: Recording): Promise<void> {
   console.log(`\nTranscribing: ${recording.id}`);
   console.log(`Captured:  ${formatDate(recording.capturedAt)}`);
   console.log(`Duration:   ${formatDuration(recording.duration)}s`);
-  console.log(`Audio:      ${recording.audioPath}`);
+  console.log(`Audio Mic:      ${recording.audioMicPath}`);
+  console.log(`Audio System:   ${recording.audioSystemPath}`);
   console.log('');
   console.log('Processing transcription...');
 
@@ -420,7 +542,29 @@ async function transcribeRecording(recording: Recording): Promise<void> {
 
   const session = await processSession(recording, transcriber);
 
-  console.log(`\n${JSON.stringify(session, null, 2)}`);
+  // Save the session after transcription
+  const storage = createStorageService();
+  await storage.saveSession(session);
+
+  // Display summary of transcription results
+  console.log('\n✅ Transcription complete!');
+  console.log(`Session ID: ${session.id}`);
+  console.log(`Session saved to: ~/.escribano/sessions/${session.id}.json\n`);
+
+  // Display info about each transcript
+  for (const taggedTranscript of session.transcripts) {
+    const { source, transcript } = taggedTranscript;
+    console.log(`${source.toUpperCase()} Audio Transcript:`);
+    console.log(`  - Duration: ${formatDuration(transcript.duration)}`);
+    console.log(`  - Segments: ${transcript.segments.length}`);
+    console.log(`  - Text length: ${transcript.fullText.length} characters`);
+    if (transcript.segments.length > 0) {
+      console.log(
+        `  - First segment: "${transcript.segments[0].text.substring(0, 50)}..."`
+      );
+    }
+    console.log('');
+  }
 }
 
 function formatDate(date: Date): string {

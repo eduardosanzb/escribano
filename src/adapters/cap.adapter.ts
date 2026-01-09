@@ -35,16 +35,23 @@ async function parseCapRecording(
       ? join(capDirPath, firstSegment.display.path)
       : null;
 
-    const audioPath = firstSegment.mic?.path
+    // we fked up cuz we have mic but also system_audio.ogg
+    const micAudio = firstSegment.mic?.path
       ? join(capDirPath, firstSegment.mic.path)
       : null;
 
-    if (!audioPath) {
-      console.log(`Skipping ${capDirPath}: no audio path in segments[0].mic`);
+    const systemAudio = firstSegment.system_audio?.path
+      ? join(capDirPath, firstSegment.system_audio.path)
+      : null;
+
+    const audioToStat = micAudio || systemAudio;
+
+    if (!audioToStat) {
+      console.log(`Skipping ${capDirPath}: none audio track found`);
       return null;
     }
 
-    const stats = await stat(audioPath);
+    const stats = await stat(audioToStat);
     const capturedAt = stats.mtime;
 
     const recordingId = capDirPath.split('/').pop() || 'unknown';
@@ -57,7 +64,8 @@ async function parseCapRecording(
         metadata: meta,
       },
       videoPath,
-      audioPath,
+      audioMicPath: micAudio ? micAudio : null,
+      audioSystemPath: systemAudio ? systemAudio : null,
       duration: 0,
       capturedAt,
     };
@@ -103,13 +111,22 @@ export function createCapSource(
         (entry) => entry.isDirectory() && entry.name.endsWith('.cap')
       );
 
-      const recordings: (Recording | null)[] = await Promise.all(
+      const recordings = await Promise.allSettled(
         capDirs.map(async (dir) =>
           parseCapRecording(join(recordingsPath, dir.name))
         )
       );
+      // logging errors
+      console.log(
+        recordings
+          .filter((p) => p.status === 'rejected')
+          .map((p) => (p as PromiseRejectedResult).reason + '\n')
+      );
+
       return recordings
-        .filter((r): r is Recording => r !== null)
+        .filter((p) => p.status === 'fulfilled')
+        .map((x) => x.value)
+        .filter((r) => r !== null)
         .sort((a, b) => b.capturedAt.getTime() - a.capturedAt.getTime())
         .slice(0, limit);
     } catch (error) {

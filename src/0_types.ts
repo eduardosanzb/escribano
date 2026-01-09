@@ -60,18 +60,8 @@ export const taggedTranscriptSchema = z.object({
 export type TaggedTranscript = z.infer<typeof taggedTranscriptSchema>;
 
 // =============================================================================
-// CLASSIFICATION & ENTITIES
+// CLASSIFICATION
 // =============================================================================
-
-export const entitySchema = z.object({
-  id: z.string(),
-  type: z.string(),
-  value: z.string(),
-  segmentId: z.string(),
-  timestamp: z.number(),
-});
-
-export type Entity = z.infer<typeof entitySchema>;
 
 export const classificationSchema = z.object({
   meeting: z.number().min(0).max(100),
@@ -148,7 +138,7 @@ export type WhisperConfig = z.infer<typeof whisperConfigSchema>;
 export const intelligenceConfigSchema = z.object({
   provider: z.enum(['ollama', 'mlx']).default('ollama'),
   endpoint: z.string().default('http://localhost:11434/v1/chat/completions'),
-  model: z.string().default('qwen3:32b'),
+  model: z.string().default('llama3.1:8b'),
   maxRetries: z.number().default(3),
   timeout: z.number().default(500000),
 });

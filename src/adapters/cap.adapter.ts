@@ -90,19 +90,6 @@ export function createCapSource(
 
   const innerList = async (limit = 10): Promise<Recording[]> => {
     try {
-      // TODO: this is kinda wrong becasue inside the directory we have the
-      // recordings
-      // └── Kuycon G32P (Display) 2026-01-08 12.18 AM.cap
-      //     ├── contentjj
-      //     │   ├── cursors
-      //     │   └── segments
-      //     ├── output
-      //     │   └── result.mp4
-      //     ├── project-config.json
-      //     ├── recording-logs.log
-      //     ├── recording-meta.json
-      //     └── screenshots
-      //         └── display.jpg
       //
       // 7 directories, 5 files
       const entries = await readdir(recordingsPath, { withFileTypes: true });

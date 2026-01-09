@@ -50,24 +50,11 @@ describe('IntelligenceService', () => {
     const mockResponse = JSON.stringify({
       message: {
         content: JSON.stringify({
-          type: 'debugging',
-          confidence: 0.95,
-          entities: [
-            {
-              id: 'entity-1',
-              type: 'error',
-              value: 'authentication bug',
-              segmentId: 'seg-0',
-              timestamp: 0,
-            },
-            {
-              id: 'entity-2',
-              type: 'technology',
-              value: 'JWT',
-              segmentId: 'seg-1',
-              timestamp: 5,
-            },
-          ],
+          meeting: 10,
+          debugging: 90,
+          tutorial: 15,
+          learning: 20,
+          working: 5,
         }),
       },
     });
@@ -80,11 +67,11 @@ describe('IntelligenceService', () => {
     const service = createIntelligenceService(mockConfig);
     const result = await service.classify(mockTranscript);
 
-    expect(result.type).toBe('debugging');
-    expect(result.confidence).toBe(0.95);
-    expect(result.entities).toHaveLength(2);
-    expect(result.entities[0].type).toBe('error');
-    expect(result.entities[0].segmentId).toBe('seg-0');
+    expect(result.debugging).toBe(90);
+    expect(result.meeting).toBe(10);
+    expect(result.tutorial).toBe(15);
+    expect(result.learning).toBe(20);
+    expect(result.working).toBe(5);
   });
 
   it('should throw on generate() - not implemented', async () => {
@@ -107,20 +94,22 @@ describe('IntelligenceService', () => {
         json: async () => ({
           message: {
             content: JSON.stringify({
-              type: 'meeting',
-              confidence: 0.8,
-              entities: [],
+              meeting: 80,
+              debugging: 10,
+              tutorial: 5,
+              learning: 15,
+              working: 5,
             }),
           },
         }),
-      } as unknown as typeof fetch;
+      };
     });
 
     const service = createIntelligenceService(mockConfig);
     const result = await service.classify(mockTranscript);
 
     expect(attempts).toBe(3);
-    expect(result.type).toBe('meeting');
+    expect(result.meeting).toBe(80);
   });
 
   it('should handle fetch errors correctly', async () => {

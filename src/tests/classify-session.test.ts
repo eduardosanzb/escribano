@@ -47,31 +47,17 @@ const mockSession: Session = {
     },
   ],
   status: 'transcribed',
-  type: null,
   classification: null,
   createdAt: new Date('2026-01-08'),
   updatedAt: new Date('2026-01-08'),
 };
 
 const mockClassificationResult = {
-  type: 'debugging' as const,
-  confidence: 0.95,
-  entities: [
-    {
-      id: 'entity-1',
-      type: 'error',
-      value: 'authentication bug',
-      segmentId: 'seg-0',
-      timestamp: 0,
-    },
-    {
-      id: 'entity-2',
-      type: 'technology',
-      value: 'JWT',
-      segmentId: 'seg-1',
-      timestamp: 5,
-    },
-  ],
+  meeting: 10,
+  debugging: 90,
+  tutorial: 15,
+  learning: 20,
+  working: 5,
 };
 
 const mockClassify = vi.fn();
@@ -102,12 +88,10 @@ describe('classifySession', () => {
     const result = await classifySession(mockSession, mockIntelligence);
 
     expect(result.status).toBe('classified');
-    expect(result.type).toBe('debugging');
     expect(result.classification).toBeDefined();
     if (result.classification) {
-      expect(result.classification.type).toBe('debugging');
-      expect(result.classification.confidence).toBe(0.95);
-      expect(result.classification.entities).toHaveLength(2);
+      expect(result.classification.debugging).toBe(90);
+      expect(result.classification.meeting).toBe(10);
     }
   });
 

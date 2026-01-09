@@ -8,9 +8,9 @@
 import type {
   IntelligenceService,
   Session,
+  TaggedTranscript,
   Transcript,
   TranscriptSegment,
-  TaggedTranscript,
 } from '../0_types.js';
 
 /**

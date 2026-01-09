@@ -6,12 +6,11 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  type Classification,
-  classificationSchema,
-  type IntelligenceConfig,
-  type IntelligenceService,
-  type Transcript,
+import type {
+  Classification,
+  IntelligenceConfig,
+  IntelligenceService,
+  Transcript,
 } from '../0_types.js';
 
 export function createIntelligenceService(
@@ -60,14 +59,13 @@ async function classifyWithOllama(
 
   await checkOllamaHealth();
   const prompt = loadClassifyPrompt(transcript);
-  const response = await callOllama(prompt, config);
+  const classification = await callOllama(prompt, config);
   clearInterval(tick);
   console.log('\nClassification completed.');
 
-  const parsed = cleanAndValidateJson(response);
-  console.log(parsed);
+  console.log(classification);
 
-  return classificationSchema.parse(parsed);
+  return classification;
 }
 
 function loadClassifyPrompt(transcript: Transcript): string {
@@ -87,7 +85,7 @@ function loadClassifyPrompt(transcript: Transcript): string {
 async function callOllama(
   prompt: string,
   config: IntelligenceConfig
-): Promise<string> {
+): Promise<Classification> {
   const { endpoint, model, maxRetries, timeout } = config;
 
   let lastError: Error | null = null;
@@ -107,6 +105,11 @@ async function callOllama(
           messages: [
             {
               role: 'system',
+              content:
+                'You are a JSON-only classifier. Output ONLY valid JSON, no other text.',
+            },
+            {
+              role: 'user',
               content: prompt,
             },
           ],
@@ -152,36 +155,21 @@ async function callOllama(
   );
 }
 
-function cleanAndValidateJson(content: string): string {
-  let cleaned = content;
-
-  cleaned = cleaned.replace(/^```json\s*/gm, '');
-  cleaned = cleaned.replace(/^```\s*$/gm, '');
-
-  const firstBrace = cleaned.indexOf('{');
-  const lastBrace = cleaned.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace !== -1) {
-    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+function cleanAndValidateJson(content: string): Classification {
+  // Extract JSON object from response
+  const jsonMatch = content.match(/\{[^}]*\}/);
+  if (!jsonMatch) {
+    throw new Error('No JSON object found in response');
   }
 
-  try {
-    const parsed = JSON.parse(cleaned);
+  const parsed = JSON.parse(jsonMatch[0]);
 
-    if (
-      typeof parsed.meeting !== 'number' ||
-      typeof parsed.debugging !== 'number' ||
-      typeof parsed.tutorial !== 'number' ||
-      typeof parsed.learning !== 'number' ||
-      typeof parsed.working !== 'number'
-    ) {
-      throw new Error('Invalid classification format');
-    }
-
-    return cleaned;
-  } catch (error: any) {
-    console.error('Failed to parse LLM response:', content);
-    throw new Error(
-      `Invalid JSON from LLM: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
+  // Handle both percentage formats (0-1 and 0-100)
+  return {
+    meeting: parsed.meeting * (parsed.meeting <= 1 ? 100 : 1) || 0,
+    debugging: parsed.debugging * (parsed.debugging <= 1 ? 100 : 1) || 0,
+    tutorial: parsed.tutorial * (parsed.tutorial <= 1 ? 100 : 1) || 0,
+    learning: parsed.learning * (parsed.learning <= 1 ? 100 : 1) || 0,
+    working: parsed.working * (parsed.working <= 1 ? 100 : 1) || 0,
+  };
 }

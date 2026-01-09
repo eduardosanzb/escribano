@@ -9,8 +9,8 @@ import type {
   Recording,
   Session,
   TaggedTranscript,
-  TranscriptionService,
   Transcript,
+  TranscriptionService,
 } from '../0_types.js';
 
 /**
@@ -105,7 +105,6 @@ export async function processSession(
     recording,
     transcripts,
     status: 'transcribed',
-    type: null,
     classification: null,
     createdAt: new Date(),
     updatedAt: new Date(),

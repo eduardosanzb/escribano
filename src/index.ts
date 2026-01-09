@@ -9,14 +9,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { Entity, Recording, Session } from './0_types.js';
+import { inspect } from 'node:util';
+import type { Recording, Session } from './0_types.js';
 import { classifySession } from './actions/classify-session.js';
 import { processSession } from './actions/process-session.js';
 import { createCapSource } from './adapters/cap.adapter.js';
 import { createIntelligenceService } from './adapters/intelligence.adapter.js';
 import { createStorageService } from './adapters/storage.adapter.js';
 import { createWhisperTranscriber } from './adapters/whisper.adapter.js';
-import { inspect } from 'node:util';
 
 const MODELS_DIR = path.join(os.homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
@@ -234,9 +234,6 @@ async function executeClassifyLatest(_args: ParsedArgs): Promise<void> {
   session = await classifySession(session, intelligence);
 
   await storage.saveSession(session);
-
-  console.log(inspect(session, { depth: null, colors: true }));
-  console.log('------------------');
   displayClassification(session);
 }
 
@@ -309,12 +306,12 @@ function displayClassification(session: Session): void {
 ╔═════════════════════════════╗
 ║     Session Classification Results            ║
 ╚═════════════════════════════════════════╝
- 
+
   📝 Session ID: ${session.id}`);
 
   const scores = Object.entries(classification)
-    .sort(([,a], [,b]) => b - a)
-    .filter(([,score]) => score >= RELEVANCE_THRESHOLD);
+    .sort(([, a], [, b]) => b - a)
+    .filter(([, score]) => score >= RELEVANCE_THRESHOLD);
 
   if (scores.length === 0) {
     console.log('  ⚠️  No clear session type detected (all scores < 25%)');
@@ -331,148 +328,32 @@ function displayClassification(session: Session): void {
   if (scores.length > 1) {
     const primaryType = scores[0][0];
     const primaryScore = scores[0][1];
-    const secondary = scores.slice(1).filter(([, s]) => s >= RELEVANCE_THRESHOLD);
+    const secondary = scores
+      .slice(1)
+      .filter(([, s]) => s >= RELEVANCE_THRESHOLD);
 
-    console.log(`\n🏷️  Primary Type: ${primaryType.toUpperCase()} (${primaryScore}%)`);
+    console.log(
+      `\n🏷️  Primary Type: ${primaryType.toUpperCase()} (${primaryScore}%)`
+    );
 
     if (secondary.length > 0) {
-      console.log(`  📌 Secondary: ${secondary.map(([t, s]) => `${t} (${s}%)`).join(', ')}`);
+      console.log(
+        `  📌 Secondary: ${secondary.map(([t, s]) => `${t} (${s}%)`).join(', ')}`
+      );
     }
   }
 
   console.log('\n💡 Suggested Artifacts:');
-  if (classification.meeting > 50) console.log('   • Meeting summary & action items');
-  if (classification.debugging > 50) console.log('   • Debugging runbook & error screenshots');
-  if (classification.tutorial > 50) console.log('   • Step-by-step guide & screenshots');
-  if (classification.learning > 50) console.log('   • Study notes & resource links');
-  if (classification.working > 50) console.log('   • Code snippets & commit message');
-}
-
-  const RELEVANCE_THRESHOLD = 25;
-
-  console.log(`
-╔═════════════════════════════════╗
-║     Session Classification Results            ║
-╚═══════════════════════════════════╝
- 
-  📝 Session ID: ${session.id}`);
-
-  const scores = Object.entries(classification)
-    .sort(([,a], [,b]) => b - a)
-    .filter(([,score]) => score >= RELEVANCE_THRESHOLD);
-
-  if (scores.length === 0) {
-    console.log('  ⚠️  No clear session type detected (all scores < 25%)');
-    return;
-  }
-
-  console.log('\n📊 Session Type Analysis:');
-  scores.forEach(([type, score], index) => {
-    const bar = '█'.repeat(Math.floor(score / 5));
-    const icon = index === 0 ? '🎯' : '📌';
-    console.log(`   ${icon} ${type.padEnd(10)} ${bar} ${score}%`);
-  });
-
-  if (scores.length > 1) {
-    const primaryType = scores[0][0];
-    const primaryScore = scores[0][1];
-    const secondary = scores.slice(1).filter(([,s]) => s >= RELEVANCE_THRESHOLD);
-
-    console.log(`\n🏷️  Primary Type: ${primaryType.toUpperCase()} (${primaryScore}%)`);
-
-    if (secondary.length > 0) {
-      console.log(`📌 Secondary: ${secondary.map(([t, s]) => `${t} (${s}%)`).join(', ')}`);
-    }
-  }
-
-  console.log('\n💡 Suggested Artifacts:');
-  if (classification.meeting > 50) console.log('   • Meeting summary & action items');
-  if (classification.debugging > 50) console.log('   • Debugging runbook & error screenshots');
-  if (classification.tutorial > 50) console.log('   • Step-by-step guide & screenshots');
-  if (classification.learning > 50) console.log('   • Study notes & resource links');
-  if (classification.working > 50) console.log('   • Code snippets & commit message');
-}
-
-  console.log(`
-╔═════════════════════════╗
-║     Session Classification Results            ║
-╚═════════════════════════════════╝
- 
-  📝 Session ID: ${session.id}`);
-
-  const scores = Object.entries(classification)
-    .sort(([,a], [,b]) => b - a)
-    .filter(([,score]) => score >= RELEVANCE_THRESHOLD);
-
-  if (scores.length === 0) {
-    console.log('  ⚠️  No clear session type detected (all scores < 25%)');
-    return;
-  }
-
-  console.log('\n📊 Session Type Analysis:');
-  scores.forEach(([type, score], index) => {
-    const bar = '█'.repeat(Math.floor(score / 5));
-    const icon = index === 0 ? '🎯' : '📌';
-    console.log(`  ${icon} ${type.padEnd(10)} ${bar} ${score}%`);
-  });
-
-  if (scores.length > 1) {
-    const primaryType = scores[0][0];
-    const primaryScore = scores[0][1];
-    const secondary = scores.slice(1).filter(([, s]) => s >= RELEVANCE_THRESHOLD);
-
-    console.log(`\n🏷️  Primary Type: ${primaryType.toUpperCase()} (${primaryScore}%)`);
-
-    if (secondary.length > 0) {
-      console.log(`📌 Secondary: ${secondary.map(([t, s]) => `${t} (${s}%)`).join(', ')}`);
-    }
-  }
-
-  console.log('\n💡 Suggested Artifacts:');
-  if (classification.meeting > 50) console.log('  • Meeting summary & action items');
-  if (classification.debugging > 50) console.log('  • Debugging runbook & error screenshots');
-  if (classification.tutorial > 50) console.log('  • Step-by-step guide & screenshots');
-  if (classification.learning > 50) console.log('  • Study notes & resource links');
-  if (classification.working > 50) console.log('  • Code snippets & commit message');
-}
-}
-
-function groupEntitiesByType(entities: Entity[]): Record<string, Entity[]> {
-  const grouped: Record<string, Entity[]> = {};
-
-  for (const entity of entities) {
-    if (!grouped[entity.type]) {
-      grouped[entity.type] = [];
-    }
-    grouped[entity.type].push(entity);
-  }
-
-  return grouped;
-}
-
-function formatEntitiesTable(grouped: Record<string, Entity[]>): string {
-  let output = '';
-
-  for (const [type, entities] of Object.entries(grouped)) {
-    output += `📌 ${type.toUpperCase()} (${entities.length}):\n`;
-
-    for (let i = 0; i < entities.length; i++) {
-      const entity = entities[i];
-      const timestamp = formatTimestamp(entity.timestamp);
-      output += `  ${i + 1}. ${entity.value}\n`;
-      output += `     └─ ${entity.segmentId} @ ${timestamp}\n`;
-    }
-
-    output += '\n';
-  }
-
-  return output;
-}
-
-function formatTimestamp(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${minutes}m ${secs}s`;
+  if (classification.meeting > 50)
+    console.log('   • Meeting summary & action items');
+  if (classification.debugging > 50)
+    console.log('   • Debugging runbook & error screenshots');
+  if (classification.tutorial > 50)
+    console.log('   • Step-by-step guide & screenshots');
+  if (classification.learning > 50)
+    console.log('   • Study notes & resource links');
+  if (classification.working > 50)
+    console.log('   • Code snippets & commit message');
 }
 
 async function ensureModel(): Promise<void> {

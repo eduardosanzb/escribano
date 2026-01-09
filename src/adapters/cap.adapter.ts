@@ -1,176 +1,130 @@
-/**
- * Cap Adapter - Fixed
- *
- * Reads recordings from Cap (https://cap.so).
- */
-
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
 import { homedir } from 'node:os';
-import type { CaptureSource, Recording, CapConfig } from '../0_types';
+import { join } from 'node:path';
+import type { CapConfig, CaptureSource, Recording } from '../0_types.js';
+import { capConfigSchema } from '../0_types.js';
 
-/**
- * Create a source for Cap recordings.
- */
-export function createCapSource(config: CapConfig = {}): CaptureSource {
-  const recordingsPath = expandPath(config.recordingsPath);
+function expandPath(path: string): string {
+  if (path.startsWith('~/')) {
+    return join(homedir(), path.slice(2));
+  }
+  return path;
+}
 
-  const innerList = async function(limit = 10): Promise<Recording[]> {
+async function parseCapRecording(
+  capDirPath: string
+): Promise<Recording | null> {
+  try {
+    const metaPath = join(capDirPath, 'recording-meta.json');
+    const metaContent = await readFile(metaPath, 'utf-8');
+    const meta = JSON.parse(metaContent);
+
+    if (
+      !meta.segments ||
+      !Array.isArray(meta.segments) ||
+      meta.segments.length === 0
+    ) {
+      throw new Error(
+        `Invalid metadata in ${capDirPath}: missing or empty segments array`
+      );
+    }
+
+    const firstSegment = meta.segments[0];
+
+    const videoPath = firstSegment.display?.path
+      ? join(capDirPath, firstSegment.display.path)
+      : null;
+
+    // we fked up cuz we have mic but also system_audio.ogg
+    const micAudio = firstSegment.mic?.path
+      ? join(capDirPath, firstSegment.mic.path)
+      : null;
+
+    const systemAudio = firstSegment.system_audio?.path
+      ? join(capDirPath, firstSegment.system_audio.path)
+      : null;
+
+    const audioToStat = micAudio || systemAudio;
+
+    if (!audioToStat) {
+      console.log(`Skipping ${capDirPath}: none audio track found`);
+      return null;
+    }
+
+    const stats = await stat(audioToStat);
+    const capturedAt = stats.mtime;
+
+    const recordingId = capDirPath.split('/').pop() || 'unknown';
+
+    return {
+      id: recordingId,
+      source: {
+        type: 'cap',
+        originalPath: capDirPath,
+        metadata: meta,
+      },
+      videoPath,
+      audioMicPath: micAudio ? micAudio : null,
+      audioSystemPath: systemAudio ? systemAudio : null,
+      duration: 0,
+      capturedAt,
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(`Recording directory or files not found: ${capDirPath}`);
+    }
+    if ((error as SyntaxError).name === 'SyntaxError') {
+      throw new Error(`Invalid JSON in recording-meta.json at ${capDirPath}`);
+    }
+    throw new Error(
+      `Failed to parse recording at ${capDirPath}: ${(error as Error).message}`
+    );
+  }
+}
+
+export function createCapSource(
+  config: Partial<CapConfig> = {}
+): CaptureSource {
+  const parsedConfig = capConfigSchema.parse(config);
+  const recordingsPath = expandPath(parsedConfig.recordingsPath);
+
+  const innerList = async (limit = 10): Promise<Recording[]> => {
     try {
+      //
+      // 7 directories, 5 files
       const entries = await readdir(recordingsPath, { withFileTypes: true });
 
-      // Filter for .cap directories
       const capDirs = entries.filter(
         (entry) => entry.isDirectory() && entry.name.endsWith('.cap')
       );
 
-      // Parse each recording
-      const recordings: (Recording | null)[] = await Promise.all(
-        capDirs.map((dir) => parseCapRecording(join(recordingsPath, dir.name)))
+      const recordings = await Promise.allSettled(
+        capDirs.map(async (dir) =>
+          parseCapRecording(join(recordingsPath, dir.name))
+        )
+      );
+      // logging errors
+      console.log(
+        recordings
+          .filter((p) => p.status === 'rejected')
+          .map((p) => (p as PromiseRejectedResult).reason + '\n')
       );
 
-      // Filter nulls, sort by date, limit
       return recordings
-        .filter((r): r is Recording => r !== null)
+        .filter((p) => p.status === 'fulfilled')
+        .map((x) => x.value)
+        .filter((r) => r !== null)
         .sort((a, b) => b.capturedAt.getTime() - a.capturedAt.getTime())
         .slice(0, limit);
     } catch (error) {
-      console.error(`Failed to list Cap recordings: ${error}`);
+      console.error('Failed to list Cap recordings:', error);
       return [];
     }
   };
 
   return {
-    getLatestRecording: async (): Promise<Recording | null> => {
-      const recordings = await innerList(1);
-      return recordings[0] ?? null;
-    },
-
+    getLatestRecording: () =>
+      innerList(1).then((recordings) => recordings[0] ?? null),
     listRecordings: innerList,
   };
-}
-
-/**
- * Parse a single .cap directory into a Recording
- * TODO: document here the structure of Cap recordings
- */
-async function parseCapRecording(capDirPath: string): Promise<Recording | null> {
-  try {
-    // Read recording-meta.json if it exists
-    const metaPath = join(capDirPath, 'recording-meta.json');
-    let meta: any = {};
-    try {
-      const metaContent = await readFile(metaPath, 'utf-8');
-      meta = JSON.parse(metaContent);
-    } catch {
-      // No meta file, continue without it
-    }
-
-    // Find audio file in content/segments/segment-0/
-    // TODO: why only segment-0? Multiple segments?
-    const segmentPath = join(capDirPath, 'content', 'segments', 'segment-0');
-    const audioPath = await findAudioFile(segmentPath);
-
-    if (!audioPath) {
-      console.warn(`No audio found in ${capDirPath}`);
-      return null;
-    }
-
-    // Find video file (optional)
-    const videoPath = await findVideoFile(segmentPath);
-
-    // Get directory creation time as capture date
-    const dirStat = await stat(capDirPath);
-    const capturedAt = dirStat.birthtime;
-
-    // Extract ID from directory name (remove .cap suffix)
-    const dirName = capDirPath.split('/').pop() ?? '';
-    const id = dirName.replace('.cap', '');
-
-    // Get audio duration (we'll estimate from file size for now)
-    const audioStat = await stat(audioPath);
-    const estimatedDuration = estimateDurationFromFileSize(audioStat.size, audioPath);
-
-    return {
-      id,
-      source: {
-        type: 'cap',
-        originalPath: capDirPath,
-        metadata: {
-          prettyName: meta.pretty_name,
-          sharingLink: meta.sharing?.link,
-          sharingId: meta.sharing?.id,
-          status: meta.status?.status,
-        },
-      },
-      videoPath,
-      audioPath,
-      duration: estimatedDuration,
-      capturedAt,
-    };
-  } catch (error) {
-    console.error(`Failed to parse Cap recording at ${capDirPath}: ${error}`);
-    return null;
-  }
-}
-
-/**
- * Find audio file in segment directory
- */
-async function findAudioFile(segmentPath: string): Promise<string | null> {
-  try {
-    const entries = await readdir(segmentPath);
-    // Cap uses .ogg for audio, but check other formats too
-    const audioFile = entries.find(
-      (f) =>
-        f.endsWith('.ogg') ||
-        f.endsWith('.mp3') ||
-        f.endsWith('.wav') ||
-        f.endsWith('.m4a') ||
-        f.startsWith('audio-input')
-    );
-    return audioFile ? join(segmentPath, audioFile) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Find video file in segment directory
- */
-async function findVideoFile(segmentPath: string): Promise<string | null> {
-  try {
-    const entries = await readdir(segmentPath);
-    const videoFile = entries.find(
-      (f) => f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mov')
-    );
-    return videoFile ? join(segmentPath, videoFile) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Expand ~ to home directory
- */
-function expandPath(path: string | undefined): string {
-  if (path === undefined || path === null || path === '') {
-    throw new Error('Cap recordings path is required. Please specify config.recordingsPath or ensure Cap is installed.');
-  }
-  if (path.startsWith('~')) {
-    return join(homedir(), path.slice(1));
-  }
-  return path;
-}
-
-/**
- * Rough estimate of audio duration from file size
- * Different estimates for different formats
- */
-function estimateDurationFromFileSize(bytes: number, filePath: string): number {
-  // OGG at ~96kbps = ~12KB/s
-  // MP3 at ~128kbps = ~16KB/s
-  const isOgg = filePath.endsWith('.ogg');
-  const bytesPerSecond = isOgg ? 12 * 1024 : 16 * 1024;
-  return Math.round(bytes / bytesPerSecond);
 }

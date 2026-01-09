@@ -18,7 +18,8 @@ export const recordingSchema = z.object({
     metadata: z.record(z.string(), z.any()).optional(),
   }),
   videoPath: z.string().nullable(),
-  audioPath: z.string(),
+  audioMicPath: z.string().nullable(),
+  audioSystemPath: z.string().nullable(),
   duration: z.number(),
   capturedAt: z.date(),
 });
@@ -50,12 +51,38 @@ export type Transcript = z.infer<typeof transcriptSchema>;
 // SESSION
 // =============================================================================
 
+// Tagged transcript to identify audio source
+export const taggedTranscriptSchema = z.object({
+  source: z.enum(['mic', 'system']),
+  transcript: transcriptSchema,
+});
+
+export type TaggedTranscript = z.infer<typeof taggedTranscriptSchema>;
+
+// =============================================================================
+// CLASSIFICATION
+// =============================================================================
+
+export const classificationSchema = z.object({
+  meeting: z.number().min(0).max(100),
+  debugging: z.number().min(0).max(100),
+  tutorial: z.number().min(0).max(100),
+  learning: z.number().min(0).max(100),
+  working: z.number().min(0).max(100),
+});
+
+export type Classification = z.infer<typeof classificationSchema>;
+
+// =============================================================================
+// SESSION
+// =============================================================================
+
 export const sessionSchema = z.object({
   id: z.string(),
   recording: recordingSchema,
-  transcript: transcriptSchema.nullable(),
+  transcripts: z.array(taggedTranscriptSchema),
   status: z.enum(['raw', 'transcribed', 'classified', 'complete']),
-  type: z.enum(['meeting', 'debugging', 'tutorial', 'learning']).nullable(),
+  classification: classificationSchema.nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -75,8 +102,17 @@ export interface CaptureSource {
 }
 
 export interface IntelligenceService {
-  classify(transcript: Transcript): Promise<{ type: string; confidence: number }>;
-  generate(prompt: string, context: { transcript: Transcript }): Promise<string>;
+  classify(transcript: Transcript): Promise<Classification>;
+  generate(
+    prompt: string,
+    context: { transcript: Transcript }
+  ): Promise<string>;
+}
+
+export interface StorageService {
+  saveSession(session: Session): Promise<void>;
+  loadSession(sessionId: string): Promise<Session | null>;
+  listSessions(): Promise<Session[]>;
 }
 
 // =============================================================================
@@ -84,7 +120,9 @@ export interface IntelligenceService {
 // =============================================================================
 
 export const capConfigSchema = z.object({
-  recordingsPath: z.string().default('~/Library/Application Support/so.cap.desktop/recordings').optional(),
+  recordingsPath: z
+    .string()
+    .default('~/Library/Application Support/so.cap.desktop/recordings'),
 });
 export type CapConfig = z.infer<typeof capConfigSchema>;
 
@@ -96,3 +134,12 @@ export const whisperConfigSchema = z.object({
   language: z.string().optional(),
 });
 export type WhisperConfig = z.infer<typeof whisperConfigSchema>;
+
+export const intelligenceConfigSchema = z.object({
+  provider: z.enum(['ollama', 'mlx']).default('ollama'),
+  endpoint: z.string().default('http://localhost:11434/v1/chat/completions'),
+  model: z.string().default('llama3.1:8b'),
+  maxRetries: z.number().default(3),
+  timeout: z.number().default(500000),
+});
+export type IntelligenceConfig = z.infer<typeof intelligenceConfigSchema>;

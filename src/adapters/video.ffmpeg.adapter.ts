@@ -6,7 +6,7 @@
  */
 
 import { exec } from 'node:child_process';
-import { mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { VideoService } from '../0_types.js';
@@ -59,16 +59,19 @@ export function createFfmpegVideoService(): VideoService {
     detectAndExtractScenes: async (videoPath, threshold, outputDir) => {
       await mkdir(outputDir, { recursive: true });
 
+      const frameInterval = Number(process.env.ESCRIBANO_FRAME_INTERVAL) || 2;
+      const frameWidth = Number(process.env.ESCRIBANO_FRAME_WIDTH) || 1920;
+
       // Robust strategy for Visual Log:
-      // We use a combination of periodic sampling (every 10s) and resolution scaling.
+      // We use a combination of periodic sampling and resolution scaling.
       // This is more reliable across different video formats than pure scene detection.
-      // 1. scale=1280:-2: Optimize for AI reasoning
-      // 2. fps=1/10: One frame every 10 seconds
+      // 1. scale=${frameWidth}:-2: Optimize for AI reasoning
+      // 2. fps=1/${frameInterval}: Configurable frame rate
       // 3. -strict unofficial: Compatibility for screen recordings
-      const command = `ffmpeg -i "${videoPath}" -vf "scale=1280:-2,fps=1/10" -strict unofficial -an -q:v 2 "${outputDir}/scene_%03d.jpg" -y`;
+      const command = `ffmpeg -i "${videoPath}" -vf "scale=${frameWidth}:-2,fps=1/${frameInterval}" -strict unofficial -an -q:v 2 "${outputDir}/scene_%04d.jpg" -y`;
 
       try {
-        const { stderr } = await execAsync(command);
+        await execAsync(command);
 
         // List generated files
         const files = await readdir(outputDir);
@@ -77,10 +80,10 @@ export function createFfmpegVideoService(): VideoService {
           .map((f) => path.join(outputDir, f))
           .sort();
 
-        // Calculate timestamps based on 10s interval (since we used fps=1/10)
+        // Calculate timestamps based on configured interval
         return framePaths.map((p, i) => ({
           imagePath: p,
-          timestamp: i * 10,
+          timestamp: i * frameInterval,
         }));
       } catch (error) {
         throw new Error(
@@ -115,6 +118,31 @@ export function createFfmpegVideoService(): VideoService {
         throw new Error(
           `Failed to get video metadata: ${(error as Error).message}`
         );
+      }
+    },
+
+    /**
+     * Run visual indexing (OCR + CLIP) using the Python base script.
+     */
+    runVisualIndexing: async (framesDir, outputPath) => {
+      const scriptPath = path.join(
+        process.cwd(),
+        'src',
+        'scripts',
+        'visual_observer_base.py'
+      );
+      const frameInterval = Number(process.env.ESCRIBANO_FRAME_INTERVAL) || 2;
+      // Use uv run to execute the script with its environment
+      const command = `uv run "${scriptPath}" --frames-dir "${framesDir}" --output "${outputPath}" --frame-interval ${frameInterval}`;
+
+      try {
+        await execAsync(command, {
+          cwd: path.join(process.cwd(), 'src', 'scripts'),
+        });
+        const content = await readFile(outputPath, 'utf-8');
+        return JSON.parse(content);
+      } catch (error) {
+        throw new Error(`Visual indexing failed: ${(error as Error).message}`);
       }
     },
   };

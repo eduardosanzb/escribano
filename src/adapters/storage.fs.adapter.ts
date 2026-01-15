@@ -11,7 +11,7 @@ import type { Artifact, Session, StorageService } from '../0_types.js';
 
 const SESSIONS_DIR = join(os.homedir(), '.escribano', 'sessions');
 
-export function createStorageService(): StorageService {
+export function createFsStorageService(): StorageService {
   return {
     saveSession,
     loadSession,
@@ -58,7 +58,10 @@ async function listSessions(): Promise<Session[]> {
     sessions.push(JSON.parse(content) as Session);
   }
 
-  return sessions;
+  // Sort by date descending (newest first)
+  return sessions.sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
 }
 
 async function saveArtifact(

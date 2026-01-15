@@ -3,11 +3,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { createCapSource } from '../adapters/cap.adapter';
+import { createCapCaptureSource } from '../adapters/capture.cap.adapter.js';
 
 describe('Cap Adapter', () => {
   it('should create a CapSource', () => {
-    const capSource = createCapSource({
+    const capSource = createCapCaptureSource({
       recordingsPath: '~/tmp/recordings',
     });
 
@@ -16,7 +16,7 @@ describe('Cap Adapter', () => {
   });
 
   it('should handle nonexistent directory gracefully', async () => {
-    const capSource = createCapSource({
+    const capSource = createCapCaptureSource({
       recordingsPath: '/nonexistent/path',
     });
 

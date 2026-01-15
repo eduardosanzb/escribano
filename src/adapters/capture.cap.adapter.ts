@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CapConfig, CaptureSource, Recording } from '../0_types.js';
-import { capConfigSchema } from '../0_types.js';
+import { capConfigSchema, normalizeSessionId } from '../0_types.js';
 
 function expandPath(path: string): string {
   if (path.startsWith('~/')) {
@@ -54,7 +54,8 @@ async function parseCapRecording(
     const stats = await stat(audioToStat);
     const capturedAt = stats.mtime;
 
-    const recordingId = capDirPath.split('/').pop() || 'unknown';
+    const rawId = capDirPath.split('/').pop() || 'unknown';
+    const recordingId = normalizeSessionId(rawId);
 
     return {
       id: recordingId,
@@ -82,7 +83,7 @@ async function parseCapRecording(
   }
 }
 
-export function createCapSource(
+export function createCapCaptureSource(
   config: Partial<CapConfig> = {}
 ): CaptureSource {
   const parsedConfig = capConfigSchema.parse(config);

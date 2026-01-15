@@ -4,13 +4,27 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IntelligenceConfig, Transcript } from '../0_types.js';
-import { createIntelligenceService } from '../adapters/intelligence.adapter.js';
+import { createOllamaIntelligenceService } from '../adapters/intelligence.ollama.adapter.js';
+
+// Mock node:fs
+vi.mock('node:fs', () => ({
+  readFileSync: vi.fn((path: string) => {
+    if (path.includes('.jpg') || path.includes('.png')) {
+      return Buffer.from('fake-image-data');
+    }
+    if (path.includes('.md')) {
+      return '{{TRANSCRIPT_ALL}} {{TRANSCRIPT_SEGMENTS}} {{VISUAL_LOG}} {{CLASSIFICATION_SUMMARY}} {{METADATA}} {{LANGUAGE}} {{SPEAKERS}} {{KEY_MOMENTS}} {{ACTION_ITEMS}} {{TECHNICAL_TERMS}} {{CODE_SNIPPETS}}';
+    }
+    return '';
+  }),
+}));
 
 const mockConfig: IntelligenceConfig = {
   provider: 'ollama',
   endpoint: 'http://localhost:11434/v1/chat/completions',
   model: 'qwen3:32b',
   generationModel: 'qwen2.5:72b',
+  visionModel: 'minicpm-v:8b',
   maxRetries: 3,
   timeout: 30000,
   keepAlive: '10m',
@@ -43,10 +57,41 @@ describe('IntelligenceService', () => {
   });
 
   it('should create an intelligence service', () => {
-    const service = createIntelligenceService(mockConfig);
+    const service = createOllamaIntelligenceService(mockConfig);
     expect(service).toBeDefined();
     expect(service.classify).toBeInstanceOf(Function);
     expect(service.generate).toBeInstanceOf(Function);
+    expect(service.describeImages).toBeInstanceOf(Function);
+  });
+
+  it('should describe images', async () => {
+    const mockResponse = JSON.stringify({
+      message: {
+        content: JSON.stringify({
+          descriptions: [
+            { index: 0, summary: 'A cat sitting on a mat' },
+            { index: 1, summary: 'A dog chasing a ball' },
+          ],
+        }),
+      },
+      done: true,
+      done_reason: 'stop',
+    });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => JSON.parse(mockResponse),
+    } as unknown as typeof fetch);
+
+    const service = createOllamaIntelligenceService(mockConfig);
+    const result = await service.describeImages([
+      { imagePath: '/path/to/cat.jpg', clusterId: 1, timestamp: 10 },
+      { imagePath: '/path/to/dog.jpg', clusterId: 2, timestamp: 20 },
+    ]);
+
+    expect(result.descriptions).toHaveLength(2);
+    expect(result.descriptions[0].description).toBe('A cat sitting on a mat');
+    expect(result.descriptions[1].description).toBe('A dog chasing a ball');
   });
 
   it('should classify a debugging session', async () => {
@@ -69,7 +114,7 @@ describe('IntelligenceService', () => {
       json: async () => JSON.parse(mockResponse),
     } as unknown as typeof fetch);
 
-    const service = createIntelligenceService(mockConfig);
+    const service = createOllamaIntelligenceService(mockConfig);
     const result = await service.classify(mockTranscript);
 
     expect(result.debugging).toBe(90);
@@ -104,7 +149,7 @@ describe('IntelligenceService', () => {
       };
     });
 
-    const service = createIntelligenceService(mockConfig);
+    const service = createOllamaIntelligenceService(mockConfig);
     const result = await service.classify(mockTranscript);
 
     expect(attempts).toBe(3);
@@ -118,7 +163,7 @@ describe('IntelligenceService', () => {
       statusText: 'Internal Server Error',
     } as unknown as typeof fetch);
 
-    const service = createIntelligenceService(mockConfig);
+    const service = createOllamaIntelligenceService(mockConfig);
 
     await expect(service.classify(mockTranscript)).rejects.toThrow(
       'Request failed after 3 retries'

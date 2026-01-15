@@ -64,7 +64,7 @@ interface WhisperJsonOutput {
 /**
  * Creates a TranscriptionService that uses whisper CLI
  */
-export function createWhisperTranscriber(
+export function createWhisperTranscriptionService(
   config: Partial<WhisperConfig> = {}
 ): TranscriptionService {
   const resolvedConfig: WhisperConfig = {

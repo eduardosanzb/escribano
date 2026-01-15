@@ -78,8 +78,11 @@ pnpm test src/tests/cap-real.test.ts
 src/
 ├── 0_types.ts           # All types and interfaces
 ├── adapters/
-│   ├── cap.adapter.ts    # Read Cap recordings
-│   └── whisper.adapter.ts # Transcribe with whisper
+│   ├── capture.cap.adapter.ts    # Read Cap recordings
+│   ├── transcription.whisper.adapter.ts # Transcribe with whisper
+│   ├── intelligence.ollama.adapter.ts # Ollama AI services
+│   ├── storage.fs.adapter.ts # Filesystem storage
+│   └── video.ffmpeg.adapter.ts # Video processing
 ├── actions/
 │   └── process-session.ts  # Transcribe recording → Session
 └── tests/

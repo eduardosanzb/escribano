@@ -10,6 +10,19 @@ import { z } from 'zod';
 // RECORDING
 // =============================================================================
 
+/**
+ * Normalizes a raw ID (e.g. from a folder name) by removing spaces and special characters.
+ */
+export function normalizeSessionId(rawId: string): string {
+  return rawId
+    .replace(/\s+/g, '-') // Spaces → hyphens
+    .replace(/[()[\]{}]/g, '') // Remove brackets
+    .replace(/—/g, '-') // Em-dash → hyphen
+    .replace(/-+/g, '-') // Collapse multiple hyphens
+    .replace(/^-|-$/g, '') // Trim leading/trailing hyphens
+    .replace(/\.cap$/i, ''); // Remove .cap extension
+}
+
 export const recordingSchema = z.object({
   id: z.string(),
   source: z.object({
@@ -152,6 +165,8 @@ export const visualLogEntrySchema = z.object({
   timestamp: z.number(),
   imagePath: z.string(),
   description: z.string().optional(),
+  ocrSummary: z.string().optional(),
+  heuristicLabel: z.string().optional(),
   sceneScore: z.number().optional(),
 });
 export type VisualLogEntry = z.infer<typeof visualLogEntrySchema>;
@@ -163,8 +178,78 @@ export const visualLogSchema = z.object({
 export type VisualLog = z.infer<typeof visualLogSchema>;
 
 // =============================================================================
+// VISUAL ANALYSIS (External Tool Output)
+// =============================================================================
+
+export const visualIndexFrameSchema = z.object({
+  index: z.number(),
+  timestamp: z.number(),
+  imagePath: z.string(),
+  ocrText: z.string(),
+  clusterId: z.number(),
+  changeScore: z.number(),
+});
+export type VisualIndexFrame = z.infer<typeof visualIndexFrameSchema>;
+
+export const visualIndexClusterSchema = z.object({
+  id: z.number(),
+  heuristicLabel: z.string(),
+  timeRange: z.tuple([z.number(), z.number()]),
+  frameCount: z.number(),
+  representativeIdx: z.number(),
+  avgOcrCharacters: z.number(),
+  mediaIndicators: z.array(z.string()),
+});
+export type VisualIndexCluster = z.infer<typeof visualIndexClusterSchema>;
+
+export const visualIndexSchema = z.object({
+  frames: z.array(visualIndexFrameSchema),
+  clusters: z.array(visualIndexClusterSchema),
+  processingTime: z.object({
+    ocrMs: z.number(),
+    clipMs: z.number(),
+    totalMs: z.number(),
+  }),
+});
+export type VisualIndex = z.infer<typeof visualIndexSchema>;
+
+export const visualDescriptionSchema = z.object({
+  clusterId: z.number(),
+  timestamp: z.number(),
+  description: z.string(),
+});
+export type VisualDescription = z.infer<typeof visualDescriptionSchema>;
+
+export const visualDescriptionsSchema = z.object({
+  descriptions: z.array(visualDescriptionSchema),
+  processingTime: z.object({
+    vlmMs: z.number(),
+    framesProcessed: z.number(),
+  }),
+});
+export type VisualDescriptions = z.infer<typeof visualDescriptionsSchema>;
+
+// =============================================================================
 // SESSION
 // =============================================================================
+
+export const outlineSyncStateSchema = z.object({
+  collectionId: z.string(),
+  sessionDocumentId: z.string(),
+  sessionDocumentUrl: z.string(),
+  artifacts: z.array(
+    z.object({
+      type: artifactTypeSchema,
+      documentId: z.string(),
+      documentUrl: z.string(),
+      syncedAt: z.date(),
+      contentHash: z.string(),
+    })
+  ),
+  lastSyncedAt: z.date(),
+});
+
+export type OutlineSyncState = z.infer<typeof outlineSyncStateSchema>;
 
 export const sessionSchema = z.object({
   id: z.string(),
@@ -174,21 +259,59 @@ export const sessionSchema = z.object({
   status: z.enum([
     'raw',
     'transcribed',
+    'visual-logged',
     'classified',
     'metadata-extracted',
     'complete',
+    'error',
   ]),
   classification: classificationSchema.nullable(),
   metadata: transcriptMetadataSchema.nullable(),
   artifacts: z.array(artifactSchema).default([]),
+  outlineSyncState: outlineSyncStateSchema.nullable().optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
+  errorMessage: z.string().nullable().optional(),
 });
 export type Session = z.infer<typeof sessionSchema>;
 
 // =============================================================================
 // PORTS (Interfaces)
 // =============================================================================
+
+export interface PublishingService {
+  ensureCollection(name: string): Promise<{ id: string }>;
+
+  createDocument(params: {
+    collectionId: string;
+    title: string;
+    content: string;
+    parentDocumentId?: string;
+    publish?: boolean;
+  }): Promise<{ id: string; url: string }>;
+
+  updateDocument(
+    id: string,
+    params: {
+      title?: string;
+      content?: string;
+    }
+  ): Promise<void>;
+
+  findDocumentByTitle(
+    collectionId: string,
+    title: string
+  ): Promise<{ id: string; url: string } | null>;
+
+  listDocuments(collectionId: string): Promise<
+    Array<{
+      id: string;
+      title: string;
+      parentDocumentId?: string;
+      url: string;
+    }>
+  >;
+}
 
 export interface TranscriptionService {
   transcribe(audioPath: string): Promise<Transcript>;
@@ -209,6 +332,10 @@ export interface IntelligenceService {
     classification: Classification,
     visualLogs?: VisualLog[]
   ): Promise<TranscriptMetadata>;
+  describeImages(
+    images: Array<{ imagePath: string; clusterId: number; timestamp: number }>,
+    prompt?: string
+  ): Promise<VisualDescriptions>;
   generate(
     artifactType: ArtifactType,
     context: {
@@ -244,6 +371,10 @@ export interface VideoService {
     width: number;
     height: number;
   }>;
+  runVisualIndexing(
+    framesDir: string,
+    outputPath: string
+  ): Promise<VisualIndex>;
 }
 
 // =============================================================================
@@ -271,6 +402,7 @@ export const intelligenceConfigSchema = z.object({
   endpoint: z.string().default('http://localhost:11434/api/chat'),
   model: z.string().default('qwen3:8b'),
   generationModel: z.string().default('qwen3:32b'),
+  visionModel: z.string().default('minicpm-v:8b'),
   maxRetries: z.number().default(3),
   timeout: z.number().default(500000),
   keepAlive: z.string().default('10m'),
@@ -287,3 +419,10 @@ export const artifactConfigSchema = z.object({
   maxScreenshots: z.number().default(10),
 });
 export type ArtifactConfig = z.infer<typeof artifactConfigSchema>;
+
+export const outlineConfigSchema = z.object({
+  url: z.string().url(),
+  token: z.string(),
+  collectionName: z.string().default('Escribano Sessions'),
+});
+export type OutlineConfig = z.infer<typeof outlineConfigSchema>;

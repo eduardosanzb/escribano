@@ -8,15 +8,17 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
-  classificationSchema,
-  intelligenceConfigSchema,
-  transcriptMetadataSchema,
   type ArtifactType,
   type Classification,
+  classificationSchema,
   type IntelligenceConfig,
   type IntelligenceService,
+  intelligenceConfigSchema,
   type Transcript,
   type TranscriptMetadata,
+  transcriptMetadataSchema,
+  type VisualDescription,
+  type VisualDescriptions,
   type VisualLog,
 } from '../0_types.js';
 
@@ -32,7 +34,7 @@ function toOllamaSchema(schema: any): object {
 // Model warm state - ensures model is loaded before first real request
 const warmedModels = new Set<string>();
 
-export function createIntelligenceService(
+export function createOllamaIntelligenceService(
   config: Partial<IntelligenceConfig> = {}
 ): IntelligenceService {
   const parsedConfig = intelligenceConfigSchema.parse(config);
@@ -43,6 +45,8 @@ export function createIntelligenceService(
       extractMetadata(transcript, classification, parsedConfig, visualLogs),
     generate: (artifactType, context) =>
       generateArtifact(artifactType, context, parsedConfig),
+    describeImages: (images, prompt) =>
+      describeImagesWithOllama(images, parsedConfig, prompt),
   };
 }
 
@@ -165,7 +169,15 @@ function loadClassifyPrompt(
 
   if (visualLogs && visualLogs.length > 0) {
     const visualSummary = visualLogs[0].entries
-      .map((e: any) => `[Visual Change] at ${e.timestamp}s`)
+      .map((e, i) => {
+        const timestamp = `[${e.timestamp}s]`;
+        const label = e.heuristicLabel ? `[${e.heuristicLabel}]` : '';
+        const description = e.description ? `: ${e.description}` : '';
+        const ocr = e.ocrSummary
+          ? ` (OCR: ${e.ocrSummary.substring(0, 100)})`
+          : '';
+        return `${timestamp} ${label}${description}${ocr}`;
+      })
       .join('\n');
     prompt = prompt.replace('{{VISUAL_LOG}}', visualSummary);
   } else {
@@ -318,7 +330,15 @@ function loadMetadataPrompt(
 
   if (visualLogs && visualLogs.length > 0) {
     const visualSummary = visualLogs[0].entries
-      .map((e: any) => `[Visual Change] at ${e.timestamp}s`)
+      .map((e, i) => {
+        const timestamp = `[${e.timestamp}s]`;
+        const label = e.heuristicLabel ? `[${e.heuristicLabel}]` : '';
+        const description = e.description ? `: ${e.description}` : '';
+        const ocr = e.ocrSummary
+          ? ` (OCR: ${e.ocrSummary.substring(0, 100)})`
+          : '';
+        return `${timestamp} ${label}${description}${ocr}`;
+      })
       .join('\n');
     prompt = prompt.replace('{{VISUAL_LOG}}', visualSummary);
   } else {
@@ -419,4 +439,158 @@ function loadArtifactPrompt(
   }
 
   return prompt;
+}
+
+/**
+ * Describe a set of images using a vision-capable model.
+ */
+async function describeImagesWithOllama(
+  images: Array<{ imagePath: string; clusterId: number; timestamp: number }>,
+  config: IntelligenceConfig,
+  customPrompt?: string
+): Promise<VisualDescriptions> {
+  if (images.length === 0) {
+    return {
+      descriptions: [],
+      processingTime: { vlmMs: 0, framesProcessed: 0 },
+    };
+  }
+
+  console.log(`Describing ${images.length} images with vision model...`);
+  const startTime = Date.now();
+
+  await ensureModelWarmed(config.visionModel, config);
+
+  const BATCH_SIZE = 3; // Stable batch size for minicpm-v
+  const allDescriptions: VisualDescription[] = [];
+
+  for (let i = 0; i < images.length; i += BATCH_SIZE) {
+    const batch = images.slice(i, i + BATCH_SIZE);
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(images.length / BATCH_SIZE);
+
+    console.log(`  Processing batch ${batchNum}/${totalBatches}...`);
+
+    try {
+      const descriptions = await callOllamaVision(batch, config, customPrompt);
+      allDescriptions.push(...descriptions);
+    } catch (error) {
+      console.error(`  Error in batch ${batchNum}:`, error);
+      // Add error placeholders to maintain alignment
+      for (const img of batch) {
+        allDescriptions.push({
+          clusterId: img.clusterId,
+          timestamp: img.timestamp,
+          description: `Error: ${(error as Error).message}`,
+        });
+      }
+    }
+
+    // Small delay between batches to avoid overwhelming Ollama
+    if (i + BATCH_SIZE < images.length) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  const vlmMs = Date.now() - startTime;
+  console.log(`✓ Described ${allDescriptions.length} images in ${vlmMs}ms`);
+
+  return {
+    descriptions: allDescriptions,
+    processingTime: { vlmMs, framesProcessed: allDescriptions.length },
+  };
+}
+
+async function callOllamaVision(
+  images: Array<{ imagePath: string; clusterId: number; timestamp: number }>,
+  config: IntelligenceConfig,
+  customPrompt?: string
+): Promise<VisualDescription[]> {
+  // Convert images to base64 (Ollama expects raw base64 strings)
+  const imageContents = images.map((img) => {
+    const data = readFileSync(img.imagePath);
+    return data.toString('base64');
+  });
+
+  const prompt =
+    customPrompt ||
+    `Analyze these ${images.length} screenshots from a screen recording.
+For each screenshot (in order), provide a one-sentence description of what the user is doing.
+Focus on: the application being used, the specific activity, and any visible content.
+
+Return a JSON object with this structure:
+{
+  "descriptions": [
+    {"index": 0, "summary": "description for first image"},
+    {"index": 1, "summary": "description for second image"}
+  ]
+}`;
+
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: config.visionModel,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+          images: imageContents,
+        },
+      ],
+      format: {
+        type: 'object',
+        properties: {
+          descriptions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                index: { type: 'number' },
+                summary: { type: 'string' },
+              },
+              required: ['index', 'summary'],
+            },
+          },
+        },
+        required: ['descriptions'],
+      },
+      stream: false,
+      options: { num_ctx: 131072 },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`  HTTP ${response.status}: ${errorText.substring(0, 500)}`);
+    throw new Error(
+      `Ollama vision error: ${response.status} ${response.statusText}`
+    );
+  }
+
+  const data = await response.json();
+  const content = data.message?.content;
+
+  if (!content) {
+    console.error(
+      '  Empty response from Ollama:',
+      JSON.stringify(data).substring(0, 500)
+    );
+    throw new Error('Empty response from Ollama vision model');
+  }
+
+  const parsed = JSON.parse(content);
+  const descriptionsList = parsed.descriptions || [];
+
+  // Map back to our format
+  return images.map((img, i) => {
+    const desc = descriptionsList.find((d: any) => d.index === i) ||
+      descriptionsList[i] || { summary: 'No description generated' };
+
+    return {
+      clusterId: img.clusterId,
+      timestamp: img.timestamp,
+      description: desc.summary,
+    };
+  });
 }

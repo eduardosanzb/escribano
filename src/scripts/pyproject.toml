@@ -1,0 +1,25 @@
+[project]
+name = "escribano-visual"
+version = "0.1.0"
+description = "Visual analysis scripts for Escribano"
+requires-python = ">=3.11"
+dependencies = [
+    "pytesseract>=0.3.13",
+    "open-clip-torch>=3.2.0",
+    "torch>=2.4.0",
+    "torchvision>=0.19.0",
+    "pillow>=10.0.0",
+    "scikit-learn>=1.4.0",
+    "requests>=2.31.0",
+    "ftfy>=6.1.0",
+    "regex>=2022.7.18",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+]

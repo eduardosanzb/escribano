@@ -29,15 +29,16 @@ src/
 │   ├── process-session.ts        # Recording → Transcript → Session
 │   └── classify-session.ts       # Session → Classification
 ├── adapters/
-│   ├── cap.adapter.ts            # Cap recording source
-│   ├── whisper.adapter.ts        # Whisper transcription (audio conversion)
-│   ├── intelligence.adapter.ts   # Ollama LLM classification
-│   └── storage.adapter.ts        # Filesystem session storage
+│   ├── capture.cap.adapter.ts            # Cap recording source
+│   ├── transcription.whisper.adapter.ts  # Whisper transcription
+│   ├── video.ffmpeg.adapter.ts           # Video processing (FFmpeg)
+│   ├── intelligence.ollama.adapter.ts    # Ollama LLM services
+│   └── storage.fs.adapter.ts             # Filesystem session storage
 └── tests/
-    ├── integration.test.ts        # Full pipeline tests
-    ├── cap.adapter.test.ts       # Cap adapter unit tests
-    ├── classify-session.test.ts  # Classification action tests
-    └── intelligence.adapter.test.ts # Intelligence adapter tests
+    ├── integration.test.ts               # Full pipeline tests
+    ├── capture.cap.adapter.test.ts       # Cap adapter unit tests
+    ├── classify-session.test.ts          # Classification action tests
+    └── intelligence.ollama.adapter.test.ts # Intelligence adapter tests
 
 prompts/
 └── classify.md                   # V2 classification prompt
@@ -45,13 +46,19 @@ prompts/
 
 ### Key Principle: Port Interfaces
 
-External systems are accessed through **port interfaces** defined in `0_types.ts`:
+External systems are accessed through **port interfaces** defined in `0_types.ts`. We use a descriptive naming convention for adapters: `[port].[implementation].adapter.ts`.
 
-- **TranscriptionService**: WhisperAdapter (with automatic audio format conversion)
-- **CaptureSource**: CapAdapter (and future adapters)
-- **IntelligenceService**: OllamaAdapter (local LLM classification)
-  - `classify()` - Multi-label session classification (5 scores 0-100)
-  - `generate()` - Artifact generation (placeholder for M3)
+- **TranscriptionService**: `transcription.whisper.adapter.ts`
+- **CaptureSource**: `capture.cap.adapter.ts`
+- **IntelligenceService**: `intelligence.ollama.adapter.ts`
+- **StorageService**: `storage.fs.adapter.ts`
+- **VideoService**: `video.ffmpeg.adapter.ts`
+
+### Visual Pipeline
+
+The visual pipeline uses a hybrid approach:
+- **Python** (`visual_observer_base.py`): OCR (Tesseract) + CLIP embeddings + clustering
+- **TypeScript** (`intelligence.ollama.adapter.ts`): VLM descriptions via Ollama
 
 ## Session Types (Multi-Label Classification)
 
@@ -108,6 +115,8 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
 - Handle all external I/O
 - Can be swapped without changing business logic
 - Each adapter in its own file
+- **Naming Convention**: `[port].[implementation].adapter.ts` (e.g., `intelligence.ollama.adapter.ts`)
+- **Factory Naming**: `create[Implementation][Port]` (e.g., `createOllamaIntelligenceService`)
 
 ## Integration with Cap
 
@@ -144,6 +153,30 @@ The OpenCode plugin exposes these tools to Claude:
 - Domain layer: Unit tests (pure functions)
 - Application layer: Integration tests with mock adapters
 - Adapters: Integration tests with real services (where feasible)
+
+## Environment Variables
+
+Escribano uses environment variables for configuration. Copy `.env.example` to `.env` and adjust as needed.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ESCRIBANO_PARALLEL_TRANSCRIPTION` | `false` | Enable parallel audio transcription |
+| `ESCRIBANO_FRAME_INTERVAL` | `2` | Seconds between extracted frames |
+| `ESCRIBANO_FRAME_WIDTH` | `1920` | Frame width in pixels for extraction |
+
+### Visual Pipeline Configuration
+
+The visual pipeline extracts frames, runs OCR, and optionally describes images with a vision model.
+
+- **Frame Interval**: Lower values = more frames, better temporal resolution, slower processing
+  - `1` = 1 frame/second (dense, good for fast-changing content)
+  - `2` = 1 frame/2 seconds (balanced, default)
+  - `5` = 1 frame/5 seconds (sparse, good for static content)
+
+- **Frame Width**: Higher values = better OCR accuracy, larger files
+  - `1280` = Minimum for readable UI text
+  - `1920` = Good balance (default)
+  - `2560` = Best for small text, Retina displays
 
 ## Linting and Formatting
 
@@ -262,139 +295,61 @@ pnpm test:ui
 pnpm lint && pnpm typecheck
 ```
 
-## Milestone 2: Intelligence - Multi-Label Classification ✅
+## Milestone 3: Artifacts, Visuals & Outline Sync ✅
 
-**Completed Date:** January 9, 2026
+**Completed Date:** January 15, 2026
 
 ### Implemented Features
-- **Ollama Integration**
-  - Intelligence adapter with REST API (OpenAI-compatible format)
-  - Retry logic (3 attempts, exponential backoff)
-  - Timeout handling (300s default)
-  - Health check integrated into adapter
-  - System prompt for JSON-only output
-  - **Ultra-simple parser** (10 lines - extracts JSON & validates)
-  - Handles multiple response formats (0-1 or 0-100 percentages)
-  - **Model warm-up**: Automatic loading on first request with `keep_alive`
-  - **JSON Schema validation**: Uses Ollama's `format` parameter with Zod schemas
-  - **Dynamic context sizing**: Automatically calculates `num_ctx` based on prompt length
-  - **Model**: Default changed to `qwen3:8b` (better structured output)
-  - **Configuration**: Added `keepAlive` (default: '10m') and `maxContextSize` (default: 131072)
 
-- **Multi-Label Classification**
-  - **New format**: 5 scores 0-100 (meeting, debugging, tutorial, learning, working)
-  - **Removed**: Old single-type format with confidence + entities
-  - Added **"working"** session type for coding/building (non-debugging)
-  - V2 prompt with detailed examples & indicators per type
-  - Visual bar chart display (█ repeats)
-  - Primary/secondary type identification
-  - Artifact suggestions based on scores >50%
+- **Artifact Generation**
+  - **8 Types**: summary, action-items, runbook, step-by-step, notes, code-snippets, blog-research, blog-draft.
+  - **Ollama Generator**: Uses larger model (qwen3:32b) for high-quality Markdown production.
+  - **Visual Integration**: LLM can request screenshots via `[SCREENSHOT: timestamp]`.
 
-- **Session Persistence**
-  - Storage adapter for filesystem-based session storage
-  - Save sessions to `~/.escribano/sessions/`
-  - Load session by ID
-  - List all sessions
+- **Visual Pipeline (The Observer)**
+  - **OCR + CLIP**: Uses Python + Tesseract + OpenCLIP to extract semantic meaning from screen recordings.
+  - **Scene Clustering**: Agglomerative clustering to detect activity segments (e.g., code editor, browser).
+  - **VLM Descriptions**: Native Ollama API integration for `minicpm-v:8b` vision model.
+  - **Configurable**: `ESCRIBANO_FRAME_INTERVAL` (2s) and `ESCRIBANO_FRAME_WIDTH` (1920px).
 
-- **Transcript Reuse**
-  - `classify-latest` checks for existing sessions before transcribing
-  - Reuses transcript if available (saves time/resources)
-  - `classify <id>` loads existing session
-  - Clear error messages for missing transcripts
+- **Knowledge Base Sync (Outline)**
+  - **Outline Adapter**: Native REST API client for Outline wiki.
+  - **Nested Structure**: Session parent document with artifact child documents.
+  - **Global Index**: Auto-updated `📋 Session Index` document grouping sessions by month.
+  - **Change Detection**: Content hashing to skip redundant uploads.
 
-- **CLI Commands**
-  - `classify-latest` - Classifies most recent session
-  - `classify <id>` - Classifies specific session by ID
-  - Pretty formatting with scores and bar charts
-  - Relevance threshold: only show types ≥25%
-  - Fixed: Display bugs (threshold, filter function)
-  - Removed: Entity display code (deferred to M3)
-
-- **Tests**
-  - Intelligence adapter unit tests (3/5 passing, 2 expected failures)
-  - Classification action unit tests (5/5 passing)
-  - Session storage tests (integration)
-  - Updated all test expectations for new format
-
-- **PR Comments Addressed**
-  - ✅ Moved `checkOllamaHealth()` into intelligence adapter
-  - ✅ Added TODO comment for cache skip option
-  - ✅ Removed TODO comment (cap.adapter.ts line 99)
-  - ✅ Researched Ollama streaming (kept non-streaming - better for structured outputs)
-  - ✅ Deleted `src/tests/cap-real.test.ts`
-  - ✅ Fixed `cap.adapter.test.ts` (tests updated, all passing)
-
-### Architecture Changes
-**Old Schema:**
-```typescript
-{
-  type: "meeting" | "debugging" | "tutorial" | "learning",
-  confidence: 0.0-1.0,
-  entities: [...]
-}
-```
-
-**New Schema:**
-```typescript
-{
-  meeting: 0-100,
-  debugging: 0-100,
-  tutorial: 0-100,
-  learning: 0-100,
-  working: 0-100  // NEW TYPE
-}
-```
+- **CLI Improvements**
+  - **Numbered Shortcuts**: `#1`, `#2` instead of long session IDs.
+  - **Commands**: `sessions`, `generate`, `artifacts`, `sync`, `sync-all`.
+  - **ID Normalization**: Clean filesystem-safe IDs (no spaces, special chars).
 
 ### Files Created/Modified
-```
-src/0_types.ts                      ✅ Updated: Entity types removed, new Classification schema
-src/adapters/intelligence.adapter.ts  ✅ Created: Ollama REST API, retry, health check, simple parser
-src/adapters/storage.adapter.ts      ✅ Created: Filesystem session storage
-src/actions/classify-session.ts      ✅ Created: Multi-label classification with transcript reuse
-src/index.ts                         ✅ Updated: Classify commands, display formatting, bug fixes
-prompts/classify.md                  ✅ V2 prompt with examples & indicators (replaced simple version)
-src/tests/intelligence.adapter.test.ts   ✅ Updated: Tests for new format
-src/tests/classify-session.test.ts ✅ Updated: Tests for new format
-src/tests/cap.adapter.test.ts        ✅ Fixed and passing
+
+```text
+src/0_types.ts                      ✅ Updated: normalizeSessionId, OutlineSyncState, PublishingPort
+src/adapters/capture.cap.adapter.ts ✅ Updated: ID normalization on parse
+src/adapters/publishing.outline.adapter.ts ✅ Created: Outline REST API integration
+src/actions/sync-to-outline.ts      ✅ Created: Sync orchestration with global index
+src/scripts/visual_observer_base.py ✅ Created: Python OCR + CLIP clustering
+src/adapters/video.ffmpeg.adapter.ts ✅ Updated: Frame extraction logic
+src/index.ts                         ✅ Updated: New CLI commands & shortcuts
 ```
 
 ### Usage Examples
+
 ```bash
-# Start Ollama
-ollama serve
+# 1. List latest sessions
+pnpm run sessions
 
-# Pull model (example)
-ollama pull qwen3:32b
+# 2. Generate all recommended artifacts for latest session
+pnpm run generate latest all
 
-# Full pipeline: transcribe + classify
-pnpm run transcribe-latest && pnpm run classify-latest
-
-# Reuse transcript (second run only classifies)
-pnpm run classify-latest
-
-# Expected output:
-# 📊 Session Type Analysis:
-#    🎯 meeting    █████████████████ 85%
-#    📌 learning   █████████ 45%
-#
-# 🏷️  Primary Type: MEETING (85%)
-#   📌 Secondary: learning (45%)
-#
-# 💡 Suggested Artifacts:
-#    • Meeting summary & action items
+# 3. Sync everything to Outline
+pnpm run sync-all
 ```
 
-### Key Achievements
-- **Multi-label classification** handles mixed sessions correctly
-- **Ultra-simple parser** (10 lines) vs over-engineered alternative
-- **Fail-fast error handling** with clear, actionable messages
-- **Works with multiple models** tested: qwen3:32b, llama3.1:8b, mistral:7b
-- **No prompt versioning complexity** - single V2 prompt as source of truth
-- **All PR comments addressed** - clean, maintainable codebase
+---
 
-### Next Milestone
-Milestone 3: Artifacts - Generate Actionable Outputs
-- Generate summary, action items, runbooks, guides, notes
-- Add entity extraction and artifact prompts
-- Screenshot extraction at entity timestamps
+## Next Milestone: Milestone 3.5 - Smart Segmentation
+Focus on breaking "working" sessions into activity-based chunks for visual-first classification.
 

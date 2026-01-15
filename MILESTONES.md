@@ -291,76 +291,69 @@ System automatically classifies sessions with multi-label scores:
 
 ---
 
-## Milestone 3: Artifacts - Generate Actionable Outputs 📄
+## Milestone 3: Artifacts - Generate Actionable Outputs ✅
 
 **Description:** Generate structured artifacts based on session type: summaries, action items, runbooks, step-by-step guides, screenshots, notes.
 
-### Status: In Progress 🛠️
+**Completed Date:** January 15, 2026
 
-#### Phase 2: Prompt Engineering (Content & Language) ✅
-- [x] **Configuration Updates**
-  - [x] Added `generationModel` support for dual-model strategy (Classifier: 8b, Generator: 32b).
-  - [x] Add `maxScreenshots` to `ArtifactConfig` (default: 10).
-- [x] **Language Constraint:** English structure/headings + Original transcript language for content.
-- [x] **Core Prompts** in `prompts/`:
-  - [x] `summary.md` (Executive Summary with Cornell/SMART principles).
-  - [x] `action-items.md` (SMART task extraction).
-  - [x] `notes.md` (Deep-dive research notes).
-- [x] **Technical/Creative Prompts** (Improved via Hegel Dialectic):
-  - [x] `runbook.md` (SRE-style troubleshooting).
-  - [x] `step-by-step.md` (Diataxis-style how-to guide).
-  - [x] `code-snippets.md` (Literate programming documentation).
-  - [x] `blog-research.md` (Qualitative research synthesis).
-  - [x] `blog-draft.md` (Narrative storytelling blog).
-- [x] **Synthetic Verification Strategy**:
-  - [x] Created `src/scripts/seed-fixtures.ts` to test prompts against diverse session types.
+### Completed ✅
 
-#### Phase 3: Visuals (FFmpeg Integration) - *Pending*
-- [ ] **Implement `src/adapters/ffmpeg.adapter.ts`**
-  - Logic to extract high-quality frames at specific timestamps.
-  - Support for `.mp4`, `.webm`, `.mov`.
-- [ ] **Screenshot Orchestration**
-  - Select top `maxScreenshots` based on importance from `metadata.keyMoments`.
-  - Save to `~/.escribano/sessions/<id>/artifacts/screenshots/`.
-  - Auto-embed links: `![timestamp](./screenshots/time.jpg)`.
+- [x] **Phase 1: Artifact Types & Prompts**
+   - [x] Defined 8 artifact types in `0_types.ts`.
+   - [x] Created 8 comprehensive prompt templates in `prompts/`.
+   - [x] Implemented `IntelligenceService.generate()` in Ollama adapter.
 
-#### Phase 4: Integration & Verification
-- [ ] **Storage Persistence**
-  - Save all assets (`.md`, `.jpg`) in the session directory alongside `session.json`.
-- [ ] **End-to-End Pipeline Test**
-  - Recording → Classification → Metadata → Artifacts.
+- [x] **Phase 2: Visual Intelligence (Phase 3b)**
+   - [x] Python-based visual pipeline: OCR (Tesseract) + CLIP (OpenCLIP) + Agglomerative Clustering.
+   - [x] VLM integration: Describe visual-heavy segments using `minicpm-v:8b` via Ollama.
+   - [x] On-demand screenshot extraction at specific timestamps.
+
+- [x] **Phase 3: Knowledge Base Integration (Phase 4 Early Access)**
+   - [x] Outline Publishing Adapter: Create collections and nested document structures.
+   - [x] `sync` and `sync-all` commands to push artifacts to Outline.
+   - [x] Global Session Index document in Outline, auto-updated after sync.
+
+- [x] **Phase 4: CLI Polish**
+   - [x] Numbered session shortcuts (#1, #2...) for all artifact/sync commands.
+   - [x] Session ID normalization: No more spaces or special characters in IDs or storage.
+   - [x] Command aliases: `pnpm run sessions`, `pnpm run generate`, `pnpm run sync`.
 
 ### Final Output for Milestone 3
 
-Interactive artifact generation workflow:
+Interactive artifact generation and publishing workflow:
 ```bash
-# List what can be generated for a session
-escribano list-artifacts 2026-01-09--01.28 PM.cap
+# List sessions with numbers
+pnpm run sessions
 
-# Expected output:
-📊 Session: 2026-01-09--01.28 PM.cap
-   meeting: 85% ████████████████
-   learning: 45% ████████
+# Generate all recommended artifacts for session #1
+pnpm run generate 1 all
 
-💡 Recommended Artifacts:
-   ✓ Summary (meeting > 50%)
-   ✓ Action Items (meeting > 50%)
-
-# Generate a specific artifact
-escribano generate-artifact 2026-01-09--01.28 PM.cap summary
+# Sync artifacts to Outline
+pnpm run sync 1
 ```
 
-Generated artifacts will be saved to:
-```
-~/.escribano/sessions/<id>/
-├── session.json
-└── artifacts/
-    ├── summary.md
-    ├── action-items.md
-    └── screenshots/
-        ├── 120.jpg
-        └── 450.jpg
-```
+---
+
+## Milestone 3.5: Smart Segmentation & Activity-Based Classification 🧠
+
+**Description:** Rethink classification to handle fragmented "working" sessions by breaking recordings into activity-based chunks using visual signals (CLIP/VLM).
+
+### Tasks (Planned)
+
+- [ ] **Phase 1: Visual Segmentation**
+   - [ ] Use CLIP cluster boundaries as natural segment breakpoints.
+   - [ ] Add `segments: SessionSegment[]` to Session schema.
+   - [ ] Detect activity changes (e.g., Code Editor → Browser → Video).
+
+- [ ] **Phase 2: Segment-First Classification**
+   - [ ] Create `prompts/classify-segment.md` for per-chunk classification.
+   - [ ] Combine visual labels + audio transcript slices for richer scoring.
+   - [ ] Handle "silence" or "music" segments by relying on visual VLM context.
+
+- [ ] **Phase 3: Screenshot Orchestration**
+   - [ ] Implement `maxScreenshots` selection based on segment importance.
+   - [ ] Ensure diverse visual coverage in generated artifacts.
 
 ---
 

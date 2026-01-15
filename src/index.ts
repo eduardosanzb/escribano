@@ -10,7 +10,14 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { inspect } from 'node:util';
-import type { Recording, Session } from './0_types.js';
+import type {
+  Artifact,
+  ArtifactType,
+  Classification,
+  OutlineConfig,
+  Recording,
+  Session,
+} from './0_types.js';
 import { classifySession } from './actions/classify-session.js';
 import { extractMetadata } from './actions/extract-metadata.js';
 import {
@@ -18,11 +25,13 @@ import {
   getRecommendedArtifacts,
 } from './actions/generate-artifact.js';
 import { processSession } from './actions/process-session.js';
-import { createCapSource } from './adapters/cap.adapter.js';
-import { createFfmpegVideoService } from './adapters/ffmpeg.adapter.js';
-import { createIntelligenceService } from './adapters/intelligence.adapter.js';
-import { createStorageService } from './adapters/storage.adapter.js';
-import { createWhisperTranscriber } from './adapters/whisper.adapter.js';
+import { syncSessionToOutline } from './actions/sync-to-outline.js';
+import { createCapCaptureSource } from './adapters/capture.cap.adapter.js';
+import { createOllamaIntelligenceService } from './adapters/intelligence.ollama.adapter.js';
+import { createOutlinePublishingService } from './adapters/publishing.outline.adapter.js';
+import { createFsStorageService } from './adapters/storage.fs.adapter.js';
+import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
+import { createFfmpegVideoService } from './adapters/video.ffmpeg.adapter.js';
 
 const MODELS_DIR = path.join(os.homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
@@ -34,6 +43,7 @@ interface ParsedArgs {
   limit: number;
   recordingId?: string;
   sessionId?: string;
+  sessionRef?: string;
   artifactType?: string;
 }
 
@@ -70,12 +80,36 @@ function main(): void {
         executeExtractMetadataById(args);
         break;
 
+      case 'restart-latest':
+        executeRestartLatest();
+        break;
+
       case 'list-artifacts':
         executeListArtifacts(args);
         break;
 
       case 'generate-artifact':
         executeGenerateArtifact(args);
+        break;
+
+      case 'sessions':
+        executeSessions();
+        break;
+
+      case 'generate':
+        executeGenerate(args);
+        break;
+
+      case 'artifacts':
+        executeArtifactsList(args);
+        break;
+
+      case 'sync':
+        executeSync(args);
+        break;
+
+      case 'sync-all':
+        executeSyncAll();
         break;
 
       default:
@@ -151,6 +185,9 @@ function parseArgs(argsArray: string[]): ParsedArgs {
         recordingId: undefined,
       };
 
+    case 'restart-latest':
+      return { command: 'restart-latest', limit: 10 };
+
     case 'list-artifacts':
       if (argsArray.length < 2) {
         return { command: 'help', limit: 10 };
@@ -172,6 +209,34 @@ function parseArgs(argsArray: string[]): ParsedArgs {
         limit: 10,
       };
 
+    case 'sessions':
+      return { command: 'sessions', limit: 10 };
+
+    case 'generate':
+      return {
+        command: 'generate',
+        sessionRef: argsArray[1],
+        artifactType: argsArray[2],
+        limit: 10,
+      };
+
+    case 'artifacts':
+      return {
+        command: 'artifacts',
+        sessionRef: argsArray[1],
+        limit: 10,
+      };
+
+    case 'sync':
+      return {
+        command: 'sync',
+        sessionRef: argsArray[1],
+        limit: 10,
+      };
+
+    case 'sync-all':
+      return { command: 'sync-all', limit: 10 };
+
     default:
       return { command: 'help', limit: 10 };
   }
@@ -180,7 +245,7 @@ function parseArgs(argsArray: string[]): ParsedArgs {
 async function executeList(limit: number): Promise<void> {
   console.log('Fetching Cap recordings...');
 
-  const capSource = createCapSource({});
+  const capSource = createCapCaptureSource({});
   const recordings = await capSource.listRecordings(limit);
 
   if (recordings.length === 0) {
@@ -206,7 +271,7 @@ async function executeList(limit: number): Promise<void> {
 
 async function executeTranscribeLatest(_args: ParsedArgs): Promise<void> {
   await ensureModel();
-  const capSource = createCapSource();
+  const capSource = createCapCaptureSource();
   const recording = await capSource.getLatestRecording();
 
   if (recording === null) {
@@ -224,7 +289,7 @@ async function executeTranscribeById(args: ParsedArgs): Promise<void> {
   }
 
   await ensureModel();
-  const capSource = createCapSource();
+  const capSource = createCapCaptureSource();
   const recordings = await capSource.listRecordings(100);
   const recording = recordings.find((r) => r.id === args.recordingId);
 
@@ -237,7 +302,7 @@ async function executeTranscribeById(args: ParsedArgs): Promise<void> {
 }
 
 async function executeClassifyLatest(_args: ParsedArgs): Promise<void> {
-  const capSource = createCapSource({});
+  const capSource = createCapCaptureSource({});
   const recording = await capSource.getLatestRecording();
 
   if (!recording) {
@@ -249,7 +314,7 @@ async function executeClassifyLatest(_args: ParsedArgs): Promise<void> {
 
   if (session.status === 'transcribed' || !session.classification) {
     console.log('\nClassifying session...');
-    const intelligence = createIntelligenceService({});
+    const intelligence = createOllamaIntelligenceService({});
     session = await classifySession(session, intelligence);
     await saveSession(session);
   }
@@ -263,12 +328,12 @@ async function executeClassifyById(args: ParsedArgs): Promise<void> {
     process.exit(1);
   }
 
-  const storage = createStorageService();
+  const storage = createFsStorageService();
   let session = await storage.loadSession(args.sessionId);
 
   if (!session) {
     // Check if it's a recording ID instead
-    const capSource = createCapSource();
+    const capSource = createCapCaptureSource();
     const recordings = await capSource.listRecordings(100);
     const recording = recordings.find((r) => r.id === args.sessionId);
     if (recording) {
@@ -281,7 +346,7 @@ async function executeClassifyById(args: ParsedArgs): Promise<void> {
 
   if (session.status === 'transcribed' || !session.classification) {
     console.log('\nClassifying session...');
-    const intelligence = createIntelligenceService({});
+    const intelligence = createOllamaIntelligenceService({});
     session = await classifySession(session, intelligence);
     await saveSession(session);
   }
@@ -290,7 +355,7 @@ async function executeClassifyById(args: ParsedArgs): Promise<void> {
 }
 
 async function executeExtractMetadataLatest(_args: ParsedArgs): Promise<void> {
-  const capSource = createCapSource({});
+  const capSource = createCapCaptureSource({});
   const recording = await capSource.getLatestRecording();
 
   if (!recording) {
@@ -302,7 +367,7 @@ async function executeExtractMetadataLatest(_args: ParsedArgs): Promise<void> {
 
   if (!session.classification) {
     console.log('\nSession not classified. Classifying first...');
-    const intelligence = createIntelligenceService({});
+    const intelligence = createOllamaIntelligenceService({});
     session = await classifySession(session, intelligence);
     await saveSession(session);
     displayClassification(session);
@@ -310,7 +375,7 @@ async function executeExtractMetadataLatest(_args: ParsedArgs): Promise<void> {
 
   if (session.status === 'classified' || !session.metadata) {
     console.log(`\nExtracting metadata from session: ${session.id}\n`);
-    const intelligence = createIntelligenceService({});
+    const intelligence = createOllamaIntelligenceService({});
     session = await extractMetadata(session, intelligence);
     await saveSession(session);
   }
@@ -324,7 +389,7 @@ async function executeExtractMetadataById(args: ParsedArgs): Promise<void> {
     process.exit(1);
   }
 
-  const storage = createStorageService();
+  const storage = createFsStorageService();
   let session = await storage.loadSession(args.sessionId);
 
   if (!session) {
@@ -334,14 +399,14 @@ async function executeExtractMetadataById(args: ParsedArgs): Promise<void> {
 
   if (!session.classification) {
     console.log('\nSession not classified. Classifying first...');
-    const intelligence = createIntelligenceService({});
+    const intelligence = createOllamaIntelligenceService({});
     session = await classifySession(session, intelligence);
     await saveSession(session);
   }
 
   if (session.status === 'classified' || !session.metadata) {
     console.log(`\nExtracting metadata from session: ${session.id}\n`);
-    const intelligence = createIntelligenceService({});
+    const intelligence = createOllamaIntelligenceService({});
     session = await extractMetadata(session, intelligence);
     await saveSession(session);
   }
@@ -355,7 +420,7 @@ async function executeGenerateArtifact(args: ParsedArgs): Promise<void> {
     process.exit(1);
   }
 
-  const storage = createStorageService();
+  const storage = createFsStorageService();
   let session = await storage.loadSession(args.sessionId);
 
   if (!session) {
@@ -365,14 +430,14 @@ async function executeGenerateArtifact(args: ParsedArgs): Promise<void> {
 
   if (!session.classification) {
     console.log('\nSession not classified. Classifying first...');
-    const intelligence = createIntelligenceService({});
+    const intelligence = createOllamaIntelligenceService({});
     session = await classifySession(session, intelligence);
     await saveSession(session);
   }
 
   if (!session.metadata) {
     console.log('Metadata missing. Extracting metadata first...');
-    const intelligence = createIntelligenceService({});
+    const intelligence = createOllamaIntelligenceService({});
     session = await extractMetadata(session, intelligence);
     await saveSession(session);
     console.log('✓ Metadata extracted.');
@@ -380,7 +445,7 @@ async function executeGenerateArtifact(args: ParsedArgs): Promise<void> {
 
   console.log(`\nGenerating ${args.artifactType} for session ${session.id}...`);
 
-  const intelligence = createIntelligenceService({});
+  const intelligence = createOllamaIntelligenceService({});
   const videoService = createFfmpegVideoService();
   const artifact = await generateArtifact(
     session,
@@ -421,7 +486,7 @@ async function executeListArtifacts(args: ParsedArgs): Promise<void> {
     process.exit(1);
   }
 
-  const storage = createStorageService();
+  const storage = createFsStorageService();
   const session = await storage.loadSession(args.sessionId);
 
   if (!session) {
@@ -452,21 +517,29 @@ async function executeListArtifacts(args: ParsedArgs): Promise<void> {
  * Helper to get an existing session or process a recording to create one
  */
 async function getOrCreateSession(recording: Recording): Promise<Session> {
-  const storage = createStorageService();
+  const storage = createFsStorageService();
   let session = await storage.loadSession(recording.id);
 
   if (!session) {
     console.log('No existing session found, processing recording...');
     await ensureModel(); // Ensure model is there if we need to transcribe
-    const transcriber = createWhisperTranscriber({
+    const transcriber = createWhisperTranscriptionService({
       binaryPath: 'whisper-cli',
       model: MODEL_PATH,
       cwd: MODELS_DIR,
       outputFormat: 'json',
     });
     const videoService = createFfmpegVideoService();
+    const intelligenceService = createOllamaIntelligenceService({});
+    const storageService = createFsStorageService();
 
-    session = await processSession(recording, transcriber, videoService);
+    session = await processSession(
+      recording,
+      transcriber,
+      videoService,
+      storageService,
+      intelligenceService
+    );
     await saveSession(session);
     console.log('✓ Session created and transcribed.');
   }
@@ -483,15 +556,23 @@ async function transcribeRecording(recording: Recording): Promise<void> {
   console.log('');
   console.log('Processing transcription...');
 
-  const transcriber = createWhisperTranscriber({
+  const transcriber = createWhisperTranscriptionService({
     binaryPath: 'whisper-cli',
     model: MODEL_PATH,
     cwd: MODELS_DIR,
     outputFormat: 'json',
   });
   const videoService = createFfmpegVideoService();
+  const intelligenceService = createOllamaIntelligenceService({});
+  const storageService = createFsStorageService();
 
-  const session = await processSession(recording, transcriber, videoService);
+  const session = await processSession(
+    recording,
+    transcriber,
+    videoService,
+    storageService,
+    intelligenceService
+  );
 
   // Save the session after transcription
   await saveSession(session);
@@ -729,10 +810,329 @@ function formatDuration(seconds: number): string {
   return `${minutes}m ${secs}s`;
 }
 
+async function executeRestartLatest(): Promise<void> {
+  const capSource = createCapCaptureSource({});
+  const recording = await capSource.getLatestRecording();
+
+  if (!recording) {
+    console.error('No recordings found.');
+    process.exit(1);
+  }
+
+  const sessionDir = path.join(os.homedir(), '.escribano', 'sessions');
+  const sessionFile = path.join(sessionDir, `${recording.id}.json`);
+  const visualLogDir = path.join(sessionDir, recording.id, 'visual-log');
+
+  console.log(`Restarting session: ${recording.id}`);
+
+  // Delete session file
+  if (existsSync(sessionFile)) {
+    const { rm } = await import('node:fs/promises');
+    await rm(sessionFile);
+    console.log(`  ✓ Deleted session file: ${recording.id}.json`);
+  }
+
+  // Delete visual log directory
+  if (existsSync(visualLogDir)) {
+    const { rm } = await import('node:fs/promises');
+    await rm(visualLogDir, { recursive: true, force: true });
+    console.log('  ✓ Deleted existing visual log directory.');
+  }
+
+  // Re-run extraction
+  console.log('\nStarting fresh extraction...');
+  const transcriber = createWhisperTranscriptionService({
+    binaryPath: 'whisper-cli',
+    model: MODEL_PATH,
+    cwd: MODELS_DIR,
+    outputFormat: 'json',
+  });
+  const videoService = createFfmpegVideoService();
+  const intelligenceService = createOllamaIntelligenceService({});
+  const storageService = createFsStorageService();
+
+  const session = await processSession(
+    recording,
+    transcriber,
+    videoService,
+    storageService,
+    intelligenceService
+  );
+  await saveSession(session);
+  console.log('\n✅ Extraction complete.');
+}
+
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+async function executeSync(args: ParsedArgs): Promise<void> {
+  if (!args.sessionRef) {
+    console.error('Usage: sync <session#|latest>');
+    process.exit(1);
+  }
+
+  const session = await resolveSessionRef(args.sessionRef);
+  if (!session) {
+    console.error(`Session not found: ${args.sessionRef}`);
+    process.exit(1);
+  }
+
+  console.log(`\nSyncing session ${session.id} to Outline...`);
+
+  const config = getOutlineConfig();
+  if (!config) {
+    console.error(
+      'Outline configuration missing in .env (URL, TOKEN required)'
+    );
+    process.exit(1);
+  }
+
+  const publishing = createOutlinePublishingService(config);
+  const storage = createFsStorageService();
+
+  const { url } = await syncSessionToOutline(session, publishing, storage);
+  console.log(`\n✅ Session synced!`);
+  console.log(`URL: ${url}`);
+}
+
+async function executeSyncAll(): Promise<void> {
+  const storage = createFsStorageService();
+  const sessions = await storage.listSessions();
+
+  if (sessions.length === 0) {
+    console.log('No sessions found to sync.');
+    return;
+  }
+
+  const config = getOutlineConfig();
+  if (!config) {
+    console.error(
+      'Outline configuration missing in .env (URL, TOKEN required)'
+    );
+    process.exit(1);
+  }
+
+  const publishing = createOutlinePublishingService(config);
+
+  console.log(`\nSyncing ${sessions.length} sessions to Outline...`);
+
+  for (const session of sessions) {
+    process.stdout.write(`  Syncing ${session.id}... `);
+    try {
+      await syncSessionToOutline(session, publishing, storage);
+      console.log('✓');
+    } catch (error) {
+      console.log(`✗ (${(error as Error).message})`);
+    }
+  }
+
+  console.log('\n✅ Sync complete.');
+}
+
+function getOutlineConfig(): OutlineConfig | null {
+  const url = process.env.ESCRIBANO_OUTLINE_URL;
+  const token = process.env.ESCRIBANO_OUTLINE_TOKEN;
+  const collectionName =
+    process.env.ESCRIBANO_OUTLINE_COLLECTION || 'Escribano Sessions';
+
+  if (!url || !token) return null;
+
+  return { url, token, collectionName };
+}
+
+async function executeSessions(): Promise<void> {
+  const storage = createFsStorageService();
+  const sessions = await storage.listSessions();
+
+  if (sessions.length === 0) {
+    console.log('No sessions found. Process a recording first.');
+    return;
+  }
+
+  console.log(`\n📁 Sessions (${sessions.length} total):`);
+  sessions.forEach((session, i) => {
+    const num = i + 1;
+    const date = formatDate(new Date(session.createdAt));
+    const scores = formatTopScores(session.classification);
+    const artifactCount = session.artifacts?.length ?? 0;
+
+    console.log(
+      `  #${num.toString().padEnd(2)} ${date}  ${scores.padEnd(30)}  [${artifactCount} artifacts]`
+    );
+  });
+
+  console.log('\nUsage: pnpm run generate <#> <type|all>');
+}
+
+async function executeGenerate(args: ParsedArgs): Promise<void> {
+  if (!args.sessionRef || !args.artifactType) {
+    console.error('Usage: generate <session#|latest> <type|all>');
+    console.error(
+      'Types: summary, action-items, runbook, step-by-step, notes, code-snippets, blog-research, blog-draft'
+    );
+    process.exit(1);
+  }
+
+  const session = await resolveSessionRef(args.sessionRef);
+  if (!session) {
+    console.error(`Session not found: ${args.sessionRef}`);
+    process.exit(1);
+  }
+
+  // Ensure classification and metadata
+  const prepared = await ensureSessionReady(session);
+
+  if (args.artifactType === 'all') {
+    const types = getRecommendedArtifacts(prepared);
+    if (types.length === 0) {
+      console.log('No recommended artifacts based on classification scores.');
+      console.log('Use a specific type instead: summary, notes, etc.');
+      return;
+    }
+
+    console.log(`\n💡 Generating ${types.length} recommended artifacts...`);
+    for (const type of types) {
+      await generateAndSave(prepared, type as ArtifactType);
+    }
+  } else {
+    await generateAndSave(prepared, args.artifactType as ArtifactType);
+  }
+}
+
+async function executeArtifactsList(args: ParsedArgs): Promise<void> {
+  if (!args.sessionRef) {
+    console.error('Usage: artifacts <session#|latest>');
+    process.exit(1);
+  }
+
+  const session = await resolveSessionRef(args.sessionRef);
+  if (!session) {
+    console.error(`Session not found: ${args.sessionRef}`);
+    process.exit(1);
+  }
+
+  displayClassification(session);
+
+  const storage = createFsStorageService();
+  const artifacts = await storage.loadArtifacts(session.id);
+
+  console.log(`\n📄 Artifacts for session ${session.id}:`);
+  if (artifacts.length === 0) {
+    console.log('   (No artifacts generated yet)');
+  } else {
+    for (const artifact of artifacts) {
+      console.log(`   • ${artifact.type.padEnd(15)} (generated)`);
+    }
+  }
+
+  const recommendations = getRecommendedArtifacts(session);
+  const pending = recommendations.filter(
+    (r) => !artifacts.some((a) => a.type === r)
+  );
+
+  if (pending.length > 0) {
+    console.log('\n💡 Recommended but not generated:');
+    for (const type of pending) {
+      console.log(`   • ${type}`);
+    }
+  }
+
+  console.log(
+    '\nAvailable types: summary, action-items, runbook, step-by-step, notes, code-snippets, blog-research, blog-draft'
+  );
+}
+
+async function resolveSessionRef(ref: string): Promise<Session | null> {
+  if (ref === 'latest') {
+    const capSource = createCapCaptureSource();
+    const recording = await capSource.getLatestRecording();
+    if (!recording) return null;
+    return getOrCreateSession(recording);
+  }
+
+  const num = parseInt(ref, 10);
+  if (!isNaN(num) && num > 0) {
+    const storage = createFsStorageService();
+    const sessions = await storage.listSessions();
+    if (num > sessions.length) return null;
+    return sessions[num - 1]; // #1 = index 0
+  }
+
+  // Fallback: treat as full session ID
+  const storage = createFsStorageService();
+  return storage.loadSession(ref);
+}
+
+async function ensureSessionReady(session: Session): Promise<Session> {
+  let currentSession = session;
+
+  if (!currentSession.classification) {
+    console.log('\nSession not classified. Classifying first...');
+    const intelligence = createOllamaIntelligenceService({});
+    currentSession = await classifySession(currentSession, intelligence);
+    await saveSession(currentSession);
+    displayClassification(currentSession);
+  }
+
+  if (!currentSession.metadata) {
+    console.log('Metadata missing. Extracting metadata first...');
+    const intelligence = createOllamaIntelligenceService({});
+    currentSession = await extractMetadata(currentSession, intelligence);
+    await saveSession(currentSession);
+    console.log('✓ Metadata extracted.');
+  }
+
+  return currentSession;
+}
+
+async function generateAndSave(
+  session: Session,
+  type: ArtifactType
+): Promise<void> {
+  console.log(`\nGenerating ${type}...`);
+
+  const intelligence = createOllamaIntelligenceService({});
+  const videoService = createFfmpegVideoService();
+  const storage = createFsStorageService();
+
+  const artifact = await generateArtifact(
+    session,
+    intelligence,
+    type,
+    videoService
+  );
+
+  // Update session with new artifact
+  if (!session.artifacts) {
+    session.artifacts = [];
+  }
+  const existingIndex = session.artifacts.findIndex((a) => a.type === type);
+  if (existingIndex >= 0) {
+    session.artifacts[existingIndex] = artifact;
+  } else {
+    session.artifacts.push(artifact);
+  }
+
+  await saveSession(session);
+  await storage.saveArtifact(session.id, artifact);
+
+  console.log(`✅ ${type} saved.`);
+}
+
+function formatTopScores(classification?: Classification | null): string {
+  if (!classification) return '(not classified)';
+
+  const entries = Object.entries(classification)
+    .filter(([_, score]) => score >= 25)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 2);
+
+  if (entries.length === 0) return '(low relevance)';
+
+  return entries.map(([type, score]) => `${type} ${score}%`).join(' | ');
 }
 
 function showHelp(): void {
@@ -760,6 +1160,24 @@ function showHelp(): void {
     '  escribano extract-metadata <id>          Extract metadata from session by ID'
   );
   console.log(
+    '  escribano restart-latest                 Delete latest session and re-extract'
+  );
+  console.log(
+    '  escribano sessions                      List sessions with # shortcuts'
+  );
+  console.log(
+    '  escribano generate <#/latest> <type|all> Generate artifacts by shortcut'
+  );
+  console.log(
+    '  escribano artifacts <#/latest>          List artifacts for session'
+  );
+  console.log(
+    '  escribano sync <#/latest>               Sync session to Outline'
+  );
+  console.log(
+    '  escribano sync-all                      Sync all sessions + update index'
+  );
+  console.log(
     '  escribano list-artifacts <id>           List recommended/existing artifacts'
   );
   console.log(
@@ -767,6 +1185,11 @@ function showHelp(): void {
   );
   console.log('');
   console.log('Examples:');
+  console.log('  escribano sessions');
+  console.log('  escribano generate 1 summary');
+  console.log('  escribano generate 1 all');
+  console.log('  escribano generate latest all');
+  console.log('  escribano artifacts 1');
   console.log('  escribano list');
   console.log('  escribano list 20');
   console.log('  escribano transcribe-latest');

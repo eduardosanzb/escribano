@@ -15,8 +15,8 @@ Dependencies point inward. The domain layer knows **nothing** about adapters, da
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                     INFRASTRUCTURE (Adapters)                   │
-│   (Cap, Whisper, FFmpeg, Ollama, Filesystem)                    │
-│   (Concrete implementations of Ports)                           │
+│   (cap, whisper, ffmpeg, ollama, fs)                            │
+│   (Naming: [port].[implementation].adapter.ts)                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                     APPLICATION (Use Cases)                     │
 │   (ProcessSession, ClassifySession, GenerateArtifact)           │
@@ -31,8 +31,10 @@ Dependencies point inward. The domain layer knows **nothing** about adapters, da
 
 ### 2. Ports & Adapters
 
-External systems are abstracted behind ports (interfaces). This allows:
-- **Swapping implementations:** (e.g., Switch from local `whisper.cpp` to OpenAI API without touching business logic).
+External systems are abstracted behind ports (interfaces). This project follows a strict naming convention: `src/adapters/[port].[implementation].adapter.ts`.
+
+This allows:
+- **Swapping implementations:** (e.g., Switch from local `whisper.cpp` to OpenAI API by adding `transcription.openai.adapter.ts` without touching business logic).
 - **Testability:** Easy testing with mock adapters.
 - **Evolution:** Adding new capabilities (like Video Processing) by adding new Ports, not rewriting the core.
 
@@ -122,18 +124,18 @@ Creates the final deliverable.
 
 ## Ports (Interfaces)
 
-1.  **CaptureSource:** (`CapAdapter`)
+1.  **CaptureSource:** (`capture.cap.adapter.ts`)
     *   Watches for new `.cap` files.
-2.  **TranscriptionService:** (`WhisperAdapter`)
+2.  **TranscriptionService:** (`transcription.whisper.adapter.ts`)
     *   Audio -> Text.
-3.  **VideoService:** (`FfmpegAdapter`)
+3.  **VideoService:** (`video.ffmpeg.adapter.ts`)
     *   `extractFrames(timestamps)`
     *   `detectScenes(threshold)`
-4.  **IntelligenceService:** (`OllamaAdapter`)
+4.  **IntelligenceService:** (`intelligence.ollama.adapter.ts`)
     *   **Dual-Model Strategy:**
         *   *Fast Brain:* `qwen3:8b` (Classification).
         *   *Deep Brain:* `qwen3:32b` (Generation).
-5.  **StorageService:** (`FilesystemAdapter`)
+5.  **StorageService:** (`storage.fs.adapter.ts`)
     *   Persists Sessions (JSON) and Artifacts (Markdown/Images).
 
 ## Action Orchestration Flow
@@ -150,7 +152,7 @@ This diagram illustrates how data flows through the specific action files in the
 │  (Orchestrates raw-to-data conversion)                                      │
 ├──────────────────────────────────────┬──────────────────────────────────────┤
 │           AUDIO TRACKS               │             VIDEO TRACK              │
-│       (WhisperAdapter)               │           (FfmpegAdapter)            │
+│    (transcription.whisper)           │           (video.ffmpeg)             │
 │               │                      │                  │                   │
 │               ▼                      │                  ▼                   │
 │         transcripts[]                │             visualLogs[]             │
@@ -162,7 +164,7 @@ This diagram illustrates how data flows through the specific action files in the
 │  (Determines session nature: meeting, debugging, working, etc.)             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Input: transcripts + visualLogs                                            │
-│  Adapter: IntelligenceAdapter (Fast Brain: qwen3:8b)                        │
+│  Adapter: intelligence.ollama (Fast Brain: qwen3:8b)                        │
 └─────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
@@ -171,7 +173,7 @@ This diagram illustrates how data flows through the specific action files in the
 │  (Identifies key moments, technical terms, and speakers)                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Input: transcripts + visualLogs + classification                           │
-│  Adapter: IntelligenceAdapter (Reasoning Brain: qwen3:32b)                  │
+│  Adapter: intelligence.ollama (Reasoning Brain: qwen3:32b)                  │
 └─────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
@@ -180,8 +182,8 @@ This diagram illustrates how data flows through the specific action files in the
 │  (Produces Markdown and embeds high-res screenshots)                        │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Phase 1: Generate Markdown with [SCREENSHOT: timestamp] tags               │
-│  Phase 2: Post-process tags using FfmpegAdapter.extractFrames()             │
-│  Adapter: IntelligenceAdapter (Reasoning Brain: qwen3:32b)                  │
+│  Phase 2: Post-process tags using video.ffmpeg.extractFrames()              │
+│  Adapter: intelligence.ollama (Reasoning Brain: qwen3:32b)                  │
 └─────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
@@ -250,3 +252,111 @@ The `AutomationService` listens for events and triggers Use Cases.
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Visual Intelligence Pipeline (The Observer)
+
+### Problem Statement
+
+For **silent working sessions** (no audio), the system cannot classify or suggest artifacts 
+without understanding the visual content. Processing every frame through a Vision LLM is 
+prohibitively slow (~18 minutes for a 1-hour session at naive 1 frame/10s).
+
+### Research Findings
+
+Based on dialectical research into OCR, CLIP embeddings, and Vision LLMs:
+
+| Technique | Speed | Output | Best For |
+|-----------|-------|--------|----------|
+| **OCR (Tesseract/PaddleOCR)** | ~200ms/frame | Raw text from screen | Code, terminal, UI text |
+| **CLIP Embeddings (ViT-B/32)** | ~70ms/frame | Semantic vector | Clustering similar frames |
+| **Vision LLM (minicpm-v:8b)** | ~3s/frame | Natural language | Understanding context |
+
+**Key Insight:** OCR + CLIP handles 70-90% of the work. VLMs are reserved for segments 
+that lack audio context or have low OCR density (images, diagrams, videos).
+
+### Solution: Hybrid Multi-Stage Pipeline
+
+Two Python scripts, called separately based on discriminators:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│               SCRIPT 1: visual_observer_base.py (Always Runs)               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  Input: frames/ directory                                                    │
+│  Operations:                                                                 │
+│    1. OCR each frame → extract text/code                                     │
+│    2. Compute CLIP embedding → semantic vector                               │
+│    3. Cluster by cosine similarity (threshold 0.15)                          │
+│    4. Label clusters heuristically (via CLIP zero-shot + UI categories)      │
+│    5. Compute per-cluster metadata (avgOcrChars, timeRange, mediaIndicators) │
+│  Output: visual-index.json                                                   │
+│  Cost: ~20s for 1-hour session (no LLM)                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+                         DISCRIMINATOR LOGIC
+                    (Which clusters need VLM?)
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│              SCRIPT 2: visual_observer_describe.py (On-Demand)             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  Input: visual-index.json + list of cluster IDs to describe                 │
+│  Operations:                                                                 │
+│    1. Load representative frames for selected clusters                       │
+│    2. Batch frames into single VLM prompt (minicpm-v supports 64 frames)    │
+│    3. Generate descriptions for each frame in batch                          │
+│  Output: visual-descriptions.json                                            │
+│  Cost: ~10s for 10 clusters (single batched VLM call)                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Discriminator Logic: Per-Cluster Analysis
+
+```text
+FOR each cluster in visual-index.json:
+
+  needsVLM = FALSE
+
+  // Check 1: Audio overlap
+  IF cluster.timeRange has < 5 seconds of transcript overlap:
+    needsVLM = TRUE  // No audio explains this segment
+
+  // Check 2: OCR density (images, diagrams, videos)
+  ELSE IF cluster.avgOcrCharacters < 500:
+    needsVLM = TRUE  // Low text = visual content
+
+  // Check 3: Media indicators
+  ELSE IF cluster.mediaIndicators contains ["youtube", "video", ".png", ".jpg"]:
+    needsVLM = TRUE  // User watching/viewing media
+
+  IF needsVLM:
+    Add cluster.representativeIdx to VLM queue
+```
+
+### Multi-Frame VLM Batching
+
+MiniCPM-V 2.6 supports up to 64 frames in a single prompt:
+
+```text
+BEFORE (Sequential): 10 calls × 3s = 30s
+AFTER (Batched):     1 call with 10 frames = ~10s (3x faster)
+```
+
+### Python Integration
+
+Node.js spawns Python scripts via `uv`:
+
+```text
+spawn("uv", ["run", "src/scripts/visual_observer_base.py", ...])
+```
+
+### Storage Structure
+
+```text
+~/.escribano/sessions/{id}/
+├── frames/                   # Extracted keyframes (1 FPS)
+├── visual-index.json         # OCR + CLIP results
+└── visual-descriptions.json  # VLM results (if generated)
+```
+

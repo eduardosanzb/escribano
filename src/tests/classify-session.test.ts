@@ -77,6 +77,7 @@ const mockIntelligence: IntelligenceService = {
   classify: mockClassify,
   extractMetadata: mockExtractMetadata,
   generate: mockGenerate,
+  describeImages: vi.fn(),
 };
 
 describe('classifySession', () => {
@@ -119,7 +120,7 @@ describe('classifySession', () => {
 
     expect(mockClassify).toHaveBeenCalled();
     // Since we only have one transcript, it should be called with the original
-    expect(mockClassify).toHaveBeenCalledWith(mockTranscript);
+    expect(mockClassify).toHaveBeenCalledWith(mockTranscript, []);
   });
 
   it('should interleave multiple transcripts', async () => {

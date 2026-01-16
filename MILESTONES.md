@@ -291,65 +291,69 @@ System automatically classifies sessions with multi-label scores:
 
 ---
 
-## Milestone 3: Artifacts - Generate Actionable Outputs 📄
+## Milestone 3: Artifacts - Generate Actionable Outputs ✅
 
 **Description:** Generate structured artifacts based on session type: summaries, action items, runbooks, step-by-step guides, screenshots, notes.
 
-### Tasks (Not Started)
+**Completed Date:** January 15, 2026
 
-- [ ] **Generate Artifact Action (`src/actions/generate-artifact.ts`)**
-   - [ ] `generateArtifact()` pure function
-   - [ ] Takes Session, IntelligenceService, and ArtifactType as parameters
-   - [ ] Routes to appropriate prompt based on artifact type
-   - [ ] Calls `intelligence.generate()` with context
-   - [ ] Returns generated artifact
+### Completed ✅
 
-- [ ] **Artifact Types Support**
-   - [ ] Summary - concise meeting overview
-   - [ ] Action Items - extracted TODOs with owners
-   - [ ] Runbook - step-by-step debugging guide
-   - [ ] Screenshots - capture key frames from video
-   - [ ] Step-by-step - tutorial guide
-   - [ ] Notes - learning session notes
+- [x] **Phase 1: Artifact Types & Prompts**
+   - [x] Defined 8 artifact types in `0_types.ts`.
+   - [x] Created 8 comprehensive prompt templates in `prompts/`.
+   - [x] Implemented `IntelligenceService.generate()` in Ollama adapter.
 
-- [ ] **Screenshots Adapter (`src/adapters/ffmpeg.adapter.ts`)**
-   - [ ] Extract frames from video at specific timestamps
-   - [ ] Support multiple formats (mp4, webm, mov)
-   - [ ] Handle Cap's cursor.json for precise cursor tracking
-   - [ ] Save screenshots to output directory
+- [x] **Phase 2: Visual Intelligence (Phase 3b)**
+   - [x] Python-based visual pipeline: OCR (Tesseract) + CLIP (OpenCLIP) + Agglomerative Clustering.
+   - [x] VLM integration: Describe visual-heavy segments using `minicpm-v:8b` via Ollama.
+   - [x] On-demand screenshot extraction at specific timestamps.
 
-- [ ] **Storage Adapter (`src/adapters/storage.adapter.ts`)**
-   - [ ] Save sessions to filesystem/JSON
-   - [ ] Save artifacts to files with naming convention
-   - [ ] Configure output directory (default: `~/Documents/escribano`)
-   - [ ] Handle file conflicts (overwrite/append strategies)
+- [x] **Phase 3: Knowledge Base Integration (Phase 4 Early Access)**
+   - [x] Outline Publishing Adapter: Create collections and nested document structures.
+   - [x] `sync` and `sync-all` commands to push artifacts to Outline.
+   - [x] Global Session Index document in Outline, auto-updated after sync.
 
-- [ ] **Tests**
-   - [ ] Unit tests for each artifact type
-   - [ ] Integration test: Full flow to artifact generation
-   - [ ] Validate artifact content quality
+- [x] **Phase 4: CLI Polish**
+   - [x] Numbered session shortcuts (#1, #2...) for all artifact/sync commands.
+   - [x] Session ID normalization: No more spaces or special characters in IDs or storage.
+   - [x] Command aliases: `pnpm run sessions`, `pnpm run generate`, `pnpm run sync`.
 
 ### Final Output for Milestone 3
 
-Automatic artifact generation for each session:
-```javascript
-{
-  "id": "session-123",
-  "status": "complete",
-  "artifacts": [
-    {
-      "type": "summary",
-      "content": "Discussed feature X, decided on approach Y...",
-      "createdAt": "2026-01-08T01:05:00.000Z"
-    },
-    {
-      "type": "actionItems",
-      "content": ["Implement feature X", "Review documentation", ...],
-      "createdAt": "2026-01-08T01:05:00.000Z"
-    }
-  ]
-}
+Interactive artifact generation and publishing workflow:
+```bash
+# List sessions with numbers
+pnpm run sessions
+
+# Generate all recommended artifacts for session #1
+pnpm run generate 1 all
+
+# Sync artifacts to Outline
+pnpm run sync 1
 ```
+
+---
+
+## Milestone 3.5: Smart Segmentation & Activity-Based Classification 🧠
+
+**Description:** Rethink classification to handle fragmented "working" sessions by breaking recordings into activity-based chunks using visual signals (CLIP/VLM).
+
+### Tasks (Planned)
+
+- [ ] **Phase 1: Visual Segmentation**
+   - [ ] Use CLIP cluster boundaries as natural segment breakpoints.
+   - [ ] Add `segments: SessionSegment[]` to Session schema.
+   - [ ] Detect activity changes (e.g., Code Editor → Browser → Video).
+
+- [ ] **Phase 2: Segment-First Classification**
+   - [ ] Create `prompts/classify-segment.md` for per-chunk classification.
+   - [ ] Combine visual labels + audio transcript slices for richer scoring.
+   - [ ] Handle "silence" or "music" segments by relying on visual VLM context.
+
+- [ ] **Phase 3: Screenshot Orchestration**
+   - [ ] Implement `maxScreenshots` selection based on segment importance.
+   - [ ] Ensure diverse visual coverage in generated artifacts.
 
 ---
 

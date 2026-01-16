@@ -3,3 +3,4 @@ dist
 pnpm-lock.yaml
 coverage
 *.log
+src/scripts/.venv/**/*

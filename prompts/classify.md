@@ -24,8 +24,14 @@ Look for: "Let me understand", research, exploration
 Examples: Writing features, refactoring, implementing new code
 Look for: Creating files, "let's implement", productive coding
 
-## Output exactly this format:
-{"meeting": 85, "debugging": 10, "tutorial": 0, "learning": 45, "working": 20}
+## Input Context:
 
-Transcript:
+### Visual Log (Screen Activity)
+{{VISUAL_LOG}}
+
+### Transcript
 {{TRANSCRIPT_ALL}}
+
+## Output Format:
+Output ONLY JSON scores (0-100) for each session type.
+{"meeting": 85, "debugging": 10, "tutorial": 0, "learning": 45, "working": 20}

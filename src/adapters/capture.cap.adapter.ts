@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CapConfig, CaptureSource, Recording } from '../0_types.js';
 import { capConfigSchema } from '../0_types.js';
+import { normalizeSessionId } from '../utils/id-normalization.js';
 
 function expandPath(path: string): string {
   if (path.startsWith('~/')) {
@@ -54,7 +55,8 @@ async function parseCapRecording(
     const stats = await stat(audioToStat);
     const capturedAt = stats.mtime;
 
-    const recordingId = capDirPath.split('/').pop() || 'unknown';
+    const rawId = capDirPath.split('/').pop() || 'unknown';
+    const recordingId = normalizeSessionId(rawId);
 
     return {
       id: recordingId,
@@ -82,7 +84,7 @@ async function parseCapRecording(
   }
 }
 
-export function createCapSource(
+export function createCapCaptureSource(
   config: Partial<CapConfig> = {}
 ): CaptureSource {
   const parsedConfig = capConfigSchema.parse(config);
@@ -107,7 +109,7 @@ export function createCapSource(
       console.log(
         recordings
           .filter((p) => p.status === 'rejected')
-          .map((p) => (p as PromiseRejectedResult).reason + '\n')
+          .map((p) => `${(p as PromiseRejectedResult).reason}\n`)
       );
 
       return recordings

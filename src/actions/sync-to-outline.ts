@@ -6,6 +6,7 @@
 
 import type {
   ArtifactType,
+  OutlineSyncState,
   PublishingService,
   Session,
   StorageService,
@@ -27,68 +28,44 @@ export async function syncSessionToOutline(
   const sessionTitle = formatSessionTitle(session);
   const sessionContent = generateSessionDocument(session);
 
-  let sessionDocId: string;
-  let sessionDocUrl: string;
-
   const existingSession = await publishing.findDocumentByTitle(
     collection.id,
     sessionTitle
   );
 
-  if (existingSession) {
-    await publishing.updateDocument(existingSession.id, {
-      content: sessionContent,
-    });
-    sessionDocId = existingSession.id;
-    sessionDocUrl = existingSession.url;
-  } else {
-    const created = await publishing.createDocument({
-      collectionId: collection.id,
-      title: sessionTitle,
-      content: sessionContent,
-      publish: true,
-    });
-    sessionDocId = created.id;
-    sessionDocUrl = created.url;
-  }
+  const sessionDoc = await upsertDocument(
+    publishing,
+    collection.id,
+    sessionTitle,
+    sessionContent,
+    existingSession?.id
+  );
 
   // 3. Sync each artifact as child document
-  const syncedArtifacts: any[] = [];
+  const syncedArtifacts: OutlineSyncState['artifacts'] = [];
 
   for (const artifact of session.artifacts) {
     const artifactTitle = formatArtifactType(artifact.type);
     const existingArtifact = await findChildDocumentByTitle(
       publishing,
       collection.id,
-      sessionDocId,
+      sessionDoc.id,
       artifactTitle
     );
 
-    let docId: string;
-    let docUrl: string;
-
-    if (existingArtifact) {
-      await publishing.updateDocument(existingArtifact.id, {
-        content: artifact.content,
-      });
-      docId = existingArtifact.id;
-      docUrl = existingArtifact.url;
-    } else {
-      const created = await publishing.createDocument({
-        collectionId: collection.id,
-        title: artifactTitle,
-        content: artifact.content,
-        parentDocumentId: sessionDocId,
-        publish: true,
-      });
-      docId = created.id;
-      docUrl = created.url;
-    }
+    const artifactDoc = await upsertDocument(
+      publishing,
+      collection.id,
+      artifactTitle,
+      artifact.content,
+      existingArtifact?.id,
+      sessionDoc.id
+    );
 
     syncedArtifacts.push({
       type: artifact.type,
-      documentId: docId,
-      documentUrl: docUrl,
+      documentId: artifactDoc.id,
+      documentUrl: artifactDoc.url,
       syncedAt: new Date(),
       contentHash: hashContent(artifact.content),
     });
@@ -97,8 +74,8 @@ export async function syncSessionToOutline(
   // 4. Update sync state
   session.outlineSyncState = {
     collectionId: collection.id,
-    sessionDocumentId: sessionDocId,
-    sessionDocumentUrl: sessionDocUrl,
+    sessionDocumentId: sessionDoc.id,
+    sessionDocumentUrl: sessionDoc.url,
     artifacts: syncedArtifacts,
     lastSyncedAt: new Date(),
   };
@@ -108,7 +85,37 @@ export async function syncSessionToOutline(
   // 5. Update global index
   await updateGlobalIndex(publishing, storage, collection.id);
 
-  return { url: sessionDocUrl };
+  return { url: sessionDoc.url };
+}
+
+/**
+ * Creates or updates a document in Outline
+ */
+async function upsertDocument(
+  publishing: PublishingService,
+  collectionId: string,
+  title: string,
+  content: string,
+  existingId?: string,
+  parentDocumentId?: string
+): Promise<{ id: string; url: string }> {
+  if (existingId) {
+    await publishing.updateDocument(existingId, { content });
+    // We need the URL, but updateDocument doesn't return it.
+    // Most publishing services will have the URL stable if the title/ID don't change.
+    // For now we re-fetch or assume findDocumentByTitle was sufficient.
+    const updated = await publishing.findDocumentByTitle(collectionId, title);
+    if (!updated) throw new Error(`Failed to find updated document: ${title}`);
+    return updated;
+  }
+
+  return publishing.createDocument({
+    collectionId,
+    title,
+    content,
+    parentDocumentId,
+    publish: true,
+  });
 }
 
 /**
@@ -272,14 +279,5 @@ async function updateGlobalIndex(
   }
 
   const existing = await publishing.findDocumentByTitle(collectionId, title);
-  if (existing) {
-    await publishing.updateDocument(existing.id, { content });
-  } else {
-    await publishing.createDocument({
-      collectionId,
-      title,
-      content,
-      publish: true,
-    });
-  }
+  await upsertDocument(publishing, collectionId, title, content, existing?.id);
 }

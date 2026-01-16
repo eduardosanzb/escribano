@@ -5,12 +5,7 @@
  * to test all 8 artifact generation prompts.
  */
 
-import {
-  type Classification,
-  Recording,
-  type Session,
-  type Transcript,
-} from '../0_types.js';
+import type { Classification, Session, Transcript } from '../0_types.js';
 import { createFsStorageService } from '../adapters/storage.fs.adapter.js';
 
 const storage = createFsStorageService();

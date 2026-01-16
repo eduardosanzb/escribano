@@ -25,8 +25,9 @@ import {
 /**
  * Helper to convert Zod schema to Ollama-compatible JSON schema
  */
-function toOllamaSchema(schema: any): object {
-  const jsonSchema = z.toJSONSchema(schema) as any;
+function toOllamaSchema(schema: z.ZodType): object {
+  // biome-ignore lint/suspicious/noExplicitAny: needed for Zod schema conversion
+  const jsonSchema = (z as any).toJSONSchema(schema);
   const { $schema, ...rest } = jsonSchema;
   return rest;
 }
@@ -59,7 +60,7 @@ async function ensureModelWarmed(
   try {
     console.log(`Warming up model: ${modelName}...`);
     const response = await fetch(
-      config.endpoint.replace('/chat', '').replace('/generate', '') + '/chat',
+      `${config.endpoint.replace('/chat', '').replace('/generate', '')}/chat`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -75,7 +76,7 @@ async function ensureModelWarmed(
       warmedModels.add(modelName);
       console.log(`✓ Model ${modelName} loaded and ready.`);
     }
-  } catch (error) {
+  } catch (_error) {
     // In tests, model warming may fail - continue anyway
     // The real request will retry if needed
     console.log(
@@ -96,7 +97,7 @@ async function checkOllamaHealth(): Promise<void> {
     const data = await response.json();
     console.log('✓ Ollama is running and accessible');
     console.log(`  Available models: ${data.models?.length || 0}`);
-  } catch (error) {
+  } catch (_error) {
     // In tests with mocked fetch, this will fail - just log and continue
     console.log('  (Health check skipped or failed, continuing... )');
   }
@@ -164,12 +165,13 @@ function loadClassifyPrompt(
     .map((seg) => `[seg-${seg.id}] [${seg.start}s - ${seg.end}s] ${seg.text}`)
     .join('\n');
 
+  // TODO: Implement robust transcript cleaning (Milestone 4)
   prompt = prompt.replace('{{TRANSCRIPT_ALL}}', transcript.fullText);
   prompt = prompt.replace('{{TRANSCRIPT_SEGMENTS}}', segmentsText);
 
   if (visualLogs && visualLogs.length > 0) {
     const visualSummary = visualLogs[0].entries
-      .map((e, i) => {
+      .map((e, _i) => {
         const timestamp = `[${e.timestamp}s]`;
         const label = e.heuristicLabel ? `[${e.heuristicLabel}]` : '';
         const description = e.description ? `: ${e.description}` : '';
@@ -195,7 +197,8 @@ async function callOllama(
     jsonSchema?: object;
     model: string;
   }
-): Promise<string | any> {
+  // biome-ignore lint/suspicious/noExplicitAny: Ollama returns dynamic JSON or strings
+): Promise<any> {
   // Model warm-up (errors handled gracefully, especially in tests)
   try {
     await ensureModelWarmed(options.model, config);
@@ -266,7 +269,7 @@ async function callOllama(
       }
 
       return data.message.content as string;
-    } catch (error: any) {
+    } catch (error) {
       lastError = error as Error;
 
       if (error instanceof Error && error.name === 'AbortError') {
@@ -326,11 +329,12 @@ function loadMetadataPrompt(
 
   prompt = prompt.replace('{{CLASSIFICATION_SUMMARY}}', classificationSummary);
   prompt = prompt.replace('{{TRANSCRIPT_SEGMENTS}}', segmentsText);
+  // TODO: Implement robust transcript cleaning (Milestone 4)
   prompt = prompt.replace('{{TRANSCRIPT_ALL}}', transcript.fullText);
 
   if (visualLogs && visualLogs.length > 0) {
     const visualSummary = visualLogs[0].entries
-      .map((e, i) => {
+      .map((e, _i) => {
         const timestamp = `[${e.timestamp}s]`;
         const label = e.heuristicLabel ? `[${e.heuristicLabel}]` : '';
         const description = e.description ? `: ${e.description}` : '';
@@ -378,6 +382,7 @@ function loadArtifactPrompt(
   const promptPath = join(process.cwd(), 'prompts', `${artifactType}.md`);
   let prompt = readFileSync(promptPath, 'utf-8');
 
+  // TODO: Implement robust transcript cleaning (Milestone 4)
   prompt = prompt.replace('{{TRANSCRIPT_ALL}}', context.transcript.fullText);
   prompt = prompt.replace('{{LANGUAGE}}', context.transcript.language || 'en');
 
@@ -395,8 +400,8 @@ function loadArtifactPrompt(
   if (context.visualLogs && context.visualLogs.length > 0) {
     const visualSummary = context.visualLogs[0].entries
       .map(
-        (e: any, i: number) =>
-          `[Scene ${i}] at ${e.timestamp}s: ${e.description || 'Action on screen'}`
+        (e, _i: number) =>
+          `[Scene ${_i}] at ${e.timestamp}s: ${e.description || 'Action on screen'}`
       )
       .join('\n');
     prompt = prompt.replace('{{VISUAL_LOG}}', visualSummary);
@@ -584,7 +589,9 @@ Return a JSON object with this structure:
 
   // Map back to our format
   return images.map((img, i) => {
-    const desc = descriptionsList.find((d: any) => d.index === i) ||
+    const desc = descriptionsList.find(
+      (d: { index: number }) => d.index === i
+    ) ||
       descriptionsList[i] || { summary: 'No description generated' };
 
     return {

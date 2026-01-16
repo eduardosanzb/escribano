@@ -56,7 +56,7 @@ export function createFfmpegVideoService(): VideoService {
      * Detect significant scene changes and extract frames.
      * Useful for silent sessions where we want to capture moments of activity.
      */
-    detectAndExtractScenes: async (videoPath, threshold, outputDir) => {
+    detectAndExtractScenes: async (videoPath, _threshold, outputDir) => {
       await mkdir(outputDir, { recursive: true });
 
       const frameInterval = Number(process.env.ESCRIBANO_FRAME_INTERVAL) || 2;
@@ -107,7 +107,9 @@ export function createFfmpegVideoService(): VideoService {
         const duration = data.format?.duration
           ? Number.parseFloat(data.format.duration)
           : 0;
-        const videoStream = data.streams?.find((s: any) => s.width && s.height);
+        const videoStream = data.streams?.find(
+          (s: { width: number; height: number }) => s.width && s.height
+        );
 
         return {
           duration,

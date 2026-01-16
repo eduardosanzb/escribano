@@ -35,7 +35,7 @@ export function createOutlinePublishingService(
   return {
     async ensureCollection(name: string) {
       const list = await apiCall('collections.list', {});
-      const existing = list.data.find((c: any) => c.name === name);
+      const existing = list.data.find((c: { name: string }) => c.name === name);
 
       if (existing) {
         return { id: existing.id };
@@ -71,7 +71,7 @@ export function createOutlinePublishingService(
     async findDocumentByTitle(collectionId, title) {
       // Note: Outline search or list could be used. list is safer for exact title match in collection.
       const list = await apiCall('documents.list', { collectionId });
-      const doc = list.data.find((d: any) => d.title === title);
+      const doc = list.data.find((d: { title: string }) => d.title === title);
 
       if (doc) {
         return {
@@ -85,12 +85,14 @@ export function createOutlinePublishingService(
 
     async listDocuments(collectionId) {
       const list = await apiCall('documents.list', { collectionId });
-      return list.data.map((d: any) => ({
-        id: d.id,
-        title: d.title,
-        parentDocumentId: d.parentDocumentId,
-        url: `${baseUrl}/doc/${d.id}`,
-      }));
+      return list.data.map(
+        (d: { id: string; title: string; parentDocumentId: string }) => ({
+          id: d.id,
+          title: d.title,
+          parentDocumentId: d.parentDocumentId,
+          url: `${baseUrl}/doc/${d.id}`,
+        })
+      );
     },
   };
 }

@@ -2,29 +2,19 @@ name: CI
 
 on:
   push:
-    branches: [ main, feat/* ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
 jobs:
-  biome:
-    name: Lint & Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: biomejs/setup-biome@v2
-      - run: biome ci .
-
-  node-checks:
-    name: Type Check & Test
+  quality:
+    name: Node.js Quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
           
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -35,8 +25,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Type Check
-        run: pnpm typecheck
-
-      - name: Run Tests
-        run: pnpm test
+      - name: Lint, Type Check & Test
+        run: |
+          pnpm check
+          pnpm typecheck
+          pnpm test

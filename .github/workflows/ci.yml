@@ -4,11 +4,18 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
 
 jobs:
-  quality:
-    name: Node.js Quality
+  biome:
+    name: Biome
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: biomejs/setup-biome@v2
+      - run: biome ci .
+
+  node-quality:
+    name: Types & Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,8 +32,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Lint, Type Check & Test
-        run: |
-          pnpm check
-          pnpm typecheck
-          pnpm test
+      - name: Type Check
+        run: pnpm typecheck
+
+      - name: Run Tests
+        run: pnpm test

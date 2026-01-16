@@ -5,18 +5,17 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { homedir } from 'node:os';
 import path from 'node:path';
-import { inspect } from 'node:util';
 import type {
-  Artifact,
   ArtifactType,
   Classification,
   OutlineConfig,
   Recording,
   Session,
+  TranscriptMetadata,
 } from './0_types.js';
 import { classifySession } from './actions/classify-session.js';
 import { extractMetadata } from './actions/extract-metadata.js';
@@ -33,7 +32,7 @@ import { createFsStorageService } from './adapters/storage.fs.adapter.js';
 import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
 import { createFfmpegVideoService } from './adapters/video.ffmpeg.adapter.js';
 
-const MODELS_DIR = path.join(os.homedir(), '.escribano', 'models');
+const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
 const MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
 const MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_FILE}`;
@@ -450,7 +449,7 @@ async function executeGenerateArtifact(args: ParsedArgs): Promise<void> {
   const artifact = await generateArtifact(
     session,
     intelligence,
-    args.artifactType as any,
+    args.artifactType as ArtifactType,
     videoService
   );
 
@@ -598,20 +597,8 @@ async function transcribeRecording(recording: Recording): Promise<void> {
   }
 }
 
-async function loadSession(sessionId: string): Promise<Session | null> {
-  const sessionDir = path.join(os.homedir(), '.escribano', 'sessions');
-  const sessionFile = path.join(sessionDir, `${sessionId}.json`);
-
-  try {
-    const content = readFileSync(sessionFile, 'utf-8');
-    return JSON.parse(content) as Session;
-  } catch {
-    return null;
-  }
-}
-
 async function saveSession(session: Session): Promise<void> {
-  const sessionDir = path.join(os.homedir(), '.escribano', 'sessions');
+  const sessionDir = path.join(homedir(), '.escribano', 'sessions');
   await mkdir(sessionDir, { recursive: true });
 
   const sessionFile = path.join(sessionDir, `${session.id}.json`);
@@ -681,7 +668,7 @@ function displayClassification(session: Session): void {
     console.log('   • Code snippets & commit message');
 }
 
-function displayMetadata(metadata: any | null): void {
+function displayMetadata(metadata: TranscriptMetadata | null): void {
   if (!metadata) {
     console.log('No metadata extracted');
     return;
@@ -819,7 +806,7 @@ async function executeRestartLatest(): Promise<void> {
     process.exit(1);
   }
 
-  const sessionDir = path.join(os.homedir(), '.escribano', 'sessions');
+  const sessionDir = path.join(homedir(), '.escribano', 'sessions');
   const sessionFile = path.join(sessionDir, `${recording.id}.json`);
   const visualLogDir = path.join(sessionDir, recording.id, 'visual-log');
 
@@ -1054,7 +1041,7 @@ async function resolveSessionRef(ref: string): Promise<Session | null> {
   }
 
   const num = parseInt(ref, 10);
-  if (!isNaN(num) && num > 0) {
+  if (!Number.isNaN(num) && num > 0) {
     const storage = createFsStorageService();
     const sessions = await storage.listSessions();
     if (num > sessions.length) return null;

@@ -276,40 +276,31 @@ Based on dialectical research into OCR, CLIP embeddings, and Vision LLMs:
 **Key Insight:** OCR + CLIP handles 70-90% of the work. VLMs are reserved for segments 
 that lack audio context or have low OCR density (images, diagrams, videos).
 
-### Solution: Hybrid Multi-Stage Pipeline
+### Solution: Visual Indexing Pipeline
 
-Two Python scripts, called separately based on discriminators:
+A unified Python script (`visual_observer_base.py`) handles the heavy lifting of visual understanding:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│               SCRIPT 1: visual_observer_base.py (Always Runs)               │
+│               SCRIPT: visual_observer_base.py                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Input: frames/ directory                                                    │
 │  Operations:                                                                 │
-│    1. OCR each frame → extract text/code                                     │
-│    2. Compute CLIP embedding → semantic vector                               │
-│    3. Cluster by cosine similarity (threshold 0.15)                          │
+│    1. OCR each frame → extract text/code (Tesseract)                         │
+│    2. Compute CLIP embedding → semantic vector (OpenCLIP ViT-B/32)            │
+│    3. Cluster by cosine similarity (Agglomerative Clustering)                │
 │    4. Label clusters heuristically (via CLIP zero-shot + UI categories)      │
 │    5. Compute per-cluster metadata (avgOcrChars, timeRange, mediaIndicators) │
 │  Output: visual-index.json                                                   │
-│  Cost: ~20s for 1-hour session (no LLM)                                      │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    ↓
-                         DISCRIMINATOR LOGIC
-                    (Which clusters need VLM?)
-                                    ↓
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              SCRIPT 2: visual_observer_describe.py (On-Demand)             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Input: visual-index.json + list of cluster IDs to describe                 │
-│  Operations:                                                                 │
-│    1. Load representative frames for selected clusters                       │
-│    2. Batch frames into single VLM prompt (minicpm-v supports 64 frames)    │
-│    3. Generate descriptions for each frame in batch                          │
-│  Output: visual-descriptions.json                                            │
-│  Cost: ~10s for 10 clusters (single batched VLM call)                        │
+│  Performance: High-speed processing without LLM dependencies.                │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Visual Intelligence (VLM) Strategy
+
+While OCR and CLIP handle semantic indexing, complex visual scenes (diagrams, UI changes without text) are described using a **Vision LLM (MiniCPM-V)** via Ollama. 
+
+To maintain performance, Escribano uses **Discriminator Logic** to only describe segments that lack audio context or have low OCR density.
 
 ### Discriminator Logic: Per-Cluster Analysis
 
@@ -336,16 +327,11 @@ FOR each cluster in visual-index.json:
 
 ### Multi-Frame VLM Batching
 
-MiniCPM-V 2.6 supports up to 64 frames in a single prompt:
-
-```text
-BEFORE (Sequential): 10 calls × 3s = 30s
-AFTER (Batched):     1 call with 10 frames = ~10s (3x faster)
-```
+When using vision models like `minicpm-v:8b`, Escribano batches multiple frames into single prompts where supported, significantly reducing the overhead of multiple LLM calls.
 
 ### Python Integration
 
-Node.js spawns Python scripts via `uv`:
+Node.js spawns the Python pipeline via `uv`:
 
 ```text
 spawn("uv", ["run", "src/scripts/visual_observer_base.py", ...])

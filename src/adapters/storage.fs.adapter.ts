@@ -95,7 +95,7 @@ async function loadArtifacts(sessionId: string): Promise<Artifact[]> {
 
       artifacts.push({
         id: `${sessionId}-${file.replace('.md', '')}`,
-        type: type as any,
+        type: type as Artifact['type'],
         content,
         format: 'markdown',
         createdAt: new Date(),

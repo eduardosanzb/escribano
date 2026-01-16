@@ -4,11 +4,7 @@
  * Extracts structured metadata from session transcripts using LLM
  */
 
-import type {
-  Session,
-  IntelligenceService,
-  TranscriptMetadata,
-} from '../0_types.js';
+import type { IntelligenceService, Session } from '../0_types.js';
 
 export async function extractMetadata(
   session: Session,

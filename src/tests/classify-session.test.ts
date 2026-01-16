@@ -46,8 +46,11 @@ const mockSession: Session = {
       transcript: mockTranscript,
     },
   ],
+  visualLogs: [],
   status: 'transcribed',
   classification: null,
+  metadata: null,
+  artifacts: [],
   createdAt: new Date('2026-01-08'),
   updatedAt: new Date('2026-01-08'),
 };
@@ -61,13 +64,20 @@ const mockClassificationResult = {
 };
 
 const mockClassify = vi.fn();
-const mockGenerate = vi
-  .fn()
-  .mockRejectedValue(new Error('generate() not implemented - Milestone 3'));
+const mockExtractMetadata = vi.fn().mockResolvedValue({
+  speakers: [],
+  keyMoments: [],
+  actionItems: [],
+  technicalTerms: [],
+  codeSnippets: [],
+});
+const mockGenerate = vi.fn();
 
 const mockIntelligence: IntelligenceService = {
   classify: mockClassify,
+  extractMetadata: mockExtractMetadata,
   generate: mockGenerate,
+  describeImages: vi.fn(),
 };
 
 describe('classifySession', () => {
@@ -110,7 +120,7 @@ describe('classifySession', () => {
 
     expect(mockClassify).toHaveBeenCalled();
     // Since we only have one transcript, it should be called with the original
-    expect(mockClassify).toHaveBeenCalledWith(mockTranscript);
+    expect(mockClassify).toHaveBeenCalledWith(mockTranscript, []);
   });
 
   it('should interleave multiple transcripts', async () => {

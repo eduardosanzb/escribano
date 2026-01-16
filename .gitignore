@@ -155,3 +155,5 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+src/scripts/__pycache__/
+src/scripts/.venv/

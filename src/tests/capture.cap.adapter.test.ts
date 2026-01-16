@@ -3,11 +3,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { createCapSource } from '../adapters/cap.adapter';
+import { createCapCaptureSource } from '../adapters/capture.cap.adapter.js';
 
 describe('Cap Adapter', () => {
   it('should create a CapSource', () => {
-    const capSource = createCapSource({
+    const capSource = createCapCaptureSource({
       recordingsPath: '~/tmp/recordings',
     });
 
@@ -16,7 +16,7 @@ describe('Cap Adapter', () => {
   });
 
   it('should handle nonexistent directory gracefully', async () => {
-    const capSource = createCapSource({
+    const capSource = createCapCaptureSource({
       recordingsPath: '/nonexistent/path',
     });
 
@@ -54,28 +54,18 @@ describe('Cap Adapter', () => {
   });
 
   it('should identify recordings without mic/audio field', async () => {
-    const mockMeta = {
-      platform: 'MacOS',
-      pretty_name: 'Cap 2026-01-08 at 16.46.37',
-      segments: [
-        {
-          display: {
-            path: 'content/segments/segment-0/display.mp4',
-            fps: 37,
-          },
-          cursor: 'content/segments/segment-0/cursor.json',
-        },
-      ],
-    } as any;
+    interface MockMeta {
+      segments?: Array<{ mic?: unknown }>;
+    }
+    const mockMeta: MockMeta = {
+      segments: [{}],
+    };
 
-    expect(mockMeta.segments[0]?.mic).toBeUndefined();
+    expect(mockMeta.segments?.[0]?.mic).toBeUndefined();
   });
 
   it('should identify missing segments array', async () => {
-    const invalidMeta = {
-      platform: 'MacOS',
-      pretty_name: 'Cap 2026-01-08 at 16.46.37',
-    } as any;
+    const invalidMeta: { segments?: unknown[] } = {};
 
     expect(invalidMeta.segments).toBeUndefined();
   });

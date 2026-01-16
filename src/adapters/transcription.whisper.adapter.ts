@@ -64,7 +64,7 @@ interface WhisperJsonOutput {
 /**
  * Creates a TranscriptionService that uses whisper CLI
  */
-export function createWhisperTranscriber(
+export function createWhisperTranscriptionService(
   config: Partial<WhisperConfig> = {}
 ): TranscriptionService {
   const resolvedConfig: WhisperConfig = {
@@ -98,11 +98,16 @@ async function transcribeWithWhisper(
   const command = `${config.binaryPath} ${args.join(' ')}`;
 
   try {
+    const tick = setInterval(() => {
+      process.stdout.write('.');
+    }, 30000); // Print a dot every 30 seconds to indicate progress
     const { stdout, stderr } = await execAsync(command, {
       cwd: config.cwd,
       maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large transcripts
       timeout: 10 * 60 * 1000, // 10 minute timeout
     });
+    clearInterval(tick);
+    process.stdout.write('\n');
 
     const hasError =
       stderr.includes('error:') ||

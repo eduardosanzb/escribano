@@ -159,6 +159,7 @@ describe('Visual Observer Pipeline', () => {
     };
 
     const mockVideoService: VideoService = {
+      // biome-ignore lint/suspicious/noExplicitAny: mock
       ...(vi.fn() as any), // Other methods mocked as needed
       extractFrames: vi.fn(),
       detectAndExtractScenes: vi

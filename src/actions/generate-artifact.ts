@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import type {
   Artifact,
   ArtifactType,
@@ -5,8 +7,6 @@ import type {
   Session,
   VideoService,
 } from '../0_types.js';
-import path from 'node:path';
-import os from 'node:os';
 
 /**
  * Generates a specific artifact for a session, including on-demand screenshot extraction

@@ -346,3 +346,116 @@ spawn("uv", ["run", "src/scripts/visual_observer_base.py", ...])
 └── visual-descriptions.json  # VLM results (if generated)
 ```
 
+---
+
+## Milestone 3.5: Segment-Based Intelligence
+
+### Domain Modules Pattern
+
+Escribano uses a functional domain module pattern in `src/domain/`. Each module exposes a namespace object with factory functions, transformations, and queries.
+
+```text
+src/domain/
+├── segment.ts        # Segment value object (fromVisualClusters, isNoise, duration)
+├── context.ts        # ActivityContext extraction from OCR text
+├── time-range.ts     # TimeRange value object (duration, overlaps, format)
+├── session.ts        # Session entity module (create, withTranscripts, withVisualIndex)
+├── classification.ts # Classification query functions (aggregate, getPrimary)
+└── transcript.ts     # Transcript utilities (isEmpty, sliceTagged)
+```
+
+### Segment-Based Flow
+
+Visual clusters are grouped into **Segments** which represent coherent activity periods:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         SEGMENT CREATION FLOW                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Video → FFmpeg → Frames → Python Script → visual-index.json                 │
+│                              │                                               │
+│                              ├── OCR (Tesseract, parallel)                   │
+│                              ├── CLIP embeddings                             │
+│                              └── Agglomerative clustering                    │
+│                                                                              │
+│  visual-index.json → Session.withVisualIndex() → Segments[]                  │
+│                              │                                               │
+│                              ├── Group adjacent clusters by heuristic label  │
+│                              ├── Extract ActivityContexts from OCR           │
+│                              └── Slice transcripts to segment time ranges    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Context Extraction
+
+The `Context.extractFromOCR()` function extracts semantic contexts from OCR text using regex patterns:
+
+| Context Type | Examples | Detection Method |
+|--------------|----------|-----------------|
+| `app` | VS Code, Chrome, Slack | Known app name patterns |
+| `url` | github.com, stackoverflow.com | URL regex + known domains |
+| `file` | ~/path/to/file.ts | File path patterns |
+
+### SessionSegment Structure
+
+```typescript
+interface SessionSegment {
+  id: string;                           // "seg-120" (start timestamp)
+  timeRange: [number, number];          // [120, 180] seconds
+  visualClusterIds: number[];           // Cluster IDs from visual-index
+  contexts: ActivityContext[];          // Extracted from OCR
+  transcriptSlice: TaggedTranscript | null;  // Audio in this time range
+  classification: Classification | null;     // Per-segment classification
+  isNoise: boolean;                     // Spotify, YouTube Music, etc.
+}
+```
+
+---
+
+## Performance Optimizations
+
+### Parallel OCR Processing
+
+The visual indexing script (`visual_observer_base.py`) uses Python's `ProcessPoolExecutor` to parallelize Tesseract OCR across all CPU cores:
+
+```text
+Sequential OCR (before):  ~500ms × 1000 frames = 500 seconds
+Parallel OCR (16 cores):  ~500ms × 1000 frames / 16 = ~31 seconds
+```
+
+Configuration:
+- `--workers N`: Number of parallel OCR workers (default: CPU count)
+- Workers are spawned via multiprocessing to bypass Python GIL
+
+### Benchmark Command
+
+The `benchmark-latest` CLI command provides timing visibility across all pipeline steps:
+
+```bash
+pnpm run benchmark-latest
+```
+
+Steps timed:
+1. **Reset** - Delete existing session data
+2. **Process Session** - Transcription + visual extraction
+3. **Classification** - LLM session type classification
+4. **Metadata** - Speaker/moment extraction
+5. **Artifacts** - Generate recommended artifacts
+6. **Outline Sync** - Publish to Outline wiki
+
+---
+
+## Ports (Updated)
+
+| Port | Adapter | Purpose |
+|------|---------|---------|
+| `CaptureSource` | `capture.cap.adapter.ts` | Watch for Cap recordings |
+| `TranscriptionService` | `transcription.whisper.adapter.ts` | Audio → Text (whisper.cpp) |
+| `VideoService` | `video.ffmpeg.adapter.ts` | Frame extraction, visual indexing |
+| `IntelligenceService` | `intelligence.ollama.adapter.ts` | LLM classification & generation |
+| `EmbeddingService` | `embedding.ollama.adapter.ts` | Text → Vector embeddings |
+| `StorageService` | `storage.fs.adapter.ts` | Persist sessions/artifacts |
+| `PublishingService` | `publishing.outline.adapter.ts` | Sync to Outline wiki |
+

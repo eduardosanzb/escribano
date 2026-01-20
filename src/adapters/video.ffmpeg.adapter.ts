@@ -7,6 +7,7 @@
 
 import { exec } from 'node:child_process';
 import { mkdir, readdir, readFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { VideoService } from '../0_types.js';
@@ -125,6 +126,7 @@ export function createFfmpegVideoService(): VideoService {
 
     /**
      * Run visual indexing (OCR + CLIP) using the Python base script.
+     * OCR is parallelized across all available CPU cores.
      */
     runVisualIndexing: async (framesDir, outputPath) => {
       const scriptPath = path.join(
@@ -134,8 +136,11 @@ export function createFfmpegVideoService(): VideoService {
         'visual_observer_base.py'
       );
       const frameInterval = Number(process.env.ESCRIBANO_FRAME_INTERVAL) || 2;
+      const workers = os.cpus().length;
+
       // Use uv run to execute the script with its environment
-      const command = `uv run "${scriptPath}" --frames-dir "${framesDir}" --output "${outputPath}" --frame-interval ${frameInterval}`;
+      // --workers enables parallel OCR processing
+      const command = `uv run "${scriptPath}" --frames-dir "${framesDir}" --output "${outputPath}" --frame-interval ${frameInterval} --workers ${workers}`;
 
       try {
         await execAsync(command, {

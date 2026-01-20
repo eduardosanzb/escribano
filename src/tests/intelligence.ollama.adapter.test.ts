@@ -29,6 +29,10 @@ const mockConfig: IntelligenceConfig = {
   timeout: 30000,
   keepAlive: '10m',
   maxContextSize: 131072,
+  embedding: {
+    model: 'nomic-embed-text',
+    similarityThreshold: 0.75,
+  },
 };
 
 const mockTranscript: Transcript = {
@@ -60,6 +64,7 @@ describe('IntelligenceService', () => {
     const service = createOllamaIntelligenceService(mockConfig);
     expect(service).toBeDefined();
     expect(service.classify).toBeInstanceOf(Function);
+    expect(service.classifySegment).toBeInstanceOf(Function);
     expect(service.generate).toBeInstanceOf(Function);
     expect(service.describeImages).toBeInstanceOf(Function);
   });

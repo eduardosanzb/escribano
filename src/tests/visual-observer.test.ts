@@ -88,7 +88,12 @@ describe('Visual Observer Pipeline', () => {
   it('should process session with visual intelligence', async () => {
     // Mock services
     const mockTranscriber: TranscriptionService = {
-      transcribe: vi.fn().mockResolvedValue(mockTranscript),
+      transcribe: vi.fn().mockResolvedValue({
+        fullText: '',
+        segments: [],
+        language: 'en',
+        duration: 0,
+      }),
     };
 
     const mockVideoService: VideoService = {
@@ -104,6 +109,7 @@ describe('Visual Observer Pipeline', () => {
 
     const mockIntelligenceService: IntelligenceService = {
       classify: vi.fn(),
+      classifySegment: vi.fn(),
       extractMetadata: vi.fn(),
       generate: vi.fn(),
       describeImages: vi.fn().mockResolvedValue(mockVisualDescriptions),
@@ -170,6 +176,7 @@ describe('Visual Observer Pipeline', () => {
 
     const mockIntelligenceService: IntelligenceService = {
       classify: vi.fn(),
+      classifySegment: vi.fn(),
       extractMetadata: vi.fn(),
       generate: vi.fn(),
       describeImages: vi.fn(), // Should NOT be called

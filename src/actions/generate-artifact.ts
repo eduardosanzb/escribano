@@ -4,15 +4,16 @@ import type {
   Artifact,
   ArtifactType,
   IntelligenceService,
-  Session,
+  Session as SessionType,
   VideoService,
 } from '../0_types.js';
+import { Session } from '../domain/session.js';
 
 /**
  * Generates a specific artifact for a session, including on-demand screenshot extraction
  */
 export async function generateArtifact(
-  session: Session,
+  session: SessionType,
   intelligence: IntelligenceService,
   artifactType: ArtifactType,
   videoService: VideoService
@@ -89,27 +90,6 @@ export async function generateArtifact(
 /**
  * Returns a list of recommended artifact types based on session classification
  */
-export function getRecommendedArtifacts(session: Session): ArtifactType[] {
-  const recommendations: ArtifactType[] = [];
-  const { classification } = session;
-
-  if (!classification) return recommendations;
-
-  if (classification.meeting > 50) {
-    recommendations.push('summary', 'action-items');
-  }
-  if (classification.debugging > 50) {
-    recommendations.push('runbook');
-  }
-  if (classification.tutorial > 50) {
-    recommendations.push('step-by-step');
-  }
-  if (classification.learning > 50) {
-    recommendations.push('notes');
-  }
-  if (classification.working > 50) {
-    recommendations.push('code-snippets');
-  }
-
-  return [...new Set(recommendations)];
+export function getRecommendedArtifacts(session: SessionType): ArtifactType[] {
+  return Session.getRecommendedArtifacts(session);
 }

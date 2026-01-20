@@ -31,6 +31,10 @@ import { createOutlinePublishingService } from './adapters/publishing.outline.ad
 import { createFsStorageService } from './adapters/storage.fs.adapter.js';
 import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
 import { createFfmpegVideoService } from './adapters/video.ffmpeg.adapter.js';
+import { Classification as ClassificationModule } from './domain/classification.js';
+import { Segment } from './domain/segment.js';
+import { Session as SessionModule } from './domain/session.js';
+import { TimeRange } from './domain/time-range.js';
 
 const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
@@ -109,6 +113,18 @@ function main(): void {
 
       case 'sync-all':
         executeSyncAll();
+        break;
+
+      case 'segments':
+        executeSegments(args);
+        break;
+
+      case 'activities':
+        executeActivities(args);
+        break;
+
+      case 'benchmark-latest':
+        executeBenchmarkLatest();
         break;
 
       default:
@@ -235,6 +251,23 @@ function parseArgs(argsArray: string[]): ParsedArgs {
 
     case 'sync-all':
       return { command: 'sync-all', limit: 10 };
+
+    case 'benchmark-latest':
+      return { command: 'benchmark-latest', limit: 10 };
+
+    case 'segments':
+      return {
+        command: 'segments',
+        sessionRef: argsArray[1],
+        limit: 10,
+      };
+
+    case 'activities':
+      return {
+        command: 'activities',
+        sessionRef: argsArray[1],
+        limit: 10,
+      };
 
     default:
       return { command: 'help', limit: 10 };
@@ -1122,6 +1155,286 @@ function formatTopScores(classification?: Classification | null): string {
   return entries.map(([type, score]) => `${type} ${score}%`).join(' | ');
 }
 
+async function executeSegments(args: ParsedArgs): Promise<void> {
+  if (!args.sessionRef) {
+    console.error('Usage: segments <session#|latest>');
+    process.exit(1);
+  }
+
+  const session = await resolveSessionRef(args.sessionRef);
+  if (!session) {
+    console.error(`Session not found: ${args.sessionRef}`);
+    process.exit(1);
+  }
+
+  console.log(`\n🎞️  Segments for session: ${session.id}`);
+  console.log('='.repeat(60));
+
+  if (session.segments.length === 0) {
+    console.log(
+      '   (No segments detected yet. Try processing the recording first.)'
+    );
+    return;
+  }
+
+  session.segments.forEach((seg, i) => {
+    const timeRange = TimeRange.format(seg.timeRange);
+    const type =
+      ClassificationModule.getPrimary(
+        seg.classification || {
+          meeting: 0,
+          debugging: 0,
+          tutorial: 0,
+          learning: 0,
+          working: 0,
+        }
+      ) || 'unknown';
+    const noise = seg.isNoise ? ' [NOISE]' : '';
+    const contexts = seg.contexts.map((c) => `${c.type}:${c.value}`).join(', ');
+
+    console.log(
+      `  #${(i + 1).toString().padEnd(2)} ${timeRange}  [${type.toUpperCase()}]${noise}`
+    );
+    if (contexts) console.log(`      Contexts: ${contexts}`);
+  });
+}
+
+async function executeActivities(args: ParsedArgs): Promise<void> {
+  if (!args.sessionRef) {
+    console.error('Usage: activities <session#|latest>');
+    process.exit(1);
+  }
+
+  const session = await resolveSessionRef(args.sessionRef);
+  if (!session) {
+    console.error(`Session not found: ${args.sessionRef}`);
+    process.exit(1);
+  }
+
+  console.log(`\n📊 Activity Breakdown for session: ${session.id}`);
+  console.log('='.repeat(60));
+
+  const breakdown = SessionModule.getActivityBreakdown(session);
+
+  if (Object.keys(breakdown).length === 0) {
+    console.log(
+      '   (No activities detected yet. Try classifying segments first.)'
+    );
+    return;
+  }
+
+  Object.entries(breakdown)
+    .sort(([, a], [, b]) => b - a)
+    .forEach(([type, score]) => {
+      const bar = '█'.repeat(Math.floor(score / 5));
+      console.log(`   • ${type.padEnd(10)} ${bar} ${score}%`);
+    });
+}
+
+interface BenchmarkStep {
+  name: string;
+  durationMs: number;
+}
+
+async function executeBenchmarkLatest(): Promise<void> {
+  const steps: BenchmarkStep[] = [];
+  const totalStart = Date.now();
+
+  console.log('\n🔄 Benchmark: Processing latest session...\n');
+
+  // Get latest recording
+  const capSource = createCapCaptureSource({});
+  const recording = await capSource.getLatestRecording();
+
+  if (!recording) {
+    console.error('No recordings found.');
+    process.exit(1);
+  }
+
+  console.log(`Recording: ${recording.id}`);
+  console.log(`Duration: ${formatDuration(recording.duration)}`);
+  console.log('');
+
+  // Step 1: Reset
+  console.log('Step 1/6: Reset session data');
+  let stepStart = Date.now();
+
+  const sessionDir = path.join(homedir(), '.escribano', 'sessions');
+  const sessionFile = path.join(sessionDir, `${recording.id}.json`);
+  const visualLogDir = path.join(sessionDir, recording.id, 'visual-log');
+
+  if (existsSync(sessionFile)) {
+    const { rm } = await import('node:fs/promises');
+    await rm(sessionFile);
+    console.log(`  ✓ Deleted session file`);
+  } else {
+    console.log('  ✓ No existing session file');
+  }
+
+  if (existsSync(visualLogDir)) {
+    const { rm } = await import('node:fs/promises');
+    await rm(visualLogDir, { recursive: true, force: true });
+    console.log('  ✓ Deleted visual-log directory');
+  } else {
+    console.log('  ✓ No existing visual-log directory');
+  }
+
+  steps.push({ name: 'Reset', durationMs: Date.now() - stepStart });
+  console.log(`  ⏱️  ${((Date.now() - stepStart) / 1000).toFixed(2)}s\n`);
+
+  // Step 2: Process Session (transcription + visual)
+  console.log('Step 2/6: Process session (transcription + visual)');
+  stepStart = Date.now();
+
+  await ensureModel();
+  const transcriber = createWhisperTranscriptionService({
+    binaryPath: 'whisper-cli',
+    model: MODEL_PATH,
+    cwd: MODELS_DIR,
+    outputFormat: 'json',
+  });
+  const videoService = createFfmpegVideoService();
+  const intelligenceService = createOllamaIntelligenceService({});
+  const storageService = createFsStorageService();
+
+  let session = await processSession(
+    recording,
+    transcriber,
+    videoService,
+    storageService,
+    intelligenceService
+  );
+
+  console.log(`  ✓ Transcribed ${session.transcripts.length} audio sources`);
+  console.log(`  ✓ Created ${session.segments.length} segments`);
+  steps.push({ name: 'Process Session', durationMs: Date.now() - stepStart });
+  console.log(`  ⏱️  ${((Date.now() - stepStart) / 1000).toFixed(2)}s\n`);
+
+  // Step 3: Classification
+  console.log('Step 3/6: Classification');
+  stepStart = Date.now();
+
+  session = await classifySession(session, intelligenceService);
+  await saveSession(session);
+
+  if (session.classification) {
+    const topScores = Object.entries(session.classification)
+      .filter(([, score]) => score >= 25)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 2)
+      .map(([type, score]) => `${type} ${score}%`)
+      .join(' | ');
+    console.log(`  ✓ ${topScores || 'No strong classification'}`);
+  }
+
+  steps.push({ name: 'Classification', durationMs: Date.now() - stepStart });
+  console.log(`  ⏱️  ${((Date.now() - stepStart) / 1000).toFixed(2)}s\n`);
+
+  // Step 4: Metadata extraction
+  console.log('Step 4/6: Metadata extraction');
+  stepStart = Date.now();
+
+  session = await extractMetadata(session, intelligenceService);
+  await saveSession(session);
+
+  if (session.metadata) {
+    const speakers = session.metadata.speakers?.length ?? 0;
+    const moments = session.metadata.keyMoments?.length ?? 0;
+    const actions = session.metadata.actionItems?.length ?? 0;
+    console.log(
+      `  ✓ ${speakers} speakers, ${moments} key moments, ${actions} action items`
+    );
+  }
+
+  steps.push({ name: 'Metadata', durationMs: Date.now() - stepStart });
+  console.log(`  ⏱️  ${((Date.now() - stepStart) / 1000).toFixed(2)}s\n`);
+
+  // Step 5: Generate artifacts (recommended)
+  console.log('Step 5/6: Generate artifacts (recommended)');
+  stepStart = Date.now();
+
+  const recommendedTypes = getRecommendedArtifacts(session);
+  console.log(`  Generating ${recommendedTypes.length} artifacts...`);
+
+  for (const artifactType of recommendedTypes) {
+    try {
+      const artifact = await generateArtifact(
+        session,
+        intelligenceService,
+        artifactType,
+        videoService
+      );
+
+      if (!session.artifacts) session.artifacts = [];
+      const existingIndex = session.artifacts.findIndex(
+        (a) => a.type === artifactType
+      );
+      if (existingIndex >= 0) {
+        session.artifacts[existingIndex] = artifact;
+      } else {
+        session.artifacts.push(artifact);
+      }
+
+      await storageService.saveArtifact(session.id, artifact);
+      console.log(`  ✓ ${artifactType}`);
+    } catch (error) {
+      console.log(`  ✗ ${artifactType}: ${(error as Error).message}`);
+    }
+  }
+
+  await saveSession(session);
+  steps.push({ name: 'Artifacts', durationMs: Date.now() - stepStart });
+  console.log(`  ⏱️  ${((Date.now() - stepStart) / 1000).toFixed(2)}s\n`);
+
+  // Step 6: Sync to Outline (optional)
+  console.log('Step 6/6: Sync to Outline');
+  stepStart = Date.now();
+
+  const config = getOutlineConfig();
+  if (config) {
+    try {
+      const publishing = createOutlinePublishingService(config);
+      const { url } = await syncSessionToOutline(
+        session,
+        publishing,
+        storageService
+      );
+      console.log(`  ✓ Synced: ${url}`);
+    } catch (error) {
+      console.log(`  ✗ Sync failed: ${(error as Error).message}`);
+    }
+  } else {
+    console.log('  ⚠ Skipped (no Outline config in .env)');
+  }
+
+  steps.push({ name: 'Outline Sync', durationMs: Date.now() - stepStart });
+  console.log(`  ⏱️  ${((Date.now() - stepStart) / 1000).toFixed(2)}s\n`);
+
+  // Final Summary
+  printBenchmarkSummary(steps, Date.now() - totalStart);
+}
+
+function printBenchmarkSummary(steps: BenchmarkStep[], totalMs: number): void {
+  console.log('═'.repeat(50));
+  console.log('📊 Benchmark Summary');
+  console.log('═'.repeat(50));
+
+  for (const step of steps) {
+    const secs = (step.durationMs / 1000).toFixed(1);
+    const pct = ((step.durationMs / totalMs) * 100).toFixed(1);
+    console.log(`  ${step.name.padEnd(20)} ${secs.padStart(8)}s  (${pct}%)`);
+  }
+
+  console.log('─'.repeat(50));
+  const totalSecs = totalMs / 1000;
+  const mins = Math.floor(totalSecs / 60);
+  const secs = Math.floor(totalSecs % 60);
+  console.log(
+    `  TOTAL${' '.repeat(14)} ${totalSecs.toFixed(1).padStart(8)}s  (${mins}m ${secs}s)`
+  );
+  console.log('');
+}
+
 function showHelp(): void {
   console.log('');
   console.log('Escribano - Session Intelligence Tool');
@@ -1163,6 +1476,15 @@ function showHelp(): void {
   );
   console.log(
     '  escribano sync-all                      Sync all sessions + update index'
+  );
+  console.log(
+    '  escribano segments <#/latest>           Show segment timeline'
+  );
+  console.log(
+    '  escribano activities <#/latest>         Show activity breakdown'
+  );
+  console.log(
+    '  escribano benchmark-latest              Reset & run full pipeline with timing'
   );
   console.log(
     '  escribano list-artifacts <id>           List recommended/existing artifacts'

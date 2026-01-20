@@ -63,6 +63,16 @@ export type TaggedTranscript = z.infer<typeof taggedTranscriptSchema>;
 // CLASSIFICATION
 // =============================================================================
 
+export const sessionTypeSchema = z.enum([
+  'meeting',
+  'debugging',
+  'tutorial',
+  'learning',
+  'working',
+]);
+
+export type SessionType = z.infer<typeof sessionTypeSchema>;
+
 export const classificationSchema = z.object({
   meeting: z.number().min(0).max(100),
   debugging: z.number().min(0).max(100),
@@ -217,6 +227,34 @@ export const visualDescriptionsSchema = z.object({
 export type VisualDescriptions = z.infer<typeof visualDescriptionsSchema>;
 
 // =============================================================================
+// INTELLIGENCE & EMBEDDINGS
+// =============================================================================
+
+export const activityContextSchema = z.object({
+  type: z.enum(['url', 'file', 'app', 'topic', 'unknown']),
+  value: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+export type ActivityContext = z.infer<typeof activityContextSchema>;
+
+export const sessionSegmentSchema = z.object({
+  id: z.string(),
+  timeRange: z.tuple([z.number(), z.number()]),
+  visualClusterIds: z.array(z.number()),
+  contexts: z.array(activityContextSchema),
+  transcriptSlice: taggedTranscriptSchema.nullable(),
+  classification: classificationSchema.nullable(),
+  isNoise: z.boolean(),
+});
+export type SessionSegment = z.infer<typeof sessionSegmentSchema>;
+
+export const embeddingConfigSchema = z.object({
+  model: z.string().default('nomic-embed-text'),
+  similarityThreshold: z.number().min(0).max(1).default(0.75),
+});
+export type EmbeddingConfig = z.infer<typeof embeddingConfigSchema>;
+
+// =============================================================================
 // SESSION
 // =============================================================================
 
@@ -243,6 +281,7 @@ export const sessionSchema = z.object({
   recording: recordingSchema,
   transcripts: z.array(taggedTranscriptSchema),
   visualLogs: z.array(visualLogSchema).default([]),
+  segments: z.array(sessionSegmentSchema).default([]),
   status: z.enum([
     'raw',
     'transcribed',
@@ -304,6 +343,12 @@ export interface TranscriptionService {
   transcribe(audioPath: string): Promise<Transcript>;
 }
 
+export interface EmbeddingService {
+  embed(text: string): Promise<number[]>;
+  embedBatch(texts: string[]): Promise<number[][]>;
+  similarity(a: number[], b: number[]): number;
+}
+
 export interface CaptureSource {
   getLatestRecording(): Promise<Recording | null>;
   listRecordings(limit?: number): Promise<Recording[]>;
@@ -313,6 +358,10 @@ export interface IntelligenceService {
   classify(
     transcript: Transcript,
     visualLogs?: VisualLog[]
+  ): Promise<Classification>;
+  classifySegment(
+    segment: SessionSegment,
+    transcript?: Transcript
   ): Promise<Classification>;
   extractMetadata(
     transcript: Transcript,
@@ -391,9 +440,13 @@ export const intelligenceConfigSchema = z.object({
   generationModel: z.string().default('qwen3:32b'),
   visionModel: z.string().default('minicpm-v:8b'),
   maxRetries: z.number().default(3),
-  timeout: z.number().default(500000),
+  timeout: z.number().default(600000), // 10 minutes
   keepAlive: z.string().default('10m'),
   maxContextSize: z.number().default(131072), // qwen3:8b supports up to 128K
+  embedding: embeddingConfigSchema.default({
+    model: 'nomic-embed-text',
+    similarityThreshold: 0.75,
+  }),
 });
 export type IntelligenceConfig = z.infer<typeof intelligenceConfigSchema>;
 

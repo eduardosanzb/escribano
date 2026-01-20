@@ -1,82 +1,101 @@
 /**
  * Escribano - Classify Session Action
  *
- * Classifies a session using IntelligenceService
- * Supports multiple transcripts by interleaving them by timestamp
+ * Classifies a session using IntelligenceService.
+ * If segments exist, it classifies each segment individually and aggregates the results.
  */
 
 import type {
   IntelligenceService,
-  Session,
-  TaggedTranscript,
-  Transcript,
-  TranscriptSegment,
+  SessionSegment,
+  Session as SessionType,
 } from '../0_types.js';
-
-/**
- * Format timestamp in MM:SS format
- */
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-}
-
-/**
- * Interleave multiple transcripts by timestamp for better LLM understanding
- */
-function interleaveTranscripts(transcripts: TaggedTranscript[]): Transcript {
-  // Collect all segments with source tags
-  interface SegmentWithSource extends TranscriptSegment {
-    source: string;
-  }
-
-  const allSegments: SegmentWithSource[] = transcripts.flatMap(
-    ({ source, transcript }) =>
-      transcript.segments.map((seg) => ({
-        ...seg,
-        source: source.toUpperCase(),
-      }))
-  );
-
-  // Sort by timestamp
-  allSegments.sort((a, b) => a.start - b.start);
-
-  // Create interleaved transcript
-  const interleavedSegments = allSegments.map((seg, index) => ({
-    id: `seg-${index}`,
-    start: seg.start,
-    end: seg.end,
-    text: `[${formatTime(seg.start)} ${seg.source}] ${seg.text}`,
-    speaker: seg.speaker,
-  }));
-
-  const fullText = interleavedSegments.map((seg) => seg.text).join('\n');
-
-  // Use the maximum duration from all transcripts
-  const duration = Math.max(...transcripts.map((t) => t.transcript.duration));
-
-  return {
-    fullText,
-    segments: interleavedSegments,
-    language: transcripts[0]?.transcript.language || 'en',
-    duration,
-  };
-}
+import { Session } from '../domain/session.js';
+import { Transcript } from '../domain/transcript.js';
 
 export async function classifySession(
-  session: Session,
+  session: SessionType,
   intelligence: IntelligenceService
-): Promise<Session> {
+): Promise<SessionType> {
   if (session.transcripts.length === 0) {
     throw new Error('Cannot classify session without transcripts');
   }
 
-  // Interleave transcripts if multiple sources exist
+  // 1. If segments exist, classify each segment sequentially
+  if (session.segments.length > 0) {
+    const nonNoiseSegments = session.segments.filter((s) => !s.isNoise);
+    const noiseCount = session.segments.length - nonNoiseSegments.length;
+
+    console.log(
+      `Classifying ${nonNoiseSegments.length} segments (${noiseCount} noise skipped)...`
+    );
+
+    // Sequential classification to avoid parallel warmup race + Ollama overload
+    const classifiedSegments: SessionSegment[] = [];
+    let classifiedCount = 0;
+
+    for (const segment of session.segments) {
+      if (segment.isNoise) {
+        classifiedSegments.push({
+          ...segment,
+          classification: {
+            meeting: 0,
+            debugging: 0,
+            tutorial: 0,
+            learning: 0,
+            working: 0,
+          },
+        });
+        continue;
+      }
+
+      classifiedCount++;
+      console.log(
+        `  Segment ${classifiedCount}/${nonNoiseSegments.length}: ${segment.id}`
+      );
+
+      try {
+        const classification = await intelligence.classifySegment(segment);
+        classifiedSegments.push({ ...segment, classification });
+      } catch (error) {
+        console.error(`  Failed to classify segment ${segment.id}:`, error);
+        classifiedSegments.push(segment);
+      }
+    }
+
+    // Update session with classified segments
+    const updatedSession = {
+      ...session,
+      segments: classifiedSegments,
+      status: 'classified' as const,
+      updatedAt: new Date(),
+    };
+
+    // 2. Derive session-level classification from aggregated segments
+    const aggregatedClassification =
+      Session.getActivityBreakdown(updatedSession);
+
+    // Convert Record to Classification type
+    updatedSession.classification = {
+      meeting: aggregatedClassification.meeting || 0,
+      debugging: aggregatedClassification.debugging || 0,
+      tutorial: aggregatedClassification.tutorial || 0,
+      learning: aggregatedClassification.learning || 0,
+      working: aggregatedClassification.working || 0,
+    };
+
+    return updatedSession;
+  }
+
+  // Fallback to legacy whole-session classification if no segments exist
+  console.log(
+    'No segments found, falling back to session-level classification...'
+  );
+
   const transcriptForClassification =
     session.transcripts.length === 1
       ? session.transcripts[0].transcript
-      : interleaveTranscripts(session.transcripts);
+      : Transcript.interleave(session.transcripts);
 
   const classification = await intelligence.classify(
     transcriptForClassification,
@@ -84,15 +103,9 @@ export async function classifySession(
   );
 
   return {
-    id: session.id,
-    recording: session.recording,
-    transcripts: session.transcripts,
-    visualLogs: session.visualLogs || [],
+    ...session,
     status: 'classified',
     classification,
-    metadata: null,
-    artifacts: session.artifacts || [],
-    createdAt: session.createdAt,
     updatedAt: new Date(),
   };
 }

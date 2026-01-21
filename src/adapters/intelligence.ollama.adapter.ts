@@ -62,7 +62,56 @@ export function createOllamaIntelligenceService(
       generateArtifact(artifactType, context, parsedConfig),
     describeImages: (images, prompt) =>
       describeImagesWithOllama(images, parsedConfig, prompt),
+    embedText: (texts, options) =>
+      embedTextWithOllama(texts, parsedConfig, options),
   };
+}
+
+async function embedTextWithOllama(
+  texts: string[],
+  config: IntelligenceConfig,
+  options: { batchSize?: number } = {}
+): Promise<number[][]> {
+  const batchSize = options.batchSize ?? 10;
+  const model = process.env.ESCRIBANO_EMBED_MODEL || 'nomic-embed-text';
+  const endpoint = `${config.endpoint.replace('/chat', '').replace('/generate', '')}/embeddings`;
+
+  const embeddings: number[][] = [];
+
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+
+    for (const text of batch) {
+      if (!text || text.trim().length === 0) {
+        embeddings.push([]); // Empty embedding for empty text
+        continue;
+      }
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model, prompt: text }),
+        });
+
+        if (!response.ok) {
+          console.warn(
+            `Embedding failed for text: ${text.substring(0, 50)}...`
+          );
+          embeddings.push([]);
+          continue;
+        }
+
+        const data = await response.json();
+        embeddings.push(data.embedding || []);
+      } catch (error) {
+        console.warn(`Embedding request failed: ${(error as Error).message}`);
+        embeddings.push([]);
+      }
+    }
+  }
+
+  return embeddings;
 }
 
 async function ensureModelWarmed(

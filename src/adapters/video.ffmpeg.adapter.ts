@@ -23,7 +23,7 @@ export function createFfmpegVideoService(): VideoService {
      * Extract frames at specific timestamps.
      * High quality extraction using -q:v 2.
      */
-    extractFrames: async (videoPath, timestamps, outputDir) => {
+    extractFramesAtTimestamps: async (videoPath, timestamps, outputDir) => {
       await mkdir(outputDir, { recursive: true });
       const outputPaths: string[] = [];
 
@@ -54,21 +54,19 @@ export function createFfmpegVideoService(): VideoService {
     },
 
     /**
-     * Detect significant scene changes and extract frames.
-     * Useful for silent sessions where we want to capture moments of activity.
+     * Extract frames at regular intervals.
+     * Robust strategy for Visual Log:
+     * We use a combination of periodic sampling and resolution scaling.
      */
-    detectAndExtractScenes: async (videoPath, _threshold, outputDir) => {
+    extractFramesAtInterval: async (videoPath, _threshold, outputDir) => {
       await mkdir(outputDir, { recursive: true });
 
       const frameInterval = Number(process.env.ESCRIBANO_FRAME_INTERVAL) || 2;
       const frameWidth = Number(process.env.ESCRIBANO_FRAME_WIDTH) || 1920;
 
       // Robust strategy for Visual Log:
-      // We use a combination of periodic sampling and resolution scaling.
-      // This is more reliable across different video formats than pure scene detection.
       // 1. scale=${frameWidth}:-2: Optimize for AI reasoning
       // 2. fps=1/${frameInterval}: Configurable frame rate
-      // 3. -strict unofficial: Compatibility for screen recordings
       const command = `ffmpeg -i "${videoPath}" -vf "scale=${frameWidth}:-2,fps=1/${frameInterval}" -strict unofficial -an -q:v 2 "${outputDir}/scene_%04d.jpg" -y`;
 
       try {

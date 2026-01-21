@@ -94,11 +94,14 @@ describe('Visual Observer Pipeline', () => {
         language: 'en',
         duration: 0,
       }),
+      transcribeSegment: vi.fn().mockResolvedValue(''),
     };
 
     const mockVideoService: VideoService = {
-      extractFrames: vi.fn().mockResolvedValue(['/tmp/frame_0.jpg']),
-      detectAndExtractScenes: vi
+      extractFramesAtTimestamps: vi
+        .fn()
+        .mockResolvedValue(['/tmp/frame_0.jpg']),
+      extractFramesAtInterval: vi
         .fn()
         .mockResolvedValue([{ imagePath: '/tmp/frame_0.jpg', timestamp: 0 }]),
       getMetadata: vi
@@ -113,6 +116,7 @@ describe('Visual Observer Pipeline', () => {
       extractMetadata: vi.fn(),
       generate: vi.fn(),
       describeImages: vi.fn().mockResolvedValue(mockVisualDescriptions),
+      embedText: vi.fn(),
     };
 
     const session = await processSession(
@@ -162,13 +166,14 @@ describe('Visual Observer Pipeline', () => {
 
     const mockTranscriber: TranscriptionService = {
       transcribe: vi.fn().mockResolvedValue(richTranscript),
+      transcribeSegment: vi.fn().mockResolvedValue(''),
     };
 
     const mockVideoService: VideoService = {
       // biome-ignore lint/suspicious/noExplicitAny: mock
       ...(vi.fn() as any), // Other methods mocked as needed
-      extractFrames: vi.fn(),
-      detectAndExtractScenes: vi
+      extractFramesAtTimestamps: vi.fn(),
+      extractFramesAtInterval: vi
         .fn()
         .mockResolvedValue([{ imagePath: '/tmp/f.jpg', timestamp: 0 }]),
       runVisualIndexing: vi.fn().mockResolvedValue(denseIndex),
@@ -180,6 +185,7 @@ describe('Visual Observer Pipeline', () => {
       extractMetadata: vi.fn(),
       generate: vi.fn(),
       describeImages: vi.fn(), // Should NOT be called
+      embedText: vi.fn(),
     };
 
     const session = await processSession(

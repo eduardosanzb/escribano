@@ -21,6 +21,23 @@ import type {
 
 const execAsync = promisify(exec);
 
+const HALLUCINATION_PATTERNS = [
+  /untertitel.*amara\.org/i,
+  /www\.amara\.org/i,
+  /thanks for watching/i,
+  /please subscribe/i,
+  /like and subscribe/i,
+  /(.{20,})\1{4,}/, // Repetition loops
+];
+
+export function filterHallucinations(text: string): string {
+  let filtered = text;
+  for (const pattern of HALLUCINATION_PATTERNS) {
+    filtered = filtered.replace(pattern, '');
+  }
+  return filtered.trim();
+}
+
 async function convertToWavIfNeeded(audioPath: string): Promise<string> {
   const ext = audioPath.toLowerCase().split('.').pop();
 
@@ -76,6 +93,24 @@ export function createWhisperTranscriptionService(
 
   return {
     transcribe: (audioPath) => transcribeWithWhisper(audioPath, resolvedConfig),
+    transcribeSegment: async (audioPath) => {
+      try {
+        const transcript = await transcribeWithWhisper(
+          audioPath,
+          resolvedConfig,
+          { silent: true }
+        );
+        if (!transcript || !transcript.fullText) {
+          return '';
+        }
+        return filterHallucinations(transcript.fullText);
+      } catch (error) {
+        console.warn(
+          `Whisper segment transcription failed: ${(error as Error).message}`
+        );
+        return '';
+      }
+    },
   };
 }
 
@@ -84,7 +119,8 @@ export function createWhisperTranscriptionService(
  */
 async function transcribeWithWhisper(
   audioPath: string,
-  config: WhisperConfig
+  config: WhisperConfig,
+  options?: { silent?: boolean }
 ): Promise<Transcript> {
   const audioToProcess = await convertToWavIfNeeded(audioPath);
 
@@ -98,16 +134,23 @@ async function transcribeWithWhisper(
   const command = `${config.binaryPath} ${args.join(' ')}`;
 
   try {
-    const tick = setInterval(() => {
-      process.stdout.write('.');
-    }, 30000); // Print a dot every 30 seconds to indicate progress
+    let tick: NodeJS.Timeout | undefined;
+    if (!options?.silent) {
+      tick = setInterval(() => {
+        process.stdout.write('.');
+      }, 30000); // Print a dot every 30 seconds to indicate progress
+    }
+
     const { stdout, stderr } = await execAsync(command, {
       cwd: config.cwd,
       maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large transcripts
       timeout: 10 * 60 * 1000, // 10 minute timeout
     });
-    clearInterval(tick);
-    process.stdout.write('\n');
+
+    if (tick) {
+      clearInterval(tick);
+      process.stdout.write('\n');
+    }
 
     const hasError =
       stderr.includes('error:') ||

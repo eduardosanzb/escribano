@@ -58,7 +58,7 @@ export async function generateArtifact(
     );
 
     try {
-      const paths = await videoService.extractFrames(
+      const paths = await videoService.extractFramesAtTimestamps(
         session.recording.videoPath,
         timestamps,
         screenshotDir

@@ -13,6 +13,7 @@ import type { Repositories } from '../0_types.js';
 import { runMigrations } from './migrate.js';
 import {
   createSqliteArtifactRepository,
+  createSqliteClusterRepository,
   createSqliteContextRepository,
   createSqliteObservationRepository,
   createSqliteRecordingRepository,
@@ -68,6 +69,7 @@ export function getRepositories(): Repositories {
     contexts: createSqliteContextRepository(dbInstance),
     topicBlocks: createSqliteTopicBlockRepository(dbInstance),
     artifacts: createSqliteArtifactRepository(dbInstance),
+    clusters: createSqliteClusterRepository(dbInstance),
   };
 
   return repositories;
@@ -89,6 +91,7 @@ export function createTestRepositories(): Repositories & {
     contexts: createSqliteContextRepository(testDb),
     topicBlocks: createSqliteTopicBlockRepository(testDb),
     artifacts: createSqliteArtifactRepository(testDb),
+    clusters: createSqliteClusterRepository(testDb),
     cleanup: () => testDb.close(),
   };
 }

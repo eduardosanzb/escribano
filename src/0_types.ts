@@ -345,9 +345,14 @@ export interface TranscriptionService {
 }
 
 export interface EmbeddingService {
-  embed(text: string): Promise<number[]>;
-  embedBatch(texts: string[]): Promise<number[][]>;
+  embed(text: string, taskType?: 'clustering' | 'retrieval'): Promise<number[]>;
+  embedBatch(
+    texts: string[],
+    taskType?: 'clustering' | 'retrieval'
+  ): Promise<number[][]>;
   similarity(a: number[], b: number[]): number;
+  /** Compute centroid (average) of multiple embeddings */
+  centroid(embeddings: number[][]): number[];
 }
 
 export interface CaptureSource {
@@ -386,6 +391,7 @@ export interface IntelligenceService {
     texts: string[],
     options?: { batchSize?: number }
   ): Promise<number[][]>;
+  extractTopics(observations: DbObservation[]): Promise<string[]>;
 }
 
 export interface StorageService {
@@ -481,9 +487,13 @@ export type OutlineConfig = z.infer<typeof outlineConfigSchema>;
 import type {
   DbArtifact,
   DbArtifactInsert,
+  DbCluster,
+  DbClusterInsert,
+  DbClusterMerge,
   DbContext,
   DbContextInsert,
   DbObservation,
+  DbObservationCluster,
   DbObservationContext,
   DbObservationInsert,
   DbRecording,
@@ -495,9 +505,13 @@ import type {
 export type {
   DbArtifact,
   DbArtifactInsert,
+  DbCluster,
+  DbClusterInsert,
+  DbClusterMerge,
   DbContext,
   DbContextInsert,
   DbObservation,
+  DbObservationCluster,
   DbObservationContext,
   DbObservationInsert,
   DbRecording,
@@ -528,7 +542,10 @@ export interface ObservationRepository {
     type: 'visual' | 'audio'
   ): DbObservation[];
   findByContext(contextId: string): DbObservation[];
+  save(observation: DbObservationInsert): void;
   saveBatch(observations: DbObservationInsert[]): void;
+  updateEmbedding(id: string, embedding: number[]): void;
+  updateVLMDescription(id: string, description: string): void;
   delete(id: string): void;
   deleteByRecording(recordingId: string): void;
 }
@@ -545,6 +562,10 @@ export interface ContextRepository {
   ): void;
   unlinkObservation(observationId: string, contextId: string): void;
   getObservationLinks(contextId: string): DbObservationContext[];
+  getObservationLinksByObservation(
+    observationId: string
+  ): DbObservationContext[];
+  getLinksByRecording(recordingId: string): DbObservationContext[];
   delete(id: string): void;
 }
 
@@ -553,6 +574,41 @@ export interface TopicBlockRepository {
   findByRecording(recordingId: string): DbTopicBlock[];
   findByContext(contextId: string): DbTopicBlock[]; // Cross-recording!
   save(block: DbTopicBlockInsert): void;
+  delete(id: string): void;
+  deleteByRecording(recordingId: string): void;
+}
+
+export interface ClusterRepository {
+  findById(id: string): DbCluster | null;
+  findByRecording(recordingId: string): DbCluster[];
+  findByRecordingAndType(
+    recordingId: string,
+    type: 'visual' | 'audio'
+  ): DbCluster[];
+  save(cluster: DbClusterInsert): void;
+  saveBatch(clusters: DbClusterInsert[]): void;
+  linkObservation(
+    observationId: string,
+    clusterId: string,
+    distance?: number
+  ): void;
+  linkObservationsBatch(
+    links: Array<{
+      observationId: string;
+      clusterId: string;
+      distance?: number;
+    }>
+  ): void;
+  getObservations(clusterId: string): DbObservation[];
+  updateClassification(id: string, classification: string): void;
+  updateCentroid(id: string, centroid: number[]): void;
+  saveMerge(
+    visualClusterId: string,
+    audioClusterId: string,
+    similarity: number,
+    reason: string
+  ): void;
+  getMergedAudioClusters(visualClusterId: string): DbCluster[];
   delete(id: string): void;
   deleteByRecording(recordingId: string): void;
 }
@@ -573,4 +629,5 @@ export interface Repositories {
   contexts: ContextRepository;
   topicBlocks: TopicBlockRepository;
   artifacts: ArtifactRepository;
+  clusters: ClusterRepository;
 }

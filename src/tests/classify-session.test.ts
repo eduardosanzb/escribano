@@ -81,6 +81,7 @@ const mockIntelligence: IntelligenceService = {
   generate: mockGenerate,
   describeImages: vi.fn(),
   embedText: vi.fn(),
+  extractTopics: vi.fn(),
 };
 
 describe('classifySession', () => {

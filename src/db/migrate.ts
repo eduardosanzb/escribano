@@ -79,6 +79,14 @@ export function runMigrations(db: Database.Database): {
   const migrations = loadMigrations();
   const pending = migrations.filter((m) => m.version > currentVersion);
 
+  if (pending.length === 0) {
+    console.log(`[db] Database is up to date (version ${currentVersion})`);
+    return { applied: [], currentVersion };
+  }
+
+  console.log(
+    `[db] Found ${pending.length} pending migrations. Starting update...`
+  );
   const applied: string[] = [];
 
   for (const migration of pending) {

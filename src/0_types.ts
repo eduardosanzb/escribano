@@ -87,30 +87,30 @@ export type Classification = z.infer<typeof classificationSchema>;
 // TRANSCRIPT METADATA
 // =============================================================================
 
-export const speakerSchema = z.object({
+const speakerSchema = z.object({
   name: z.string(),
   role: z.string().optional(),
 });
 
-export const keyMomentSchema = z.object({
+const keyMomentSchema = z.object({
   timestamp: z.number(),
   description: z.string(),
   importance: z.enum(['high', 'medium', 'low']),
 });
 
-export const actionItemSchema = z.object({
+const actionItemSchema = z.object({
   description: z.string(),
   owner: z.string().nullable(),
   priority: z.enum(['high', 'medium', 'low']).optional(),
 });
 
-export const technicalTermSchema = z.object({
+const technicalTermSchema = z.object({
   term: z.string(),
   context: z.string(),
   type: z.enum(['error', 'file', 'function', 'variable', 'other']),
 });
 
-export const codeSnippetSchema = z.object({
+const codeSnippetSchema = z.object({
   language: z.string().optional(),
   code: z.string(),
   description: z.string().optional(),
@@ -464,12 +464,12 @@ export type IntelligenceConfig = z.infer<typeof intelligenceConfigSchema>;
 export const DEFAULT_INTELLIGENCE_CONFIG: IntelligenceConfig =
   intelligenceConfigSchema.parse({});
 
-export const artifactConfigSchema = z.object({
+const artifactConfigSchema = z.object({
   parallelGeneration: z.boolean().default(false),
   maxParallel: z.number().default(3),
   maxScreenshots: z.number().default(10),
 });
-export type ArtifactConfig = z.infer<typeof artifactConfigSchema>;
+type ArtifactConfig = z.infer<typeof artifactConfigSchema>;
 
 export const outlineConfigSchema = z.object({
   url: z.string().url(),

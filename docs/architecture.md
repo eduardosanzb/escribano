@@ -249,7 +249,7 @@ Escribano uses SQLite for persistent storage, located at `~/.escribano/escribano
 
 **Stack**:
 - **better-sqlite3**: Synchronous driver for Node.js
-- **kysely-codegen**: Generate TypeScript types from schema
+- **Manual Types**: TypeScript interfaces matching the database schema in `src/db/types.ts`
 - **Custom migrations**: SQL files in `migrations/` directory at project root
 
 **Configuration**:
@@ -289,6 +289,7 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 | `CaptureSource` | `capture.cap.adapter.ts` | Watch for Cap recordings |
 | `TranscriptionService` | `transcription.whisper.adapter.ts` | Audio → Text (whisper.cpp) |
 | `VideoService` | `video.ffmpeg.adapter.ts` | Frame extraction, visual indexing |
+| `AudioPreprocessor` | `audio.silero.adapter.ts` | VAD segmentation & cleanup |
 | `IntelligenceService` | `intelligence.ollama.adapter.ts` | LLM classification & generation |
 | `EmbeddingService` | `embedding.ollama.adapter.ts` | Text → Vector embeddings |
 | `StorageService` | `storage.fs.adapter.ts` | Persist sessions/artifacts |

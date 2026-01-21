@@ -13,7 +13,22 @@ const GARBAGE_PATTERNS = [
   /^\d+%$/, // Percentages alone (43%)
   /^[a-z]$/i, // Single letters
   /^[\s\n]+$/, // Whitespace only
+  /^(.)\1{2,}$/, // Entire line is 3+ repeated chars (eee, ---)
+  /(.)\1{4,}/, // Line contains 5+ repeated chars (GPassssss, =====)
+  /^© \d{2}\/\d{2}/, // System Clock: © 15/01 Thu...
+  /^> [a-zA-Z ]+$/, // Window Title: > Google Chrome
+  /^[|>]\s+/, // Window artifacts: | BSI, > Google
 ];
+
+const UI_STOPWORDS = new Set([
+  'All Bookmarks',
+  'Zoho Mail',
+  'Detected Language',
+  'English',
+  'New Chat',
+  'cid', // Common OCR artifact
+  'sh Twelv', // Truncated "English Twelve" or similar
+]);
 
 const MIN_LINE_LENGTH = 3;
 const MIN_WORD_LENGTH = 3; // Require at least 3-letter sequences
@@ -27,12 +42,19 @@ export function cleanOcrText(raw: string): string {
   if (!raw || raw.trim().length === 0) return '';
 
   const cleaned: string[] = [];
+  let lastLine = '';
 
   for (const line of raw.split('\n')) {
     const trimmed = line.trim();
 
     // Skip short lines
     if (trimmed.length < MIN_LINE_LENGTH) continue;
+
+    // Skip duplicate consecutive lines (common in static UI)
+    if (trimmed === lastLine) continue;
+
+    // Skip exact UI stopwords
+    if (UI_STOPWORDS.has(trimmed)) continue;
 
     // Skip garbage patterns
     if (GARBAGE_PATTERNS.some((p) => p.test(trimmed))) continue;
@@ -42,6 +64,7 @@ export function cleanOcrText(raw: string): string {
     const hasWord = new RegExp(`[a-zA-Z]{${MIN_WORD_LENGTH},}`).test(trimmed);
     if (hasWord) {
       cleaned.push(trimmed);
+      lastLine = trimmed;
     }
   }
 

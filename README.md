@@ -26,20 +26,22 @@ pnpm test
 pnpm build
 ```
 
-## Project Status
-
-See [MILESTONES.md](./MILESTONES.md) for complete roadmap and current progress.
-
-**Current Focus:** Milestone 3.5 - Smart Segmentation & Context-First Architecture
+## Roadmap
 
 ### Completed ✅
-- [x] Milestone 1: Core Pipeline (Transcribe Last Cap Recording)
-- [x] Milestone 2: Intelligence (Classification & Entity Extraction)
-- [x] Milestone 3: Artifacts, Visuals & Outline Sync
-- [x] Context-First Architecture Redesign (ADR-003)
-- [x] SQLite Storage Layer with Repository Pattern (ADR-004)
-- [x] Multi-label Classification & Semantic Clustering
-- [x] Outline Wiki Integration
+- **M1**: Core Pipeline - Cap → Whisper → Transcript
+- **M2**: Intelligence - Multi-label Classification
+- **M3**: Artifacts - Generation + Outline Sync
+- **M3.5**: Smart Segmentation - Semantic Clustering + Contexts
+
+### Current Focus
+- Unit tests for new services (clustering, signal extraction, fusion)
+- Artifact generation from TopicBlocks (v2)
+- [ ] DRY refactor: Unify Ollama fetch/retry logic across adapters
+
+### Future
+- **M4**: Automation Levels (0-4)
+- **M5**: OpenCode Plugin Integration
 
 ## Architecture (v2)
 

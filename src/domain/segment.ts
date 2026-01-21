@@ -8,9 +8,18 @@ import type {
   VisualIndexCluster,
   VisualIndexFrame,
 } from '../0_types.js';
-import { Context } from './context.js';
 import { TimeRange } from './time-range.js';
 import { Transcript } from './transcript.js';
+
+// Minimal Context logic previously in context.ts
+const Context = {
+  extractFromOCR: (text: string): any[] => {
+    // This is a stub to keep V1 compiling.
+    // V2 uses signal-extraction.ts instead.
+    return [];
+  },
+  unique: (contexts: any[]): any[] => contexts,
+};
 
 export const Segment = {
   /**

@@ -101,7 +101,12 @@ export function clusterObservations(
   if (validObs.length === 0) return [];
 
   // Parse embeddings from Buffer format
-  const embeddings = validObs.map((obs) => bufferToEmbedding(obs.embedding!));
+  const embeddings = validObs.map((obs) => {
+    if (!obs.embedding) {
+      throw new Error(`Observation ${obs.id} has no embedding`);
+    }
+    return bufferToEmbedding(obs.embedding);
+  });
 
   // STEP 1: Initialize - each observation is its own cluster
   // Clusters are represented as arrays of indices into validObs

@@ -15,6 +15,24 @@
 - **Transcription**: whisper.cpp (via Cap)
 - **LLM**: Future: Ollama (local) or Claude API
 
+## Development Environment
+
+- **Machine**: MacBook Pro M4 Max
+- **Unified Memory**: 128GB (Optimized for 8B+ models)
+- **Primary Embedding Model**: `qwen3-embedding:8b` (40K Context)
+
+## Configuration
+
+| Environment Variable | Description | Default |
+|----------------------|-------------|---------|
+| `ESCRIBANO_EMBED_MODEL` | Ollama model for text embeddings | `qwen3-embedding:8b` |
+| `ESCRIBANO_EMBED_BATCH_SIZE` | Number of texts per embedding request | `64` |
+| `ESCRIBANO_EMBED_CONCURRENCY` | Parallel embedding requests | `4` |
+| `OLLAMA_CONTEXT_LENGTH` | Context window size for Ollama | `40000` |
+| `OLLAMA_NUM_PARALLEL` | Ollama inference slots (set when starting Ollama) | `4` |
+| `ESCRIBANO_CLUSTER_TIME_WINDOW` | Max seconds between observations in a cluster | `600` |
+| `ESCRIBANO_CLUSTER_DISTANCE_THRESHOLD` | Max cosine distance for semantic similarity | `0.4` |
+
 ## Architecture
 
 This project follows **Clean Architecture** principles with a simplified flat structure.

@@ -14,21 +14,8 @@
     "format": "biome format --write .",
     "check": "biome ci .",
     "escribano": "tsx --env-file=.env src/index.ts",
-    "list": "tsx --env-file=.env src/index.ts list",
-    "transcribe-latest": "tsx --env-file=.env  src/index.ts transcribe-latest",
-    "classify-latest": "tsx --env-file=.env  src/index.ts classify-latest",
-    "classify": "tsx --env-file=.env  src/index.ts classify",
-    "extract-metadata-latest": "tsx --env-file=.env  src/index.ts extract-metadata-latest",
-    "extract-metadata": "tsx --env-file=.env  src/index.ts extract-metadata",
-    "restart-latest": "tsx --env-file=.env  src/index.ts restart-latest",
-    "list-artifacts": "tsx --env-file=.env  src/index.ts list-artifacts",
-    "generate-artifact": "tsx --env-file=.env  src/index.ts generate-artifact",
-    "sessions": "tsx --env-file=.env src/index.ts sessions",
-    "generate": "tsx --env-file=.env src/index.ts generate",
-    "artifacts": "tsx --env-file=.env src/index.ts artifacts",
-    "sync": "tsx --env-file=.env src/index.ts sync",
-    "sync-all": "tsx --env-file=.env src/index.ts sync-all",
-    "db:reset": "rm -f ~/.escribano/escribano.db"
+    "db:reset": "rm -f ~/.escribano/escribano.db",
+    "ollama": "OLLAMA_NUM_PARALLEL=8 OLLAMA_MAX_LOADED_MODELS=3 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=40000 ollama serve"
   },
   "keywords": [],
   "author": "",
@@ -43,9 +30,10 @@
     "@biomejs/biome": "^2.3.11",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.0.3",
-    "@vitest/ui": "^4.0.16",
+    "@vitest/coverage-v8": "^4.0.17",
+    "@vitest/ui": "^4.0.17",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^3.0.5"
+    "vitest": "^4.0.17"
   }
 }

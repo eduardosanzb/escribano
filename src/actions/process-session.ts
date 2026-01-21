@@ -144,7 +144,7 @@ async function extractVisualLogs(
   );
 
   try {
-    const sceneResults = await videoService.detectAndExtractScenes(
+    const sceneResults = await videoService.extractFramesAtInterval(
       recording.videoPath,
       0.3,
       visualLogDir

@@ -341,6 +341,7 @@ export interface PublishingService {
 
 export interface TranscriptionService {
   transcribe(audioPath: string): Promise<Transcript>;
+  transcribeSegment(audioPath: string): Promise<string>;
 }
 
 export interface EmbeddingService {
@@ -381,6 +382,10 @@ export interface IntelligenceService {
       visualLogs?: VisualLog[];
     }
   ): Promise<string>;
+  embedText(
+    texts: string[],
+    options?: { batchSize?: number }
+  ): Promise<number[][]>;
 }
 
 export interface StorageService {
@@ -392,12 +397,12 @@ export interface StorageService {
 }
 
 export interface VideoService {
-  extractFrames(
+  extractFramesAtTimestamps(
     videoPath: string,
     timestamps: number[],
     outputDir: string
   ): Promise<string[]>;
-  detectAndExtractScenes(
+  extractFramesAtInterval(
     videoPath: string,
     threshold: number,
     outputDir: string
@@ -465,4 +470,107 @@ export const outlineConfigSchema = z.object({
   token: z.string(),
   collectionName: z.string().default('Escribano Sessions'),
 });
+
 export type OutlineConfig = z.infer<typeof outlineConfigSchema>;
+
+// =============================================================================
+// REPOSITORY INTERFACES (v2 - Storage Ports)
+// =============================================================================
+// TODO: Move to separate file when we split 0_types.ts
+
+import type {
+  DbArtifact,
+  DbArtifactInsert,
+  DbContext,
+  DbContextInsert,
+  DbObservation,
+  DbObservationContext,
+  DbObservationInsert,
+  DbRecording,
+  DbRecordingInsert,
+  DbTopicBlock,
+  DbTopicBlockInsert,
+} from './db/types.js';
+
+export type {
+  DbArtifact,
+  DbArtifactInsert,
+  DbContext,
+  DbContextInsert,
+  DbObservation,
+  DbObservationContext,
+  DbObservationInsert,
+  DbRecording,
+  DbRecordingInsert,
+  DbTopicBlock,
+  DbTopicBlockInsert,
+};
+
+export interface RecordingRepository {
+  findById(id: string): DbRecording | null;
+  findByStatus(status: DbRecording['status']): DbRecording[];
+  findPending(): DbRecording[];
+  save(recording: DbRecordingInsert): void;
+  updateStatus(
+    id: string,
+    status: DbRecording['status'],
+    step?: DbRecording['processing_step'],
+    error?: string | null
+  ): void;
+  delete(id: string): void;
+}
+
+export interface ObservationRepository {
+  findById(id: string): DbObservation | null;
+  findByRecording(recordingId: string): DbObservation[];
+  findByRecordingAndType(
+    recordingId: string,
+    type: 'visual' | 'audio'
+  ): DbObservation[];
+  findByContext(contextId: string): DbObservation[];
+  saveBatch(observations: DbObservationInsert[]): void;
+  delete(id: string): void;
+  deleteByRecording(recordingId: string): void;
+}
+
+export interface ContextRepository {
+  findById(id: string): DbContext | null;
+  findByTypeAndName(type: string, name: string): DbContext | null;
+  findAll(): DbContext[];
+  save(context: DbContextInsert): void;
+  linkObservation(
+    observationId: string,
+    contextId: string,
+    confidence?: number
+  ): void;
+  unlinkObservation(observationId: string, contextId: string): void;
+  getObservationLinks(contextId: string): DbObservationContext[];
+  delete(id: string): void;
+}
+
+export interface TopicBlockRepository {
+  findById(id: string): DbTopicBlock | null;
+  findByRecording(recordingId: string): DbTopicBlock[];
+  findByContext(contextId: string): DbTopicBlock[]; // Cross-recording!
+  save(block: DbTopicBlockInsert): void;
+  delete(id: string): void;
+  deleteByRecording(recordingId: string): void;
+}
+
+export interface ArtifactRepository {
+  findById(id: string): DbArtifact | null;
+  findByType(type: string): DbArtifact[];
+  findByBlock(blockId: string): DbArtifact[];
+  findByContext(contextId: string): DbArtifact[]; // Cross-recording!
+  save(artifact: DbArtifactInsert): void;
+  update(id: string, content: string): void;
+  delete(id: string): void;
+}
+
+export interface Repositories {
+  recordings: RecordingRepository;
+  observations: ObservationRepository;
+  contexts: ContextRepository;
+  topicBlocks: TopicBlockRepository;
+  artifacts: ArtifactRepository;
+}

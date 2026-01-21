@@ -23,18 +23,23 @@ import {
   generateArtifact,
   getRecommendedArtifacts,
 } from './actions/generate-artifact.js';
+import { processRecordingV2 } from './actions/process-recording-v2.js';
 import { processSession } from './actions/process-session.js';
 import { syncSessionToOutline } from './actions/sync-to-outline.js';
+import { createSileroPreprocessor } from './adapters/audio.silero.adapter.js';
 import { createCapCaptureSource } from './adapters/capture.cap.adapter.js';
 import { createOllamaIntelligenceService } from './adapters/intelligence.ollama.adapter.js';
 import { createOutlinePublishingService } from './adapters/publishing.outline.adapter.js';
 import { createFsStorageService } from './adapters/storage.fs.adapter.js';
 import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
 import { createFfmpegVideoService } from './adapters/video.ffmpeg.adapter.js';
+import { generateId } from './db/helpers.js';
+import { getRepositories } from './db/index.js';
 import { Classification as ClassificationModule } from './domain/classification.js';
 import { Segment } from './domain/segment.js';
 import { Session as SessionModule } from './domain/session.js';
 import { TimeRange } from './domain/time-range.js';
+import { withPipeline } from './pipeline/context.js';
 
 const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
@@ -125,6 +130,14 @@ function main(): void {
 
       case 'benchmark-latest':
         executeBenchmarkLatest();
+        break;
+
+      case 'process-v2':
+        executeProcessV2(args);
+        break;
+
+      case 'recordings-v2':
+        executeRecordingsV2();
         break;
 
       default:
@@ -255,6 +268,16 @@ function parseArgs(argsArray: string[]): ParsedArgs {
     case 'benchmark-latest':
       return { command: 'benchmark-latest', limit: 10 };
 
+    case 'process-v2':
+      return {
+        command: 'process-v2',
+        recordingId: argsArray[1] || 'latest',
+        limit: 10,
+      };
+
+    case 'recordings-v2':
+      return { command: 'recordings-v2', limit: 10 };
+
     case 'segments':
       return {
         command: 'segments',
@@ -271,6 +294,117 @@ function parseArgs(argsArray: string[]): ParsedArgs {
 
     default:
       return { command: 'help', limit: 10 };
+  }
+}
+
+async function executeProcessV2(args: ParsedArgs): Promise<void> {
+  const repos = getRepositories();
+  const capSource = createCapCaptureSource();
+  let recordingId = args.recordingId;
+
+  if (recordingId === 'latest') {
+    const latest = await capSource.getLatestRecording();
+    if (!latest) {
+      console.error('No Cap recordings found');
+      return;
+    }
+    recordingId = latest.id;
+  }
+
+  // 1. Ensure recording is in SQLite
+  const dbRecording = repos.recordings.findById(recordingId!);
+  if (!dbRecording) {
+    console.log(`Importing recording ${recordingId} into database...`);
+    const capRecordings = await capSource.listRecordings(100);
+    const recording = capRecordings.find((r) => r.id === recordingId);
+
+    if (!recording) {
+      console.error(`Recording ${recordingId} not found in Cap`);
+      return;
+    }
+
+    repos.recordings.save({
+      id: recording.id,
+      video_path: recording.videoPath,
+      audio_mic_path: recording.audioMicPath,
+      audio_system_path: recording.audioSystemPath,
+      duration: recording.duration,
+      captured_at: recording.capturedAt.toISOString(),
+      status: 'raw',
+      processing_step: null,
+      source_type: 'cap',
+      source_metadata: JSON.stringify(recording.source.metadata || {}),
+      error_message: null,
+    });
+  }
+
+  // 2. Run Pipeline
+  const parallel = process.env.ESCRIBANO_PARALLEL_TRANSCRIPTION === 'true';
+  const preprocessor = createSileroPreprocessor();
+  const transcription = createWhisperTranscriptionService({
+    binaryPath: 'whisper-cli',
+    model: MODEL_PATH,
+    cwd: MODELS_DIR,
+    outputFormat: 'json',
+  });
+  const video = createFfmpegVideoService();
+  const intelligence = createOllamaIntelligenceService();
+
+  await withPipeline(recordingId!, async () => {
+    await processRecordingV2(
+      recordingId!,
+      repos,
+      { preprocessor, transcription, video, intelligence },
+      { parallel }
+    );
+  });
+
+  console.log(`\n✅ Processing complete for ${recordingId}`);
+}
+
+async function executeRecordingsV2(): Promise<void> {
+  const repos = getRepositories();
+  const recordings = repos.recordings.findPending(); // Or all?
+  const allRecordings = repos.recordings.findByStatus('processed');
+  const errorRecordings = repos.recordings.findByStatus('error');
+  const processingRecordings = repos.recordings.findByStatus('processing');
+  const rawRecordings = repos.recordings.findByStatus('raw');
+
+  const list = [
+    ...rawRecordings,
+    ...processingRecordings,
+    ...allRecordings,
+    ...errorRecordings,
+  ];
+
+  if (list.length === 0) {
+    console.log(
+      'No recordings in database. Use process-v2 to import and process.'
+    );
+    return;
+  }
+
+  console.log(`\n📦 Database Recordings (${list.length} total):`);
+  console.log('='.repeat(80));
+
+  for (const r of list) {
+    const statusIcon =
+      r.status === 'processed'
+        ? '✅'
+        : r.status === 'error'
+          ? '❌'
+          : r.status === 'processing'
+            ? '⏳'
+            : '⚪';
+    const step = r.processing_step ? `[${r.processing_step}]` : '';
+    const obsCount = repos.observations.findByRecording(r.id).length;
+
+    console.log(
+      `${statusIcon} ${r.id.padEnd(40)} ${r.status.padEnd(12)} ${step.padEnd(15)} ${obsCount} obs`
+    );
+    if (r.error_message) {
+      console.log(`   ⚠️ Error: ${r.error_message}`);
+    }
   }
 }
 
@@ -1485,6 +1619,12 @@ function showHelp(): void {
   );
   console.log(
     '  escribano benchmark-latest              Reset & run full pipeline with timing'
+  );
+  console.log(
+    '  escribano process-v2 [id|latest]        Run new Audio Observation pipeline (v2)'
+  );
+  console.log(
+    '  escribano recordings-v2                 List recordings in SQLite database'
   );
   console.log(
     '  escribano list-artifacts <id>           List recommended/existing artifacts'

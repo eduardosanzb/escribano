@@ -10,14 +10,17 @@ AI-powered session intelligence tool that automatically captures, transcribes, c
 # Install dependencies
 pnpm install
 
+# Approve native module builds (required once for better-sqlite3)
+pnpm approve-builds
+
 # Install prerequisites
-brew install whisper-cpp ffmpeg
+brew install whisper-cpp ffmpeg sqlite3 ollama
+
+# Initialize database
+pnpm db:reset
 
 # Run tests
 pnpm test
-
-# Typecheck
-pnpm typecheck
 
 # Build
 pnpm build
@@ -27,198 +30,84 @@ pnpm build
 
 See [MILESTONES.md](./MILESTONES.md) for complete roadmap and current progress.
 
-**Current Focus:** Milestone 2 - Intelligence (Classification & Entity Extraction)
+**Current Focus:** Milestone 3.5 - Smart Segmentation & Context-First Architecture
 
 ### Completed ✅
 - [x] Milestone 1: Core Pipeline (Transcribe Last Cap Recording)
-- [x] Core types and interfaces (`0_types.ts`)
-- [x] Cap adapter (reads filesystem recordings)
-- [x] Whisper adapter (transcribes audio)
-- [x] Process session action
-- [x] Unit and integration tests
-- [x] TypeScript configuration
-- [x] Package scripts
-- [x] CLI entry point
-- [x] Model download and management
-- [x] Whisper adapter completion (large-v3 model, cwd support)
-- [x] Ollama intelligence adapter (Qwen3-32B model)
-- [x] Classification action
-- [x] Entity and Classification schemas
-- [x] Classification prompt template
-- [x] CLI commands: `classify-latest`, `classify <id>`
-- [x] Unit tests for intelligence adapter
-- [x] Ollama health check before classification
-- [x] Session storage adapter (persist and load sessions)
-- [x] Session reuse - load existing session before classification to avoid re-transcription
-- [x] Transcript reuse - use existing transcript if available
+- [x] Milestone 2: Intelligence (Classification & Entity Extraction)
+- [x] Milestone 3: Artifacts, Visuals & Outline Sync
+- [x] Context-First Architecture Redesign (ADR-003)
+- [x] SQLite Storage Layer with Repository Pattern (ADR-004)
+- [x] Multi-label Classification & Semantic Clustering
+- [x] Outline Wiki Integration
 
-### In Progress 🚧
-- [ ] None
+## Architecture (v2)
 
-### Next Steps
-1. Run integration tests
-2. Test with real Cap recordings
-3. Generate artifacts (Milestone 3)
-4. Publishing destinations (Milestone 4)
-
-```bash
-# Run tests
-pnpm test
-
-# Watch mode
-pnpm test --watch
-
-# Run against real Cap recordings
-pnpm test src/tests/cap-real.test.ts
-```
-
-## Architecture
+Escribano follows a **Context-First** observation model, separating raw data from semantic meaning.
 
 ```
 src/
-├── 0_types.ts           # All types and interfaces
-├── adapters/
-│   ├── capture.cap.adapter.ts    # Read Cap recordings
-│   ├── transcription.whisper.adapter.ts # Transcribe with whisper
-│   ├── intelligence.ollama.adapter.ts # Ollama AI services
-│   ├── storage.fs.adapter.ts # Filesystem storage
-│   └── video.ffmpeg.adapter.ts # Video processing
-├── actions/
-│   └── process-session.ts  # Transcribe recording → Session
-└── tests/
-    └── *.test.ts        # Unit + integration tests
+├── 0_types.ts           # Core types, interfaces, and Zod schemas
+├── index.ts              # CLI entry point
+├── actions/             # Use cases (process-session, sync-to-outline, etc.)
+├── adapters/            # Port implementations (whisper, ollama, outline, cap)
+├── db/                  # Persistence layer
+│   ├── migrate.ts       # SQL migration runner
+│   ├── repositories/    # SQLite implementations of repository ports
+│   └── index.ts         # DB connection and repository factory
+└── tests/               # Unit + integration tests
 ```
+
+### Key Entities
+
+- **Recording**: Raw capture (video/audio paths)
+- **Observation**: Atomic multimodal evidence (OCR text, audio transcript segment, etc.)
+- **Context**: Cross-recording semantic label (project, app, topic)
+- **TopicBlock**: Recording segment grouped by semantic context
+- **Artifact**: Generated Markdown content (summary, runbook, etc.)
 
 ## Design Principles
 
-- **Single types file** - `0_types.ts` contains everything
-- **Functions over classes** - Adapters are factory functions returning interfaces
-- **Go-style** - Pure functions with explicit dependencies
-- **Minimal viable** - Build just what's needed for the milestone
+- **Single types file** - `0_types.ts` is the source of truth
+- **Ports & Adapters** - External systems (LLMs, Wiki, DB) are accessed through interfaces
+- **Synchronous Persistence** - Local-first SQLite with `better-sqlite3`
+- **Repository Pattern** - Decouples business logic from storage implementation
+- **Functional over classes** - Factory functions return typed interfaces
 
 ## Prerequisites
 
 ### System Dependencies
 
-- **whisper-cli**: `brew install whisper-cpp`
-- **ffmpeg**: `brew install ffmpeg` (required for audio format conversion)
-- **ollama**: `brew install ollama` (required for classification and entity extraction)
+- **whisper-cpp**: `brew install whisper-cpp`
+- **ffmpeg**: `brew install ffmpeg` (audio/video processing)
+- **sqlite3**: `brew install sqlite3`
+- **ollama**: `brew install ollama` (LLM/VLM services)
 
-### Installation
+### Native Modules
+
+This project uses `better-sqlite3`, which requires native compilation. pnpm 10+ requires explicit approval for packages that run build scripts:
 
 ```bash
-# Install Node.js dependencies
-pnpm install
-
-# Install system dependencies
-brew install whisper-cpp ffmpeg
+pnpm approve-builds
 ```
 
-## Audio Format Support
+Select `better-sqlite3` when prompted. This creates a `.pnpm-builds.yaml` file (committed to git) so future installs work automatically.
 
-whisper-cli natively supports: `wav`, `flac`, `mp3`
+### Ollama Setup
 
-Other audio formats (ogg, m4a, opus, etc.) from Cap recordings are automatically converted to WAV (16kHz, mono) using ffmpeg before transcription.
+1. **Install**: `brew install ollama`
+2. **Pull Models**:
+   - `ollama pull qwen3:8b` (Classification)
+   - `ollama pull qwen3:32b` (Artifact generation)
+   - `ollama pull minicpm-v:8b` (Vision/VLM)
+   - `ollama pull nomic-embed-text` (Semantic embeddings)
 
-### Conversion Process
+## Testing
 
-1. Detect unsupported format from file extension
-2. Convert to WAV using ffmpeg (timeout: 10 minutes for large files)
-3. Transcribe converted file with whisper-cli
-4. Clean up temporary converted file
-
-### Example Conversions
-
-| Input Format | Converted Path | Result |
-|--------------|------------------|--------|
-| `audio-input.ogg` | `audio-input.ogg.converted.wav` | Transcribed |
-| `audio.m4a` | `audio.m4a.converted.wav` | Transcribed |
-| `audio.wav` | `audio.wav` | Direct transcription (no conversion) |
-| `audio.mp3` | `audio.mp3` | Direct transcription (no conversion) |
-
-### Notes
-
-- **Timeout**: 10 minutes is set for conversion, sufficient for 1-3 hour files
-- **Cleanup**: Temporary `.converted.wav` files are automatically deleted after successful transcription
-- **Error handling**: Conversion failures are logged and throw clear error messages
-
-### Ollama Setup for Classification
-
-#### Installation
 ```bash
-# Install Ollama
-brew install ollama
+# Run all tests
+pnpm test
 
-# Pull Qwen3-32B model
-ollama pull qwen3:32b
-```
-
-#### Start Ollama Server
-```bash
-# Start server (localhost only)
-ollama serve
-
-# Start with performance tuning (recommended for M4 + 128GB RAM)
-OLLAMA_HOST=0.0.0.0:11434 \
-OLLAMA_CONTEXT_LENGTH=16384 \
-OLLAMA_KEEP_ALIVE=-1 \
-OLLAMA_MAX_LOADED_MODELS=3 \
-OLLAMA_NUM_PARALLEL=4 \
-ollama serve
-```
-
-#### Background Service (Production)
-Create `~/Library/LaunchAgents/com.ollama.daemon.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-  <dict>
-    <key>Label</key>
-    <string>com.ollama.daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-      <string>/opt/homebrew/bin/ollama</string>
-      <string>serve</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>EnvironmentVariables</key>
-    <dict>
-      <key>OLLAMA_HOST</key>
-      <string>0.0.0.0:11434</string>
-      <key>OLLAMA_CONTEXT_LENGTH</key>
-      <string>16384</string>
-      <key>OLLAMA_KEEP_ALIVE</key>
-      <string>-1</string>
-      <key>OLLAMA_MAX_LOADED_MODELS</key>
-      <integer>3</integer>
-      <key>OLLAMA_NUM_PARALLEL</key>
-      <integer>4</integer>
-    </dict>
-  </dict>
-</plist>
-```
-
-Load and start service:
-```bash
-# Load service
-launchctl load ~/Library/LaunchAgents/com.ollama.daemon.plist
-
-# Start it
-launchctl start com.ollama.daemon
-```
-
-#### Quick Test
-```bash
-curl http://localhost:11434/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "qwen3:32b",
-    "messages": [{"role": "user", "content": "Say hello"}],
-    "stream": false
-  }'
+# Run repository tests specifically
+npx vitest run src/tests/db/repositories.test.ts
 ```

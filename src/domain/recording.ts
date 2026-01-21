@@ -2,11 +2,19 @@ import type { DbRecording } from '../0_types.js';
 
 export type RecordingStatus = 'raw' | 'processing' | 'processed' | 'error';
 export type ProcessingStep =
-  | 'extraction'
+  // Audio pipeline
   | 'vad'
   | 'transcription'
+  // Visual pipeline
+  | 'frame_extraction'
+  | 'ocr_processing'
+  | 'embedding'
+  // Context derivation phases
   | 'clustering'
-  | 'context_derivation'
+  | 'vlm_enrichment'
+  | 'signal_extraction'
+  | 'cluster_merge'
+  | 'context_creation'
   | 'block_formation'
   | 'complete';
 
@@ -66,6 +74,6 @@ export function failProcessing(recording: Recording, error: string): Recording {
     ...recording,
     status: 'error',
     errorMessage: error,
-    processingStep: null,
+    // Keep processingStep to know where we failed for resume
   };
 }

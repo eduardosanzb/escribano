@@ -1,10 +1,38 @@
 # ADR-003: Context-First Observation Model
 
 ## Status
-Proposed
+Accepted
 
 ## Date
 2026-01-20
+
+## Appendix: Implementation Learnings (Phase 3C)
+
+### OCR Quality Findings
+Tesseract on screen recordings produces high-quality text for code and terminal views but generates significant noise from menu bars, system clocks, and status indicators. 
+**Solution**: A post-processing filter (`src/utils/ocr.ts`) cleans these artifacts before they reach the embedding service, preventing "hallucinated" semantic similarities between unrelated segments.
+
+### Embedding Success Rate
+With the OCR cleanup utility, the success rate for `nomic-embed-text` reached **99.7%** (1771/1776 observations). The rare failures correspond to nonsensical character strings that are correctly rejected by the model.
+
+### VLM Benchmarks for Phase 3D.5
+Testing various Vision-Language Models (VLM) for technical activity description:
+
+| Model | tok/s | Quality | Recommended For |
+|-------|-------|---------|-----------------|
+| **MiMo VL 7B RL GGUF Q4_K_S** | 78 | Highest | Deep analysis of code structure & specific files. |
+| **qwen3-vl-8b** | 77 | High | General technical activity (Default). |
+| **qwen3-vl-4b** | 115 | Medium | Fast processing where high detail isn't critical. |
+| **minicpm-v:8b** | - | Low | Not recommended (too generic). |
+
+### Processing Pipeline Timing (Sample: 1hr Recording)
+| Phase | Duration |
+|-------|----------|
+| OCR Processing (1776 frames) | 321.8s |
+| Embedding Generation | 35.3s |
+| **Total Visual Pipeline** | **357.1s (~6 mins)** |
+
+*Note: Audio pipeline duration varies significantly based on speech density.*
 
 ## Context
 

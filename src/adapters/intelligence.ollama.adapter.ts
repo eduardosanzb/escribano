@@ -11,6 +11,7 @@ import {
   type ArtifactType,
   type Classification,
   classificationSchema,
+  type DbObservation,
   type IntelligenceConfig,
   type IntelligenceService,
   intelligenceConfigSchema,
@@ -64,6 +65,8 @@ export function createOllamaIntelligenceService(
       describeImagesWithOllama(images, parsedConfig, prompt),
     embedText: (texts, options) =>
       embedTextWithOllama(texts, parsedConfig, options),
+    extractTopics: (observations) =>
+      extractTopicsWithOllama(observations, parsedConfig),
   };
 }
 
@@ -319,6 +322,49 @@ function loadClassifyPrompt(
   }
 
   return prompt;
+}
+
+async function extractTopicsWithOllama(
+  observations: DbObservation[],
+  config: IntelligenceConfig
+): Promise<string[]> {
+  const textSamples = observations
+    .slice(0, 20)
+    .map((o) => {
+      if (o.type === 'visual') {
+        return o.vlm_description || o.ocr_text?.slice(0, 200) || '';
+      }
+      return o.text?.slice(0, 500) || '';
+    })
+    .filter((t) => t.length > 10);
+
+  if (textSamples.length === 0) return [];
+
+  const prompt = `Analyze these observations from a screen recording session and generate 1-3 descriptive topic labels.
+
+Observations:
+${textSamples.join('\n---\n')}
+
+Output ONLY a JSON object with this format:
+{"topics": ["specific topic 1", "specific topic 2"]}
+
+Rules:
+- Be specific: "debugging TypeScript errors" not just "debugging"
+- Be descriptive: "learning React hooks" not just "learning"
+- Focus on what the user is DOING, not just what's visible
+- Max 3 topics`;
+
+  try {
+    const result = await callOllama(prompt, config, {
+      expectJson: true,
+      model: config.model,
+    });
+
+    return result.topics || [];
+  } catch (error) {
+    console.warn('Topic extraction failed:', error);
+    return [];
+  }
 }
 
 async function callOllama(

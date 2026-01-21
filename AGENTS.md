@@ -98,6 +98,85 @@ The visual pipeline uses a hybrid approach:
 - Use `tsx` for development (not `ts-node`)
 - Build with `tsc` before running with `node dist/index.js`
 
+### Loop & Iteration Style
+
+Prefer modern, declarative iteration patterns:
+
+```typescript
+// ❌ AVOID: C-style for loops
+for (let i = 0; i < items.length; i++) {
+  const item = items[i];
+  // ...
+}
+
+// ✅ PREFER: for...of when you need the item
+for (const item of items) {
+  // ...
+}
+
+// ✅ PREFER: for...of with entries() when you need index
+for (const [index, item] of items.entries()) {
+  // ...
+}
+
+// ✅ PREFER: Array methods for transformations
+const results = items.map(item => transform(item));
+const filtered = items.filter(item => item.isValid);
+const sum = items.reduce((acc, item) => acc + item.value, 0);
+
+// ❌ AVOID: Nested C-style loops
+for (let i = 0; i < n; i++) {
+  for (let j = i + 1; j < n; j++) {
+    // ...
+  }
+}
+
+// ✅ PREFER: Named functions for clarity
+function computePairs<T>(items: T[]): Array<[T, T]> {
+  const pairs: Array<[T, T]> = [];
+  for (const [i, itemA] of items.entries()) {
+    for (const [j, itemB] of items.entries()) {
+      if (j <= i) continue;
+      pairs.push([itemA, itemB]);
+    }
+  }
+  return pairs;
+}
+```
+
+### Algorithm Documentation
+
+Complex algorithms MUST include a header comment explaining:
+1. **WHAT** the algorithm does (one sentence)
+2. **WHY** this approach was chosen over alternatives
+3. **HOW** it works (step-by-step)
+4. **EXAMPLE** showing input → output (when helpful)
+
+Example:
+```typescript
+/**
+ * ═══════════════════════════════════════════════════════════════
+ * ALGORITHM: Agglomerative Clustering with Time Constraints
+ * ═══════════════════════════════════════════════════════════════
+ * 
+ * WHAT: Groups observations by semantic similarity while respecting time.
+ * 
+ * WHY: Unlike K-means, no need to specify cluster count upfront.
+ * 
+ * HOW:
+ * 1. Start with each observation as its own cluster
+ * 2. Find the two closest clusters
+ * 3. If close enough, merge them
+ * 4. Repeat until no clusters are close enough
+ * 
+ * EXAMPLE:
+ *   Input:  [A] [B] [C] [D] [E]
+ *   Step 1: [A,B] [C] [D] [E]    (A & B merged)
+ *   Step 2: [A,B] [C,D] [E]      (C & D merged)
+ *   Final:  [A,B,C,D] [E]        (threshold reached)
+ */
+```
+
 ### Domain Layer Rules
 - NO external dependencies
 - Pure TypeScript, no I/O

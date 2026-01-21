@@ -28,8 +28,7 @@
     "artifacts": "tsx --env-file=.env src/index.ts artifacts",
     "sync": "tsx --env-file=.env src/index.ts sync",
     "sync-all": "tsx --env-file=.env src/index.ts sync-all",
-    "db:reset": "rm -f ~/.escribano/escribano.db",
-    "db:types": "sqlite3 temp.db < migrations/001_initial.sql && npx kysely-codegen --dialect sqlite --url temp.db --out-file src/db/types.ts && rm temp.db"
+    "db:reset": "rm -f ~/.escribano/escribano.db"
   },
   "keywords": [],
   "author": "",
@@ -45,7 +44,6 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.0.3",
     "@vitest/ui": "^4.0.16",
-    "kysely-codegen": "0.19.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^3.0.5"

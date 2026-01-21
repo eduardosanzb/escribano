@@ -65,6 +65,25 @@ export function createSqliteObservationRepository(
       return stmts.findByContext.all(contextId) as DbObservation[];
     },
 
+    save(observation: DbObservationInsert): void {
+      const now = nowISO();
+      stmts.insert.run(
+        observation.id,
+        observation.recording_id,
+        observation.type,
+        observation.timestamp,
+        observation.end_timestamp,
+        observation.image_path,
+        observation.ocr_text,
+        observation.vlm_description,
+        observation.text,
+        observation.audio_source,
+        observation.audio_type,
+        observation.embedding,
+        now
+      );
+    },
+
     saveBatch(observations: DbObservationInsert[]): void {
       const now = nowISO();
       const insertMany = db.transaction((obsList: DbObservationInsert[]) => {
@@ -87,6 +106,21 @@ export function createSqliteObservationRepository(
         }
       });
       insertMany(observations);
+    },
+
+    updateEmbedding(id: string, embedding: number[]): void {
+      const stmt = db.prepare(
+        'UPDATE observations SET embedding = ? WHERE id = ?'
+      );
+      const buffer = Buffer.from(new Float32Array(embedding).buffer);
+      stmt.run(buffer, id);
+    },
+
+    updateVLMDescription(id: string, description: string): void {
+      const stmt = db.prepare(
+        'UPDATE observations SET vlm_description = ? WHERE id = ?'
+      );
+      stmt.run(description, id);
     },
 
     delete(id: string): void {

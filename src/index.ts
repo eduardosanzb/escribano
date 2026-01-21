@@ -9,13 +9,14 @@ import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import type {
-  ArtifactType,
-  Classification,
-  OutlineConfig,
-  Recording,
-  Session,
-  TranscriptMetadata,
+import {
+  type ArtifactType,
+  type Classification,
+  DEFAULT_INTELLIGENCE_CONFIG,
+  type OutlineConfig,
+  type Recording,
+  type Session,
+  type TranscriptMetadata,
 } from './0_types.js';
 import { classifySession } from './actions/classify-session.js';
 import { extractMetadata } from './actions/extract-metadata.js';
@@ -28,6 +29,7 @@ import { processSession } from './actions/process-session.js';
 import { syncSessionToOutline } from './actions/sync-to-outline.js';
 import { createSileroPreprocessor } from './adapters/audio.silero.adapter.js';
 import { createCapCaptureSource } from './adapters/capture.cap.adapter.js';
+import { createOllamaEmbeddingService } from './adapters/embedding.ollama.adapter.js';
 import { createOllamaIntelligenceService } from './adapters/intelligence.ollama.adapter.js';
 import { createOutlinePublishingService } from './adapters/publishing.outline.adapter.js';
 import { createFsStorageService } from './adapters/storage.fs.adapter.js';
@@ -53,6 +55,7 @@ interface ParsedArgs {
   sessionId?: string;
   sessionRef?: string;
   artifactType?: string;
+  force?: boolean;
 }
 
 function main(): void {
@@ -272,6 +275,7 @@ function parseArgs(argsArray: string[]): ParsedArgs {
       return {
         command: 'process-v2',
         recordingId: argsArray[1] || 'latest',
+        force: argsArray.includes('--force'),
         limit: 10,
       };
 
@@ -349,13 +353,14 @@ async function executeProcessV2(args: ParsedArgs): Promise<void> {
   });
   const video = createFfmpegVideoService();
   const intelligence = createOllamaIntelligenceService();
+  const embedding = createOllamaEmbeddingService(DEFAULT_INTELLIGENCE_CONFIG);
 
   await withPipeline(recordingId!, async () => {
     await processRecordingV2(
       recordingId!,
       repos,
-      { preprocessor, transcription, video, intelligence },
-      { parallel }
+      { preprocessor, transcription, video, intelligence, embedding },
+      { parallel, force: args.force }
     );
   });
 

@@ -24,7 +24,7 @@ Use **SQLite** with the following stack:
 | Component | Choice | Purpose |
 |-----------|--------|---------|
 | **Driver** | better-sqlite3 | Synchronous, fast, local-first |
-| **Types** | kysely-codegen | Generate TypeScript from schema |
+| **Types** | Manual | Written in `src/db/types.ts` |
 | **Migrations** | Custom runner | Simple SQL files, can load extensions |
 | **IDs** | UUIDv7 | Time-sortable, unique |
 | **Vectors** | BLOB (initially) | sqlite-vector later if needed |
@@ -62,14 +62,14 @@ CREATE TABLE _schema_version (
 ### Migration Approach
 
 1. SQL files in `migrations/` directory at the project root: `001_initial.sql`, `002_*.sql`, etc.
-2. Custom runner in `src/db/migrate.ts`
+2. Custom runner in `src/db/migrate.ts` (runs automatically on first use)
 3. Runner can load SQLite extensions (future sqlite-vector support)
 4. No rollback support (fix forward)
 
-### Type Generation
+### Scripts
 
 ```bash
-pnpm db:generate  # Run kysely-codegen after schema changes
+pnpm db:reset     # Reset database
 ```
 
 ### Why Not Other Options
@@ -85,7 +85,7 @@ pnpm db:generate  # Run kysely-codegen after schema changes
 ## Consequences
 
 ### Positive
-- Type-safe queries via generated types
+- Type-safe queries via manual types
 - Proper relational queries (JOINs, indexes)
 - Future sqlite-vector support possible
 - Synchronous API matches local-first model
@@ -93,10 +93,9 @@ pnpm db:generate  # Run kysely-codegen after schema changes
 
 ### Negative
 - New dependency (better-sqlite3)
-- Must run type generation after schema changes
+- Must maintain manual types in `src/db/types.ts`
 - Custom migration runner to maintain
 
 ## References
 - better-sqlite3: https://github.com/WiseLibs/better-sqlite3
-- kysely-codegen: https://github.com/RobinBlomberg/kysely-codegen
 - uuidv7: https://www.npmjs.com/package/uuidv7

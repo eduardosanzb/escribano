@@ -117,6 +117,7 @@ describe('Visual Observer Pipeline', () => {
       generate: vi.fn(),
       describeImages: vi.fn().mockResolvedValue(mockVisualDescriptions),
       embedText: vi.fn(),
+      extractTopics: vi.fn(),
     };
 
     const session = await processSession(
@@ -186,6 +187,7 @@ describe('Visual Observer Pipeline', () => {
       generate: vi.fn(),
       describeImages: vi.fn(), // Should NOT be called
       embedText: vi.fn(),
+      extractTopics: vi.fn(),
     };
 
     const session = await processSession(

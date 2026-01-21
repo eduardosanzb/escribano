@@ -4,6 +4,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  EmbeddingService,
   IntelligenceService,
   Repositories,
   TranscriptionService,
@@ -33,6 +34,32 @@ describe('processRecordingV2', () => {
       },
       observations: {
         saveBatch: vi.fn(),
+        save: vi.fn(),
+        findByRecording: vi.fn().mockReturnValue([]),
+        findByRecordingAndType: vi.fn().mockReturnValue([]),
+        updateEmbedding: vi.fn(),
+        deleteByRecording: vi.fn(),
+      },
+      clusters: {
+        deleteByRecording: vi.fn(),
+        save: vi.fn(),
+        linkObservationsBatch: vi.fn(),
+        findByRecording: vi.fn().mockReturnValue([]),
+        findByRecordingAndType: vi.fn().mockReturnValue([]),
+        getObservations: vi.fn().mockReturnValue([]),
+        updateClassification: vi.fn(),
+        getMergedAudioClusters: vi.fn().mockReturnValue([]),
+        saveMerge: vi.fn(),
+      },
+      contexts: {
+        findByTypeAndName: vi.fn(),
+        save: vi.fn(),
+        linkObservation: vi.fn(),
+        getLinksByRecording: vi.fn().mockReturnValue([]),
+      },
+      topicBlocks: {
+        deleteByRecording: vi.fn(),
+        save: vi.fn(),
       },
     } as unknown as Repositories;
 
@@ -48,7 +75,12 @@ describe('processRecordingV2', () => {
     const mockIntelligence = {
       describeImages: vi.fn().mockResolvedValue({ descriptions: [] }),
       embedText: vi.fn().mockResolvedValue([]),
+      extractTopics: vi.fn().mockResolvedValue([]),
     } as unknown as IntelligenceService;
+
+    const mockEmbedding = {
+      embedBatch: vi.fn().mockResolvedValue([]),
+    } as unknown as EmbeddingService;
 
     const mockPreprocessor = {
       extractSpeechSegments: vi
@@ -62,6 +94,7 @@ describe('processRecordingV2', () => {
     await processRecordingV2('rec-123', mockRepos, {
       video: mockVideoService,
       intelligence: mockIntelligence,
+      embedding: mockEmbedding,
       preprocessor: mockPreprocessor,
       transcription: mockTranscription,
     });

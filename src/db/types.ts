@@ -1,6 +1,5 @@
 /**
  * Manual Database Types for SQLite
- * (Fallback when kysely-codegen is unavailable)
  */
 
 export interface DbRecording {
@@ -12,11 +11,16 @@ export interface DbRecording {
   captured_at: string;
   status: 'raw' | 'processing' | 'processed' | 'error';
   processing_step:
-    | 'extraction'
     | 'vad'
     | 'transcription'
+    | 'frame_extraction'
+    | 'ocr_processing'
+    | 'embedding'
     | 'clustering'
-    | 'context_derivation'
+    | 'vlm_enrichment'
+    | 'signal_extraction'
+    | 'cluster_merge'
+    | 'context_creation'
     | 'block_formation'
     | 'complete'
     | null;
@@ -46,6 +50,34 @@ export interface DbObservation {
 }
 
 export type DbObservationInsert = Omit<DbObservation, 'created_at'>;
+
+export interface DbCluster {
+  id: string;
+  recording_id: string;
+  type: 'visual' | 'audio';
+  start_timestamp: number;
+  end_timestamp: number;
+  observation_count: number;
+  centroid: Buffer | null;
+  classification: string | null; // JSON
+  metadata: string | null; // JSON
+  created_at: string;
+}
+
+export type DbClusterInsert = Omit<DbCluster, 'created_at'>;
+
+export interface DbObservationCluster {
+  observation_id: string;
+  cluster_id: string;
+  distance: number | null;
+}
+
+export interface DbClusterMerge {
+  visual_cluster_id: string;
+  audio_cluster_id: string;
+  similarity_score: number;
+  merge_reason: string | null;
+}
 
 export interface DbContext {
   id: string;

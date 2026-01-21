@@ -34,6 +34,14 @@ export function createSqliteContextRepository(
     getObservationLinks: db.prepare(`
       SELECT * FROM observation_contexts WHERE context_id = ?
     `),
+    getObservationLinksByObservation: db.prepare(`
+      SELECT * FROM observation_contexts WHERE observation_id = ?
+    `),
+    getLinksByRecording: db.prepare(`
+      SELECT oc.* FROM observation_contexts oc
+      JOIN observations o ON oc.observation_id = o.id
+      WHERE o.recording_id = ?
+    `),
     delete: db.prepare('DELETE FROM contexts WHERE id = ?'),
   };
 
@@ -76,6 +84,20 @@ export function createSqliteContextRepository(
 
     getObservationLinks(contextId: string): DbObservationContext[] {
       return stmts.getObservationLinks.all(contextId) as DbObservationContext[];
+    },
+
+    getObservationLinksByObservation(
+      observationId: string
+    ): DbObservationContext[] {
+      return stmts.getObservationLinksByObservation.all(
+        observationId
+      ) as DbObservationContext[];
+    },
+
+    getLinksByRecording(recordingId: string): DbObservationContext[] {
+      return stmts.getLinksByRecording.all(
+        recordingId
+      ) as DbObservationContext[];
     },
 
     delete(id: string): void {

@@ -14,16 +14,28 @@ export function createOllamaEmbeddingService(
   config: IntelligenceConfig
 ): EmbeddingService {
   const baseUrl = config.endpoint.replace('/api/chat', '');
-  const model = config.embedding?.model || 'nomic-embed-text';
+  const model =
+    process.env.ESCRIBANO_EMBED_MODEL ||
+    config.embedding?.model ||
+    'qwen3-embedding:0.6b';
 
   return {
-    embed: async (text: string): Promise<number[]> => {
+    embed: async (
+      text: string,
+      taskType?: 'clustering' | 'retrieval'
+    ): Promise<number[]> => {
+      // qwen3-embedding supports instruction prefixes for better task-specific embeddings
+      const prefix =
+        taskType === 'clustering'
+          ? 'Instruct: Cluster screen recording observations for semantic similarity\n'
+          : '';
+
       const response = await fetch(`${baseUrl}/api/embeddings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model,
-          prompt: text,
+          prompt: prefix + text,
         }),
       });
 
@@ -37,12 +49,16 @@ export function createOllamaEmbeddingService(
       return data.embedding;
     },
 
-    embedBatch: async (texts: string[]): Promise<number[][]> => {
+    embedBatch: async (
+      texts: string[],
+      taskType?: 'clustering' | 'retrieval'
+    ): Promise<number[][]> => {
       // Ollama doesn't support batch embeddings in a single call yet,
       // so we do them sequentially to avoid overwhelming the server.
       const embeddings: number[][] = [];
+      const service = createOllamaEmbeddingService(config);
       for (const text of texts) {
-        embeddings.push(await createOllamaEmbeddingService(config).embed(text));
+        embeddings.push(await service.embed(text, taskType));
       }
       return embeddings;
     },
@@ -67,6 +83,26 @@ export function createOllamaEmbeddingService(
 
       const similarity = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
       return similarity;
+    },
+
+    centroid: (embeddings: number[][]): number[] => {
+      if (embeddings.length === 0) return [];
+      if (embeddings.length === 1) return embeddings[0];
+
+      const dim = embeddings[0].length;
+      const result = new Array(dim).fill(0);
+
+      for (const emb of embeddings) {
+        for (let i = 0; i < dim; i++) {
+          result[i] += emb[i];
+        }
+      }
+
+      for (let i = 0; i < dim; i++) {
+        result[i] /= embeddings.length;
+      }
+
+      return result;
     },
   };
 }

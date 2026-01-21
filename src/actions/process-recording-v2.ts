@@ -26,7 +26,7 @@ import {
   describeFrames,
   selectFramesForVLM,
 } from '../services/vlm-enrichment.js';
-import { bufferToEmbedding } from '../utils/index.js';
+import { bufferToEmbedding, chunkArray, parallelMap } from '../utils/index.js';
 import { cleanOcrText } from '../utils/ocr.js';
 import { createContextsFromSignals } from './create-contexts.js';
 import { createTopicBlockFromCluster } from './create-topic-blocks.js';
@@ -251,6 +251,7 @@ export async function processRecordingV2(
       }
 
       // Step: Generate Embeddings (for BOTH visual and audio)
+      // Uses parallel batching with immediate persistence for crash-safety
       if (!shouldSkipStep(recording.processingStep, 'embedding')) {
         await step('generate-embeddings', async () => {
           recording = advanceStep(recording, 'embedding');
@@ -265,37 +266,76 @@ export async function processRecordingV2(
             return;
           }
 
-          // Extract text content based on observation type
-          const textsToEmbed = obsNeedingEmbedding.map((o) => {
-            if (o.type === 'visual') {
-              return o.ocr_text || '';
-            }
-            return o.text || ''; // Audio transcript
-          });
+          // Configuration from environment
+          const BATCH_SIZE =
+            Number(process.env.ESCRIBANO_EMBED_BATCH_SIZE) || 64;
+          const CONCURRENCY =
+            Number(process.env.ESCRIBANO_EMBED_CONCURRENCY) || 4;
 
-          log(
-            'info',
-            `Generating embeddings for ${obsNeedingEmbedding.length} observations...`
-          );
-
-          const embeddings = await adapters.embedding.embedBatch(
-            textsToEmbed,
-            'clustering'
-          );
-
-          // Update each observation with its embedding
+          // Chunk observations into batches
+          const chunks = chunkArray(obsNeedingEmbedding, BATCH_SIZE);
+          let completedCount = 0;
           let successCount = 0;
-          for (const [index, obs] of obsNeedingEmbedding.entries()) {
-            const embedding = embeddings[index];
-            if (embedding && embedding.length > 0) {
-              repos.observations.updateEmbedding(obs.id, embedding);
-              successCount++;
-            }
-          }
 
           log(
             'info',
-            `Updated ${successCount}/${obsNeedingEmbedding.length} embeddings`
+            `Generating embeddings for ${obsNeedingEmbedding.length} observations ` +
+              `(${chunks.length} batches, ${CONCURRENCY} concurrent)...`
+          );
+
+          // Process chunks in parallel with immediate saves
+          await parallelMap(
+            chunks,
+            async (chunk, chunkIndex) => {
+              const batchStart = Date.now();
+              log(
+                'info',
+                `[Worker] Batch ${chunkIndex + 1}/${chunks.length} started (${chunk.length} items)...`
+              );
+
+              // Extract text content based on observation type
+              const textsToEmbed = chunk.map((o) => {
+                if (o.type === 'visual') {
+                  return o.ocr_text || '';
+                }
+                return o.text || ''; // Audio transcript
+              });
+
+              // Call embedding service for this batch
+              const embeddings = await adapters.embedding.embedBatch(
+                textsToEmbed,
+                'clustering'
+              );
+
+              // IMMEDIATE SAVE - crash-safe persistence
+              let batchSuccess = 0;
+              const dbStart = Date.now();
+              for (let i = 0; i < chunk.length; i++) {
+                const embedding = embeddings[i];
+                if (embedding && embedding.length > 0) {
+                  repos.observations.updateEmbedding(chunk[i].id, embedding);
+                  batchSuccess++;
+                }
+              }
+
+              const batchDuration = (Date.now() - batchStart) / 1000;
+              const dbDuration = (Date.now() - dbStart) / 1000;
+
+              completedCount += chunk.length;
+              successCount += batchSuccess;
+
+              log(
+                'info',
+                `[Worker] Batch ${chunkIndex + 1}/${chunks.length} saved in ${batchDuration.toFixed(1)}s (DB: ${dbDuration.toFixed(2)}s) - ` +
+                  `Total: ${completedCount}/${obsNeedingEmbedding.length}`
+              );
+            },
+            CONCURRENCY
+          );
+
+          log(
+            'info',
+            `Completed: ${successCount}/${obsNeedingEmbedding.length} embeddings saved`
           );
         });
       } else {

@@ -249,8 +249,8 @@ export const sessionSegmentSchema = z.object({
 export type SessionSegment = z.infer<typeof sessionSegmentSchema>;
 
 export const embeddingConfigSchema = z.object({
-  model: z.string().default('nomic-embed-text'),
-  similarityThreshold: z.number().min(0).max(1).default(0.75),
+  model: z.string().default('qwen3-embedding:8b'),
+  similarityThreshold: z.number().min(0).max(1).default(0.4),
 });
 export type EmbeddingConfig = z.infer<typeof embeddingConfigSchema>;
 
@@ -344,11 +344,17 @@ export interface TranscriptionService {
   transcribeSegment(audioPath: string): Promise<string>;
 }
 
+export interface EmbeddingBatchOptions {
+  /** Signal to abort the request */
+  signal?: AbortSignal;
+}
+
 export interface EmbeddingService {
   embed(text: string, taskType?: 'clustering' | 'retrieval'): Promise<number[]>;
   embedBatch(
     texts: string[],
-    taskType?: 'clustering' | 'retrieval'
+    taskType?: 'clustering' | 'retrieval',
+    options?: EmbeddingBatchOptions
   ): Promise<number[][]>;
   similarity(a: number[], b: number[]): number;
   /** Compute centroid (average) of multiple embeddings */

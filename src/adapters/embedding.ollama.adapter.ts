@@ -1,16 +1,19 @@
 /**
  * Escribano - Embedding Adapter (Ollama)
  *
- * Implements EmbeddingService using Ollama REST /api/embed API
+ * Simplified atomic worker for Ollama REST /api/embed API.
+ * Batching and parallelism are handled by the pipeline, not here.
  */
 
-import type { EmbeddingService, IntelligenceConfig } from '../0_types.js';
-
-// Module-level cache for the discovered maximum batch size
-// Starts aggressive (512), will shrink if Ollama returns 500 errors
-let discoveredMaxBatchSize = 512;
+import type {
+  EmbeddingBatchOptions,
+  EmbeddingService,
+  IntelligenceConfig,
+} from '../0_types.js';
 
 const MIN_TEXT_LENGTH = 5;
+const DEFAULT_TIMEOUT_MS = 600_000; // 10 minutes
+const MAX_RETRIES = 3;
 
 export function createOllamaEmbeddingService(
   config: IntelligenceConfig
@@ -19,112 +22,76 @@ export function createOllamaEmbeddingService(
   const model =
     process.env.ESCRIBANO_EMBED_MODEL ||
     config.embedding?.model ||
-    'qwen3-embedding:0.6b';
+    'qwen3-embedding:8b';
 
   /**
-   * Internal helper to call the Ollama /api/embed endpoint
+   * Call Ollama /api/embed endpoint with retry logic
    */
   async function callEmbedAPI(
     texts: string[],
-    currentModel: string,
-    currentBaseUrl: string
+    externalSignal?: AbortSignal
   ): Promise<number[][]> {
-    const response = await fetch(`${currentBaseUrl}/api/embed`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: currentModel,
-        input: texts,
-        truncate: true,
-      }),
-    });
+    let lastError: Error | null = null;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Ollama embed error: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        DEFAULT_TIMEOUT_MS
       );
-    }
 
-    const data = await response.json();
-    return data.embeddings;
-  }
+      // Link external signal if provided
+      if (externalSignal) {
+        externalSignal.addEventListener('abort', () => controller.abort());
+      }
 
-  /**
-   * Adaptive batch processor that shrinks batch size on 500 errors
-   */
-  async function processBatchWithAdaptiveRetry(
-    items: { index: number; text: string }[],
-    currentModel: string,
-    currentBaseUrl: string
-  ): Promise<{ index: number; embedding: number[] }[]> {
-    const results: { index: number; embedding: number[] }[] = [];
-    let i = 0;
+      try {
+        const response = await fetch(`${baseUrl}/api/embed`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            input: texts,
+            truncate: true,
+            options: {
+              num_ctx: 40000,
+            },
+          }),
+          signal: controller.signal,
+        });
 
-    while (i < items.length) {
-      // Use the currently discovered safe batch size
-      const currentBatchSize = Math.min(
-        discoveredMaxBatchSize,
-        items.length - i
-      );
-      const batch = items.slice(i, i + currentBatchSize);
-      const batchTexts = batch.map((v) => v.text);
-
-      let success = false;
-      let attemptSize = currentBatchSize;
-      let retries = 0;
-
-      while (!success && attemptSize >= 1) {
-        try {
-          // Progress logging for large operations
-          if (items.length > 50) {
-            process.stdout.write(
-              `\rEmbedding progress: ${Math.round((i / items.length) * 100)}% (${i}/${items.length})   `
-            );
-          }
-
-          const embeddings = await callEmbedAPI(
-            batchTexts.slice(0, attemptSize),
-            currentModel,
-            currentBaseUrl
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(
+            `Ollama embed error: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`
           );
-
-          // Success! Map results back
-          for (let j = 0; j < embeddings.length; j++) {
-            results.push({ index: batch[j].index, embedding: embeddings[j] });
-          }
-
-          // If we successfully processed a smaller size than requested,
-          // we update the discovered limit
-          if (attemptSize < currentBatchSize) {
-            discoveredMaxBatchSize = Math.max(10, attemptSize);
-          }
-
-          i += attemptSize;
-          success = true;
-        } catch (error) {
-          const is500 = (error as Error).message.includes('500');
-
-          if (is500 && attemptSize > 1) {
-            // Shrink batch size and retry
-            attemptSize = Math.floor(attemptSize / 2);
-            retries++;
-            console.warn(
-              `\n[Embedding] Batch failed, shrinking to ${attemptSize} (Attempt ${retries})...`
-            );
-            // Small delay before retry
-            await new Promise((resolve) => setTimeout(resolve, 500 * retries));
-          } else {
-            // Non-recoverable error or reached min size
-            console.error('\n[Embedding] Fatal error processing batch:', error);
-            throw error;
-          }
         }
+
+        const data = await response.json();
+        return data.embeddings;
+      } catch (error) {
+        lastError = error as Error;
+        const isRetryable =
+          lastError.message.includes('abort') ||
+          lastError.message.includes('500') ||
+          lastError.message.includes('ECONNRESET');
+
+        if (isRetryable && attempt < MAX_RETRIES) {
+          const delay = 2 ** attempt * 1000; // Exponential backoff
+          console.warn(
+            `[Embedding] Attempt ${attempt}/${MAX_RETRIES} failed, retrying in ${delay / 1000}s...`
+          );
+          await new Promise((r) => setTimeout(r, delay));
+        } else {
+          // If not retryable or max retries reached, don't just continue the loop
+          break;
+        }
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 
-    if (items.length > 50) process.stdout.write('\n');
-    return results;
+    throw lastError || new Error('Embedding failed after retries');
   }
 
   return {
@@ -136,27 +103,26 @@ export function createOllamaEmbeddingService(
         return [];
       }
 
-      // qwen3-embedding supports instruction prefixes for better task-specific embeddings
       const prefix =
         taskType === 'clustering'
           ? 'Instruct: Cluster screen recording observations for semantic similarity\n'
           : '';
 
-      const results = await callEmbedAPI([prefix + text], model, baseUrl);
+      const results = await callEmbedAPI([prefix + text]);
       return results[0] || [];
     },
 
     embedBatch: async (
       texts: string[],
-      taskType?: 'clustering' | 'retrieval'
+      taskType?: 'clustering' | 'retrieval',
+      options?: EmbeddingBatchOptions
     ): Promise<number[][]> => {
-      // 1. Pre-filter empty/short texts and track original indices
-      // Also apply instruction prefix if task is clustering
       const prefix =
         taskType === 'clustering'
           ? 'Instruct: Cluster screen recording observations for semantic similarity\n'
           : '';
 
+      // Filter valid texts and track indices
       const validItems: { index: number; text: string }[] = [];
       for (let i = 0; i < texts.length; i++) {
         if (texts[i] && texts[i].trim().length >= MIN_TEXT_LENGTH) {
@@ -168,17 +134,14 @@ export function createOllamaEmbeddingService(
         return new Array(texts.length).fill([]);
       }
 
-      // 2. Process valid items using adaptive batching
-      const embeddedResults = await processBatchWithAdaptiveRetry(
-        validItems,
-        model,
-        baseUrl
-      );
+      // Single API call for this batch
+      const textsToEmbed = validItems.map((v) => v.text);
+      const embeddings = await callEmbedAPI(textsToEmbed, options?.signal);
 
-      // 3. Reconstruct full array in original order
+      // Reconstruct full array in original order
       const finalEmbeddings: number[][] = new Array(texts.length).fill([]);
-      for (const r of embeddedResults) {
-        finalEmbeddings[r.index] = r.embedding;
+      for (let i = 0; i < validItems.length; i++) {
+        finalEmbeddings[validItems[i].index] = embeddings[i] || [];
       }
 
       return finalEmbeddings;

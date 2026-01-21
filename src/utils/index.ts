@@ -1,4 +1,5 @@
 export * from './ocr.js';
+export * from './parallel.js';
 
 /**
  * Convert SQLite BLOB buffer to number array.

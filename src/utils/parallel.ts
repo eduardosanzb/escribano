@@ -10,8 +10,11 @@ export async function parallelMap<T, R>(
   fn: (item: T, index: number) => Promise<R>,
   concurrency: number
 ): Promise<R[]> {
+  if (items.length === 0) return [];
+
   const results: R[] = new Array(items.length);
   let nextIndex = 0;
+  const actualConcurrency = Math.max(1, concurrency);
 
   async function worker(): Promise<void> {
     while (nextIndex < items.length) {
@@ -21,7 +24,7 @@ export async function parallelMap<T, R>(
   }
 
   const workers = Array.from(
-    { length: Math.min(concurrency, items.length) },
+    { length: Math.min(actualConcurrency, items.length) },
     worker
   );
   await Promise.all(workers);

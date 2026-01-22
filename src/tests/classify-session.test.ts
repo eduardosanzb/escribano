@@ -47,6 +47,7 @@ const mockSession: Session = {
     },
   ],
   visualLogs: [],
+  segments: [],
   status: 'transcribed',
   classification: null,
   metadata: null,
@@ -75,9 +76,12 @@ const mockGenerate = vi.fn();
 
 const mockIntelligence: IntelligenceService = {
   classify: mockClassify,
+  classifySegment: vi.fn(),
   extractMetadata: mockExtractMetadata,
   generate: mockGenerate,
   describeImages: vi.fn(),
+  embedText: vi.fn(),
+  extractTopics: vi.fn(),
 };
 
 describe('classifySession', () => {

@@ -11,9 +11,11 @@ import {
   type ArtifactType,
   type Classification,
   classificationSchema,
+  type DbObservation,
   type IntelligenceConfig,
   type IntelligenceService,
   intelligenceConfigSchema,
+  type SessionSegment,
   type Transcript,
   type TranscriptMetadata,
   transcriptMetadataSchema,
@@ -21,6 +23,15 @@ import {
   type VisualDescriptions,
   type VisualLog,
 } from '../0_types.js';
+
+// Debug logging controlled by environment variable
+const DEBUG_OLLAMA = process.env.ESCRIBANO_DEBUG_OLLAMA === 'true';
+
+function debugLog(...args: unknown[]): void {
+  if (DEBUG_OLLAMA) {
+    console.log('[Ollama]', ...args);
+  }
+}
 
 /**
  * Helper to convert Zod schema to Ollama-compatible JSON schema
@@ -34,6 +45,8 @@ function toOllamaSchema(schema: z.ZodType): object {
 
 // Model warm state - ensures model is loaded before first real request
 const warmedModels = new Set<string>();
+// Warmup lock - prevents parallel warmup race condition
+const warmupInProgress = new Map<string, Promise<void>>();
 
 export function createOllamaIntelligenceService(
   config: Partial<IntelligenceConfig> = {}
@@ -42,21 +55,100 @@ export function createOllamaIntelligenceService(
   return {
     classify: (transcript, visualLogs) =>
       classifyWithOllama(transcript, parsedConfig, visualLogs),
+    classifySegment: (segment, transcript) =>
+      classifySegmentWithOllama(segment, parsedConfig, transcript),
     extractMetadata: (transcript, classification, visualLogs) =>
       extractMetadata(transcript, classification, parsedConfig, visualLogs),
     generate: (artifactType, context) =>
       generateArtifact(artifactType, context, parsedConfig),
     describeImages: (images, prompt) =>
       describeImagesWithOllama(images, parsedConfig, prompt),
+    embedText: (texts, options) =>
+      embedTextWithOllama(texts, parsedConfig, options),
+    extractTopics: (observations) =>
+      extractTopicsWithOllama(observations, parsedConfig),
   };
+}
+
+async function embedTextWithOllama(
+  texts: string[],
+  config: IntelligenceConfig,
+  options: { batchSize?: number } = {}
+): Promise<number[][]> {
+  const batchSize = options.batchSize ?? 10;
+  const model = process.env.ESCRIBANO_EMBED_MODEL || 'nomic-embed-text';
+  const endpoint = `${config.endpoint.replace('/chat', '').replace('/generate', '')}/embeddings`;
+
+  const embeddings: number[][] = [];
+
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+
+    for (const text of batch) {
+      if (!text || text.trim().length === 0) {
+        embeddings.push([]); // Empty embedding for empty text
+        continue;
+      }
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model, prompt: text }),
+        });
+
+        if (!response.ok) {
+          console.warn(
+            `Embedding failed for text: ${text.substring(0, 50)}...`
+          );
+          embeddings.push([]);
+          continue;
+        }
+
+        const data = await response.json();
+        embeddings.push(data.embedding || []);
+      } catch (error) {
+        console.warn(`Embedding request failed: ${(error as Error).message}`);
+        embeddings.push([]);
+      }
+    }
+  }
+
+  return embeddings;
 }
 
 async function ensureModelWarmed(
   modelName: string,
   config: IntelligenceConfig
 ): Promise<void> {
-  if (warmedModels.has(modelName)) return;
+  // Already warmed - fast path
+  if (warmedModels.has(modelName)) {
+    debugLog(`Model ${modelName} already warm`);
+    return;
+  }
 
+  // Warmup already in progress - wait for it (prevents race condition)
+  const existingWarmup = warmupInProgress.get(modelName);
+  if (existingWarmup) {
+    debugLog(`Waiting for existing warmup of ${modelName}...`);
+    return existingWarmup;
+  }
+
+  // Start warmup and store the promise
+  const warmupPromise = doModelWarmup(modelName, config);
+  warmupInProgress.set(modelName, warmupPromise);
+
+  try {
+    await warmupPromise;
+  } finally {
+    warmupInProgress.delete(modelName);
+  }
+}
+
+async function doModelWarmup(
+  modelName: string,
+  config: IntelligenceConfig
+): Promise<void> {
   try {
     console.log(`Warming up model: ${modelName}...`);
     const response = await fetch(
@@ -154,6 +246,49 @@ async function classifyWithOllama(
   return raw;
 }
 
+async function classifySegmentWithOllama(
+  segment: SessionSegment,
+  config: IntelligenceConfig,
+  transcript?: Transcript
+): Promise<Classification> {
+  await checkOllamaHealth();
+  const prompt = loadClassifySegmentPrompt(segment, transcript);
+  const raw = await callOllama(prompt, config, {
+    expectJson: true,
+    jsonSchema: toOllamaSchema(classificationSchema),
+    model: config.model,
+  });
+  return raw;
+}
+
+function loadClassifySegmentPrompt(
+  segment: SessionSegment,
+  transcript?: Transcript
+): string {
+  const promptPath = join(process.cwd(), 'prompts', 'classify-segment.md');
+  let prompt = readFileSync(promptPath, 'utf-8');
+
+  const timeRangeStr = `[${segment.timeRange[0]}s - ${segment.timeRange[1]}s]`;
+  const ocrContext =
+    segment.contexts.map((c) => `${c.type}: ${c.value}`).join(', ') || 'None';
+
+  const transcriptText =
+    transcript?.fullText ||
+    segment.transcriptSlice?.transcript.fullText ||
+    'N/A';
+
+  prompt = prompt.replace('{{TIME_RANGE}}', timeRangeStr);
+  prompt = prompt.replace(
+    '{{VISUAL_CONTEXT}}',
+    segment.visualClusterIds.length > 0 ? 'Multiple visual clusters' : 'N/A'
+  );
+  prompt = prompt.replace('{{OCR_CONTEXT}}', ocrContext);
+  prompt = prompt.replace('{{TRANSCRIPT_CONTENT}}', transcriptText);
+  prompt = prompt.replace('{{VLM_DESCRIPTION}}', 'N/A'); // Placeholder for future integration
+
+  return prompt;
+}
+
 function loadClassifyPrompt(
   transcript: Transcript,
   visualLogs?: VisualLog[]
@@ -189,6 +324,49 @@ function loadClassifyPrompt(
   return prompt;
 }
 
+async function extractTopicsWithOllama(
+  observations: DbObservation[],
+  config: IntelligenceConfig
+): Promise<string[]> {
+  const textSamples = observations
+    .slice(0, 20)
+    .map((o) => {
+      if (o.type === 'visual') {
+        return o.vlm_description || o.ocr_text?.slice(0, 200) || '';
+      }
+      return o.text?.slice(0, 500) || '';
+    })
+    .filter((t) => t.length > 10);
+
+  if (textSamples.length === 0) return [];
+
+  const prompt = `Analyze these observations from a screen recording session and generate 1-3 descriptive topic labels.
+
+Observations:
+${textSamples.join('\n---\n')}
+
+Output ONLY a JSON object with this format:
+{"topics": ["specific topic 1", "specific topic 2"]}
+
+Rules:
+- Be specific: "debugging TypeScript errors" not just "debugging"
+- Be descriptive: "learning React hooks" not just "learning"
+- Focus on what the user is DOING, not just what's visible
+- Max 3 topics`;
+
+  try {
+    const result = await callOllama(prompt, config, {
+      expectJson: true,
+      model: config.model,
+    });
+
+    return result.topics || [];
+  } catch (error) {
+    console.warn('Topic extraction failed:', error);
+    return [];
+  }
+}
+
 async function callOllama(
   prompt: string,
   config: IntelligenceConfig,
@@ -199,6 +377,9 @@ async function callOllama(
   }
   // biome-ignore lint/suspicious/noExplicitAny: Ollama returns dynamic JSON or strings
 ): Promise<any> {
+  const requestId = Math.random().toString(36).substring(2, 8);
+  const requestStart = Date.now();
+
   // Model warm-up (errors handled gracefully, especially in tests)
   try {
     await ensureModelWarmed(options.model, config);
@@ -211,12 +392,23 @@ async function callOllama(
   // Calculate optimal context size for this prompt
   const contextSize = calculateContextSize(prompt.length, maxContextSize);
 
+  debugLog(`[${requestId}] Request started`);
+  debugLog(`  Model: ${options.model}`);
+  debugLog(
+    `  Prompt: ${prompt.length} chars (~${Math.ceil(prompt.length / 4)} tokens)`
+  );
+  debugLog(`  Context: ${contextSize}, Timeout: ${timeout}ms`);
+  debugLog(`  Expect JSON: ${options.expectJson}`);
+
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const attemptStart = Date.now();
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+      debugLog(`[${requestId}] Attempt ${attempt}/${maxRetries}...`);
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -258,6 +450,17 @@ async function callOllama(
       }
 
       const data = await response.json();
+
+      debugLog(
+        `[${requestId}] Response received in ${Date.now() - attemptStart}ms`
+      );
+      if (data.eval_count) {
+        debugLog(
+          `  Tokens: ${data.eval_count} eval, ${data.prompt_eval_count || 0} prompt`
+        );
+      }
+      debugLog(`  Total request time: ${Date.now() - requestStart}ms`);
+
       if (!data.done || data.done_reason !== 'stop') {
         throw new Error(
           `Incomplete response: done=${data.done}, reason=${data.done_reason}`
@@ -274,13 +477,15 @@ async function callOllama(
 
       if (error instanceof Error && error.name === 'AbortError') {
         console.log(
-          `Attempt ${attempt}/${maxRetries}: Request timed out, retrying...`
+          `Attempt ${attempt}/${maxRetries}: Request timed out after ${Date.now() - attemptStart}ms, retrying...`
         );
+        debugLog(`[${requestId}] Timeout after ${Date.now() - attemptStart}ms`);
       } else {
         console.log(
           `Attempt ${attempt}/${maxRetries}: Request failed, retrying...`
         );
         console.log('  Error:', lastError.message);
+        debugLog(`[${requestId}] Error:`, lastError.message);
       }
 
       if (attempt < maxRetries) {
@@ -289,6 +494,7 @@ async function callOllama(
     }
   }
 
+  debugLog(`[${requestId}] Failed after ${maxRetries} retries`);
   throw new Error(
     `Request failed after ${maxRetries} retries: ${lastError?.message}`
   );
@@ -462,6 +668,7 @@ async function describeImagesWithOllama(
   }
 
   console.log(`Describing ${images.length} images with vision model...`);
+  debugLog(`Vision model: ${config.visionModel}`);
   const startTime = Date.now();
 
   await ensureModelWarmed(config.visionModel, config);
@@ -473,14 +680,18 @@ async function describeImagesWithOllama(
     const batch = images.slice(i, i + BATCH_SIZE);
     const batchNum = Math.floor(i / BATCH_SIZE) + 1;
     const totalBatches = Math.ceil(images.length / BATCH_SIZE);
+    const batchStart = Date.now();
 
     console.log(`  Processing batch ${batchNum}/${totalBatches}...`);
+    debugLog(`  Batch ${batchNum}: ${batch.length} images`);
 
     try {
       const descriptions = await callOllamaVision(batch, config, customPrompt);
       allDescriptions.push(...descriptions);
+      debugLog(`  Batch ${batchNum} completed in ${Date.now() - batchStart}ms`);
     } catch (error) {
       console.error(`  Error in batch ${batchNum}:`, error);
+      debugLog(`  Batch ${batchNum} failed:`, (error as Error).message);
       // Add error placeholders to maintain alignment
       for (const img of batch) {
         allDescriptions.push({
@@ -499,6 +710,7 @@ async function describeImagesWithOllama(
 
   const vlmMs = Date.now() - startTime;
   console.log(`✓ Described ${allDescriptions.length} images in ${vlmMs}ms`);
+  debugLog(`Total vision processing time: ${vlmMs}ms`);
 
   return {
     descriptions: allDescriptions,
@@ -511,6 +723,13 @@ async function callOllamaVision(
   config: IntelligenceConfig,
   customPrompt?: string
 ): Promise<VisualDescription[]> {
+  const requestId = Math.random().toString(36).substring(2, 8);
+  const requestStart = Date.now();
+
+  debugLog(`[${requestId}] Vision request started`);
+  debugLog(`  Model: ${config.visionModel}`);
+  debugLog(`  Images: ${images.length}`);
+
   // Convert images to base64 (Ollama expects raw base64 strings)
   const imageContents = images.map((img) => {
     const data = readFileSync(img.imagePath);
@@ -568,12 +787,19 @@ Return a JSON object with this structure:
   if (!response.ok) {
     const errorText = await response.text();
     console.error(`  HTTP ${response.status}: ${errorText.substring(0, 500)}`);
+    debugLog(`[${requestId}] Vision error: ${response.status}`);
     throw new Error(
       `Ollama vision error: ${response.status} ${response.statusText}`
     );
   }
 
   const data = await response.json();
+
+  debugLog(`[${requestId}] Vision response in ${Date.now() - requestStart}ms`);
+  if (data.eval_count) {
+    debugLog(`  Tokens: ${data.eval_count} eval`);
+  }
+
   const content = data.message?.content;
 
   if (!content) {

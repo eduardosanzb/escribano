@@ -29,6 +29,7 @@ const createBaseSession = (
     },
     transcripts: [{ source: 'mic', transcript }],
     visualLogs: [],
+    segments: [],
     status: 'classified',
     classification,
     metadata: null,

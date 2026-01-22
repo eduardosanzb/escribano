@@ -15,33 +15,63 @@
 - **Transcription**: whisper.cpp (via Cap)
 - **LLM**: Future: Ollama (local) or Claude API
 
+## Development Environment
+
+- **Machine**: MacBook Pro M4 Max
+- **Unified Memory**: 128GB (Optimized for 8B+ models)
+- **Primary Embedding Model**: `qwen3-embedding:8b` (40K Context)
+
+## Configuration
+
+| Environment Variable | Description | Default |
+|----------------------|-------------|---------|
+| `ESCRIBANO_EMBED_MODEL` | Ollama model for text embeddings | `qwen3-embedding:8b` |
+| `ESCRIBANO_EMBED_BATCH_SIZE` | Number of texts per embedding request | `64` |
+| `ESCRIBANO_EMBED_CONCURRENCY` | Parallel embedding requests | `4` |
+| `OLLAMA_CONTEXT_LENGTH` | Context window size for Ollama | `40000` |
+| `OLLAMA_NUM_PARALLEL` | Ollama inference slots (set when starting Ollama) | `4` |
+| `ESCRIBANO_CLUSTER_TIME_WINDOW` | Max seconds between observations in a cluster | `600` |
+| `ESCRIBANO_CLUSTER_DISTANCE_THRESHOLD` | Max cosine distance for semantic similarity | `0.4` |
+
 ## Architecture
 
 This project follows **Clean Architecture** principles with a simplified flat structure.
 
-### Current Implementation (Milestone 2)
+### Current Implementation (Milestone 3.5)
 
 ```
 src/
-├── 0_types.ts                    # All types, interfaces, Zod schemas
+├── 0_types.ts                    # Core types, interfaces, Zod schemas
 ├── index.ts                      # CLI entry point
 ├── actions/
-│   ├── process-session.ts        # Recording → Transcript → Session
-│   └── classify-session.ts       # Session → Classification
+│   ├── process-recording-v2.ts   # V2 Pipeline: Recording → Observations → Clusters → Contexts
+│   ├── create-contexts.ts        # Signals → Context entities
+│   ├── create-topic-blocks.ts    # Clusters → TopicBlocks
+│   └── ...
 ├── adapters/
-│   ├── capture.cap.adapter.ts            # Cap recording source
-│   ├── transcription.whisper.adapter.ts  # Whisper transcription
-│   ├── video.ffmpeg.adapter.ts           # Video processing (FFmpeg)
-│   ├── intelligence.ollama.adapter.ts    # Ollama LLM services
-│   └── storage.fs.adapter.ts             # Filesystem session storage
-└── tests/
-    ├── integration.test.ts               # Full pipeline tests
-    ├── capture.cap.adapter.test.ts       # Cap adapter unit tests
-    ├── classify-session.test.ts          # Classification action tests
-    └── intelligence.ollama.adapter.test.ts # Intelligence adapter tests
-
-prompts/
-└── classify.md                   # V2 classification prompt
+│   ├── capture.cap.adapter.ts
+│   ├── transcription.whisper.adapter.ts
+│   ├── audio.silero.adapter.ts          # VAD preprocessing
+│   ├── video.ffmpeg.adapter.ts
+│   ├── intelligence.ollama.adapter.ts
+│   ├── embedding.ollama.adapter.ts      # Text embeddings
+│   ├── storage.fs.adapter.ts
+│   └── publishing.outline.adapter.ts
+├── services/                     # Pure business logic (no I/O)
+│   ├── clustering.ts             # Agglomerative hierarchical clustering
+│   ├── signal-extraction.ts      # Multi-tier signal extraction
+│   ├── cluster-merge.ts          # Audio-visual cluster fusion
+│   └── vlm-enrichment.ts         # VLM frame selection & description
+├── utils/
+│   ├── ocr.ts                    # OCR text cleanup
+│   └── index.ts                  # Buffer utilities
+├── db/
+│   ├── index.ts                  # DB connection & repository factory
+│   ├── migrate.ts                # Auto-run SQL migrations
+│   ├── repositories/             # SQLite implementations
+│   └── types.ts                  # Manual DB types
+└── domain/
+    └── recording.ts              # Recording entity & state machine
 ```
 
 ### Key Principle: Port Interfaces
@@ -57,8 +87,10 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
 ### Visual Pipeline
 
 The visual pipeline uses a hybrid approach:
-- **Python** (`visual_observer_base.py`): OCR (Tesseract) + CLIP embeddings + clustering
-- **TypeScript** (`intelligence.ollama.adapter.ts`): VLM descriptions via Ollama
+- **Python** (`visual_observer_base.py`): Frame analysis (OCR + CLIP)
+- **TypeScript** (`src/utils/ocr.ts`): Semantic OCR cleanup
+- **TypeScript** (`src/services/clustering.ts`): Agglomerative hierarchical clustering
+- **TypeScript** (`src/services/vlm-enrichment.ts`): VLM descriptions via Ollama
 
 ## Session Types (Multi-Label Classification)
 
@@ -91,265 +123,10 @@ The visual pipeline uses a hybrid approach:
 3. **Generate + Ask** - Auto generate, asks before publishing
 4. **Full Auto** - Everything automatic
 
+## Learnings and Implementation Details
+
+For detailed technical findings on OCR quality, VLM benchmarks, and clustering rationale, see [docs/learnings.md](docs/learnings.md).
+
 ## Code Conventions
 
-### ES Module Rules
-- ALL imports must include `.js` extensions: `import { thing } from './0_types.js'`
-- Use `tsx` for development (not `ts-node`)
-- Build with `tsc` before running with `node dist/index.js`
-
-### Domain Layer Rules
-- NO external dependencies
-- Pure TypeScript, no I/O
-- Entities have identity and lifecycle
-- Value Objects are immutable
-
-### Application Layer Rules
-- Orchestrates domain objects
-- Depends only on Domain and Ports (interfaces)
-- One use case per file
-- Use cases are the only entry points for operations
-
-### Adapter Rules
-- Implement port interfaces
-- Handle all external I/O
-- Can be swapped without changing business logic
-- Each adapter in its own file
-- **Naming Convention**: `[port].[implementation].adapter.ts` (e.g., `intelligence.ollama.adapter.ts`)
-- **Factory Naming**: `create[Implementation][Port]` (e.g., `createOllamaIntelligenceService`)
-
-## Integration with Cap
-
-Cap (https://github.com/CapSoftware/Cap) is the primary capture source. The CapAdapter:
-
-1. Watches `~/Library/Application Support/so.cap.desktop/recordings/` for `.cap` directories
-2. Parses `recording-meta.json` for video/audio paths
-3. Finds audio files (supports .ogg, .mp3, .wav, .m4a)
-4. Finds video files (supports .mp4, .webm, .mov)
-5. Returns Recording objects with metadata
-
-### Cap Recording Structure
-
-Each `.cap` directory contains:
-- `recording-meta.json` - Metadata with video/audio file references
-- Audio/video files - Actual media files
-- (Optional) Other metadata files
-
-**Note**: Cap recordings use a different metadata structure than initially expected. Paths are in `meta.segments[0].display.path` and `meta.segments[0].mic.path`.
-
-## OpenCode Plugin
-
-## OpenCode Plugin
-
-The OpenCode plugin exposes these tools to Claude:
-
-- `escribano.process_recording` - Process a recording file
-- `escribano.list_pending` - List unprocessed recordings
-- `escribano.generate_artifact` - Generate specific artifact
-- `escribano.publish` - Publish artifact to destination
-
-## Testing
-
-- Domain layer: Unit tests (pure functions)
-- Application layer: Integration tests with mock adapters
-- Adapters: Integration tests with real services (where feasible)
-
-## Environment Variables
-
-Escribano uses environment variables for configuration. Copy `.env.example` to `.env` and adjust as needed.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ESCRIBANO_PARALLEL_TRANSCRIPTION` | `false` | Enable parallel audio transcription |
-| `ESCRIBANO_FRAME_INTERVAL` | `2` | Seconds between extracted frames |
-| `ESCRIBANO_FRAME_WIDTH` | `1920` | Frame width in pixels for extraction |
-
-### Visual Pipeline Configuration
-
-The visual pipeline extracts frames, runs OCR, and optionally describes images with a vision model.
-
-- **Frame Interval**: Lower values = more frames, better temporal resolution, slower processing
-  - `1` = 1 frame/second (dense, good for fast-changing content)
-  - `2` = 1 frame/2 seconds (balanced, default)
-  - `5` = 1 frame/5 seconds (sparse, good for static content)
-
-- **Frame Width**: Higher values = better OCR accuracy, larger files
-  - `1280` = Minimum for readable UI text
-  - `1920` = Good balance (default)
-  - `2560` = Best for small text, Retina displays
-
-## Linting and Formatting
-
-This project uses **Biome** for fast linting and formatting.
-
-### Usage
-- `pnpm lint` - Check code for issues
-- `pnpm lint:fix` - Auto-fix linting issues
-- `pnpm format` - Format all files
-- `pnpm check` - CI-ready check (fails if changes needed)
-
-### Integration
-Biome runs via Neovim LSP for real-time diagnostics and formatting on save.
-
-## Common Tasks
-
-### Adding a New Capture Source
-1. Create adapter in `src/adapters/`
-2. Implement `CaptureSource` interface
-3. Register in configuration
-
-### Adding a New Artifact Type
-1. Add type to `ArtifactType` enum in domain
-2. Create generation prompt in `/prompts/`
-3. Update action to handle new type
-
-### Adding a New Publishing Destination
-1. Create adapter in `src/adapters/`
-2. Implement `PublishingPort` interface
-3. Add configuration options
-
-## Running the Application
-
-### Development
-```bash
-# Run directly with tsx (no build needed)
-pnpm run list
-pnpm run transcribe-latest
-
-# Or use tsx directly
-npx tsx src/index.ts list
-npx tsx src/index.ts transcribe-latest
-```
-
-### Production
-```bash
-# Build TypeScript to JavaScript
-pnpm build
-
-# Run from built files
-node dist/index.js list
-node dist/index.js transcribe-latest
-```
-
-### Testing
-```bash
-# Run all tests
-pnpm test
-
-# Run with UI
-pnpm test:ui
-
-# Lint and typecheck
-pnpm lint && pnpm typecheck
-```
-
-## Common Tasks
-
-### Adding a New Capture Source
-1. Create adapter in `src/adapters/`
-2. Implement `CaptureSource` interface
-3. Register in configuration
-
-### Adding a New Artifact Type
-1. Add type to `ArtifactType` enum in domain
-2. Create generation prompt in `/prompts/`
-3. Update action to handle new type
-
-### Adding a New Publishing Destination
-1. Create adapter in `src/adapters/`
-2. Implement `PublishingPort` interface
-3. Add configuration options
-
-## Running the Application
-
-### Development
-```bash
-# Run directly with tsx (no build needed)
-pnpm run list
-pnpm run transcribe-latest
-
-# Or use tsx directly
-npx tsx src/index.ts list
-npx tsx src/index.ts transcribe-latest
-```
-
-### Production
-```bash
-# Build TypeScript to JavaScript
-pnpm build
-
-# Run from built files
-node dist/index.js list
-node dist/index.js transcribe-latest
-```
-
-### Testing
-```bash
-# Run all tests
-pnpm test
-
-# Run with UI
-pnpm test:ui
-
-# Lint and typecheck
-pnpm lint && pnpm typecheck
-```
-
-## Milestone 3: Artifacts, Visuals & Outline Sync ✅
-
-**Completed Date:** January 15, 2026
-
-### Implemented Features
-
-- **Artifact Generation**
-  - **8 Types**: summary, action-items, runbook, step-by-step, notes, code-snippets, blog-research, blog-draft.
-  - **Ollama Generator**: Uses larger model (qwen3:32b) for high-quality Markdown production.
-  - **Visual Integration**: LLM can request screenshots via `[SCREENSHOT: timestamp]`.
-
-- **Visual Pipeline (The Observer)**
-  - **OCR + CLIP**: Uses Python + Tesseract + OpenCLIP to extract semantic meaning from screen recordings.
-  - **Scene Clustering**: Agglomerative clustering to detect activity segments (e.g., code editor, browser).
-  - **VLM Descriptions**: Native Ollama API integration for `minicpm-v:8b` vision model.
-  - **Configurable**: `ESCRIBANO_FRAME_INTERVAL` (2s) and `ESCRIBANO_FRAME_WIDTH` (1920px).
-
-- **Knowledge Base Sync (Outline)**
-  - **Outline Adapter**: Native REST API client for Outline wiki.
-  - **Nested Structure**: Session parent document with artifact child documents.
-  - **Global Index**: Auto-updated `📋 Session Index` document grouping sessions by month.
-  - **Change Detection**: Content hashing to skip redundant uploads.
-
-- **CLI Improvements**
-  - **Numbered Shortcuts**: `#1`, `#2` instead of long session IDs.
-  - **Commands**: `sessions`, `generate`, `artifacts`, `sync`, `sync-all`.
-  - **ID Normalization**: Clean filesystem-safe IDs (no spaces, special chars).
-
-### Files Created/Modified
-
-```text
-src/0_types.ts                      ✅ Updated: normalizeSessionId, OutlineSyncState, PublishingPort
-src/adapters/capture.cap.adapter.ts ✅ Updated: ID normalization on parse
-src/adapters/publishing.outline.adapter.ts ✅ Created: Outline REST API integration
-src/actions/sync-to-outline.ts      ✅ Created: Sync orchestration with global index
-src/scripts/visual_observer_base.py ✅ Created: Python OCR + CLIP clustering
-src/adapters/video.ffmpeg.adapter.ts ✅ Updated: Frame extraction logic
-src/index.ts                         ✅ Updated: New CLI commands & shortcuts
-```
-
-### Usage Examples
-
-```bash
-# 1. List latest sessions
-pnpm run sessions
-
-# 2. Generate all recommended artifacts for latest session
-pnpm run generate latest all
-
-# 3. Sync everything to Outline
-pnpm run sync-all
-```
-
----
-
-## Next Milestone: Milestone 3.5 - Smart Segmentation
-Focus on breaking "working" sessions into activity-based chunks for visual-first classification.
 

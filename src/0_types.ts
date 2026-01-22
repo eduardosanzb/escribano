@@ -63,6 +63,16 @@ export type TaggedTranscript = z.infer<typeof taggedTranscriptSchema>;
 // CLASSIFICATION
 // =============================================================================
 
+export const sessionTypeSchema = z.enum([
+  'meeting',
+  'debugging',
+  'tutorial',
+  'learning',
+  'working',
+]);
+
+export type SessionType = z.infer<typeof sessionTypeSchema>;
+
 export const classificationSchema = z.object({
   meeting: z.number().min(0).max(100),
   debugging: z.number().min(0).max(100),
@@ -77,30 +87,30 @@ export type Classification = z.infer<typeof classificationSchema>;
 // TRANSCRIPT METADATA
 // =============================================================================
 
-export const speakerSchema = z.object({
+const speakerSchema = z.object({
   name: z.string(),
   role: z.string().optional(),
 });
 
-export const keyMomentSchema = z.object({
+const keyMomentSchema = z.object({
   timestamp: z.number(),
   description: z.string(),
   importance: z.enum(['high', 'medium', 'low']),
 });
 
-export const actionItemSchema = z.object({
+const actionItemSchema = z.object({
   description: z.string(),
   owner: z.string().nullable(),
   priority: z.enum(['high', 'medium', 'low']).optional(),
 });
 
-export const technicalTermSchema = z.object({
+const technicalTermSchema = z.object({
   term: z.string(),
   context: z.string(),
   type: z.enum(['error', 'file', 'function', 'variable', 'other']),
 });
 
-export const codeSnippetSchema = z.object({
+const codeSnippetSchema = z.object({
   language: z.string().optional(),
   code: z.string(),
   description: z.string().optional(),
@@ -217,6 +227,34 @@ export const visualDescriptionsSchema = z.object({
 export type VisualDescriptions = z.infer<typeof visualDescriptionsSchema>;
 
 // =============================================================================
+// INTELLIGENCE & EMBEDDINGS
+// =============================================================================
+
+export const activityContextSchema = z.object({
+  type: z.enum(['url', 'file', 'app', 'topic', 'unknown']),
+  value: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+export type ActivityContext = z.infer<typeof activityContextSchema>;
+
+export const sessionSegmentSchema = z.object({
+  id: z.string(),
+  timeRange: z.tuple([z.number(), z.number()]),
+  visualClusterIds: z.array(z.number()),
+  contexts: z.array(activityContextSchema),
+  transcriptSlice: taggedTranscriptSchema.nullable(),
+  classification: classificationSchema.nullable(),
+  isNoise: z.boolean(),
+});
+export type SessionSegment = z.infer<typeof sessionSegmentSchema>;
+
+export const embeddingConfigSchema = z.object({
+  model: z.string().default('qwen3-embedding:8b'),
+  similarityThreshold: z.number().min(0).max(1).default(0.4),
+});
+export type EmbeddingConfig = z.infer<typeof embeddingConfigSchema>;
+
+// =============================================================================
 // SESSION
 // =============================================================================
 
@@ -243,6 +281,7 @@ export const sessionSchema = z.object({
   recording: recordingSchema,
   transcripts: z.array(taggedTranscriptSchema),
   visualLogs: z.array(visualLogSchema).default([]),
+  segments: z.array(sessionSegmentSchema).default([]),
   status: z.enum([
     'raw',
     'transcribed',
@@ -302,6 +341,24 @@ export interface PublishingService {
 
 export interface TranscriptionService {
   transcribe(audioPath: string): Promise<Transcript>;
+  transcribeSegment(audioPath: string): Promise<string>;
+}
+
+export interface EmbeddingBatchOptions {
+  /** Signal to abort the request */
+  signal?: AbortSignal;
+}
+
+export interface EmbeddingService {
+  embed(text: string, taskType?: 'clustering' | 'retrieval'): Promise<number[]>;
+  embedBatch(
+    texts: string[],
+    taskType?: 'clustering' | 'retrieval',
+    options?: EmbeddingBatchOptions
+  ): Promise<number[][]>;
+  similarity(a: number[], b: number[]): number;
+  /** Compute centroid (average) of multiple embeddings */
+  centroid(embeddings: number[][]): number[];
 }
 
 export interface CaptureSource {
@@ -313,6 +370,10 @@ export interface IntelligenceService {
   classify(
     transcript: Transcript,
     visualLogs?: VisualLog[]
+  ): Promise<Classification>;
+  classifySegment(
+    segment: SessionSegment,
+    transcript?: Transcript
   ): Promise<Classification>;
   extractMetadata(
     transcript: Transcript,
@@ -332,6 +393,11 @@ export interface IntelligenceService {
       visualLogs?: VisualLog[];
     }
   ): Promise<string>;
+  embedText(
+    texts: string[],
+    options?: { batchSize?: number }
+  ): Promise<number[][]>;
+  extractTopics(observations: DbObservation[]): Promise<string[]>;
 }
 
 export interface StorageService {
@@ -343,12 +409,12 @@ export interface StorageService {
 }
 
 export interface VideoService {
-  extractFrames(
+  extractFramesAtTimestamps(
     videoPath: string,
     timestamps: number[],
     outputDir: string
   ): Promise<string[]>;
-  detectAndExtractScenes(
+  extractFramesAtInterval(
     videoPath: string,
     threshold: number,
     outputDir: string
@@ -391,25 +457,183 @@ export const intelligenceConfigSchema = z.object({
   generationModel: z.string().default('qwen3:32b'),
   visionModel: z.string().default('minicpm-v:8b'),
   maxRetries: z.number().default(3),
-  timeout: z.number().default(500000),
+  timeout: z.number().default(600000), // 10 minutes
   keepAlive: z.string().default('10m'),
   maxContextSize: z.number().default(131072), // qwen3:8b supports up to 128K
+  embedding: embeddingConfigSchema.default({
+    model: 'nomic-embed-text',
+    similarityThreshold: 0.75,
+  }),
 });
 export type IntelligenceConfig = z.infer<typeof intelligenceConfigSchema>;
 
 export const DEFAULT_INTELLIGENCE_CONFIG: IntelligenceConfig =
   intelligenceConfigSchema.parse({});
 
-export const artifactConfigSchema = z.object({
+const artifactConfigSchema = z.object({
   parallelGeneration: z.boolean().default(false),
   maxParallel: z.number().default(3),
   maxScreenshots: z.number().default(10),
 });
-export type ArtifactConfig = z.infer<typeof artifactConfigSchema>;
+type ArtifactConfig = z.infer<typeof artifactConfigSchema>;
 
 export const outlineConfigSchema = z.object({
   url: z.string().url(),
   token: z.string(),
   collectionName: z.string().default('Escribano Sessions'),
 });
+
 export type OutlineConfig = z.infer<typeof outlineConfigSchema>;
+
+// =============================================================================
+// REPOSITORY INTERFACES (v2 - Storage Ports)
+// =============================================================================
+// TODO: Move to separate file when we split 0_types.ts
+
+import type {
+  DbArtifact,
+  DbArtifactInsert,
+  DbCluster,
+  DbClusterInsert,
+  DbClusterMerge,
+  DbContext,
+  DbContextInsert,
+  DbObservation,
+  DbObservationCluster,
+  DbObservationContext,
+  DbObservationInsert,
+  DbRecording,
+  DbRecordingInsert,
+  DbTopicBlock,
+  DbTopicBlockInsert,
+} from './db/types.js';
+
+export type {
+  DbArtifact,
+  DbArtifactInsert,
+  DbCluster,
+  DbClusterInsert,
+  DbClusterMerge,
+  DbContext,
+  DbContextInsert,
+  DbObservation,
+  DbObservationCluster,
+  DbObservationContext,
+  DbObservationInsert,
+  DbRecording,
+  DbRecordingInsert,
+  DbTopicBlock,
+  DbTopicBlockInsert,
+};
+
+export interface RecordingRepository {
+  findById(id: string): DbRecording | null;
+  findByStatus(status: DbRecording['status']): DbRecording[];
+  findPending(): DbRecording[];
+  save(recording: DbRecordingInsert): void;
+  updateStatus(
+    id: string,
+    status: DbRecording['status'],
+    step?: DbRecording['processing_step'],
+    error?: string | null
+  ): void;
+  delete(id: string): void;
+}
+
+export interface ObservationRepository {
+  findById(id: string): DbObservation | null;
+  findByRecording(recordingId: string): DbObservation[];
+  findByRecordingAndType(
+    recordingId: string,
+    type: 'visual' | 'audio'
+  ): DbObservation[];
+  findByContext(contextId: string): DbObservation[];
+  save(observation: DbObservationInsert): void;
+  saveBatch(observations: DbObservationInsert[]): void;
+  updateEmbedding(id: string, embedding: number[]): void;
+  updateVLMDescription(id: string, description: string): void;
+  delete(id: string): void;
+  deleteByRecording(recordingId: string): void;
+}
+
+export interface ContextRepository {
+  findById(id: string): DbContext | null;
+  findByTypeAndName(type: string, name: string): DbContext | null;
+  findAll(): DbContext[];
+  save(context: DbContextInsert): void;
+  linkObservation(
+    observationId: string,
+    contextId: string,
+    confidence?: number
+  ): void;
+  unlinkObservation(observationId: string, contextId: string): void;
+  getObservationLinks(contextId: string): DbObservationContext[];
+  getObservationLinksByObservation(
+    observationId: string
+  ): DbObservationContext[];
+  getLinksByRecording(recordingId: string): DbObservationContext[];
+  delete(id: string): void;
+}
+
+export interface TopicBlockRepository {
+  findById(id: string): DbTopicBlock | null;
+  findByRecording(recordingId: string): DbTopicBlock[];
+  findByContext(contextId: string): DbTopicBlock[]; // Cross-recording!
+  save(block: DbTopicBlockInsert): void;
+  delete(id: string): void;
+  deleteByRecording(recordingId: string): void;
+}
+
+export interface ClusterRepository {
+  findById(id: string): DbCluster | null;
+  findByRecording(recordingId: string): DbCluster[];
+  findByRecordingAndType(
+    recordingId: string,
+    type: 'visual' | 'audio'
+  ): DbCluster[];
+  save(cluster: DbClusterInsert): void;
+  saveBatch(clusters: DbClusterInsert[]): void;
+  linkObservation(
+    observationId: string,
+    clusterId: string,
+    distance?: number
+  ): void;
+  linkObservationsBatch(
+    links: Array<{
+      observationId: string;
+      clusterId: string;
+      distance?: number;
+    }>
+  ): void;
+  getObservations(clusterId: string): DbObservation[];
+  updateClassification(id: string, classification: string): void;
+  updateCentroid(id: string, centroid: number[]): void;
+  saveMerge(
+    visualClusterId: string,
+    audioClusterId: string,
+    similarity: number,
+    reason: string
+  ): void;
+  getMergedAudioClusters(visualClusterId: string): DbCluster[];
+  delete(id: string): void;
+  deleteByRecording(recordingId: string): void;
+}
+
+export interface ArtifactRepository {
+  findById(id: string): DbArtifact | null;
+  findByType(type: string): DbArtifact[];
+  findByBlock(blockId: string): DbArtifact[];
+  findByContext(contextId: string): DbArtifact[]; // Cross-recording!
+  save(artifact: DbArtifactInsert): void;
+  update(id: string, content: string): void;
+  delete(id: string): void;
+}
+
+export interface Repositories {
+  recordings: RecordingRepository;
+  observations: ObservationRepository;
+  contexts: ContextRepository;
+  topicBlocks: TopicBlockRepository;
+  artifacts: ArtifactRepository;
+  clusters: ClusterRepository;
+}

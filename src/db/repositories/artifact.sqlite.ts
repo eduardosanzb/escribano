@@ -1,0 +1,87 @@
+/**
+ * Artifact Repository - SQLite Implementation
+ */
+
+import type Database from 'better-sqlite3';
+import type {
+  ArtifactRepository,
+  DbArtifact,
+  DbArtifactInsert,
+} from '../../0_types.js';
+import { nowISO } from '../helpers.js';
+
+export function createSqliteArtifactRepository(
+  db: Database.Database
+): ArtifactRepository {
+  const stmts = {
+    findById: db.prepare('SELECT * FROM artifacts WHERE id = ?'),
+    findByType: db.prepare(
+      'SELECT * FROM artifacts WHERE type = ? ORDER BY created_at DESC'
+    ),
+    findByBlock: db.prepare(`
+      SELECT * FROM artifacts 
+      WHERE source_block_ids LIKE ?
+      ORDER BY created_at DESC
+    `),
+    findByContext: db.prepare(`
+      SELECT * FROM artifacts 
+      WHERE source_context_ids LIKE ?
+      ORDER BY created_at DESC
+    `),
+    insert: db.prepare(`
+      INSERT INTO artifacts (
+        id, type, content, format, source_block_ids, source_context_ids, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    update: db.prepare(`
+      UPDATE artifacts SET content = ?, updated_at = ? WHERE id = ?
+    `),
+    delete: db.prepare('DELETE FROM artifacts WHERE id = ?'),
+  };
+
+  return {
+    findById(id: string): DbArtifact | null {
+      const row = stmts.findById.get(id);
+      return (row as DbArtifact) ?? null;
+    },
+
+    findByType(type: string): DbArtifact[] {
+      return stmts.findByType.all(type) as DbArtifact[];
+    },
+
+    findByBlock(blockId: string): DbArtifact[] {
+      // NOTE: Matches substrings in JSON array string.
+      // TODO: Use JSON_EACH for more robust matching.
+      return stmts.findByBlock.all(`%${blockId}%`) as DbArtifact[];
+    },
+
+    findByContext(contextId: string): DbArtifact[] {
+      // NOTE: Matches substrings in JSON array string.
+      // TODO: Use JSON_EACH for more robust matching.
+      return stmts.findByContext.all(`%${contextId}%`) as DbArtifact[];
+    },
+
+    save(artifact: DbArtifactInsert): void {
+      const now = nowISO();
+      stmts.insert.run(
+        artifact.id,
+        artifact.type,
+        artifact.content,
+        artifact.format,
+        artifact.source_block_ids,
+        artifact.source_context_ids,
+        now,
+        now
+      );
+    },
+
+    update(id: string, content: string): void {
+      stmts.update.run(content, nowISO(), id);
+    },
+
+    delete(id: string): void {
+      stmts.delete.run(id);
+    },
+  };
+}

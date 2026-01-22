@@ -7,6 +7,7 @@
 
 import { exec } from 'node:child_process';
 import { mkdir, readdir, readFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { VideoService } from '../0_types.js';
@@ -22,7 +23,7 @@ export function createFfmpegVideoService(): VideoService {
      * Extract frames at specific timestamps.
      * High quality extraction using -q:v 2.
      */
-    extractFrames: async (videoPath, timestamps, outputDir) => {
+    extractFramesAtTimestamps: async (videoPath, timestamps, outputDir) => {
       await mkdir(outputDir, { recursive: true });
       const outputPaths: string[] = [];
 
@@ -53,21 +54,19 @@ export function createFfmpegVideoService(): VideoService {
     },
 
     /**
-     * Detect significant scene changes and extract frames.
-     * Useful for silent sessions where we want to capture moments of activity.
+     * Extract frames at regular intervals.
+     * Robust strategy for Visual Log:
+     * We use a combination of periodic sampling and resolution scaling.
      */
-    detectAndExtractScenes: async (videoPath, _threshold, outputDir) => {
+    extractFramesAtInterval: async (videoPath, _threshold, outputDir) => {
       await mkdir(outputDir, { recursive: true });
 
       const frameInterval = Number(process.env.ESCRIBANO_FRAME_INTERVAL) || 2;
       const frameWidth = Number(process.env.ESCRIBANO_FRAME_WIDTH) || 1920;
 
       // Robust strategy for Visual Log:
-      // We use a combination of periodic sampling and resolution scaling.
-      // This is more reliable across different video formats than pure scene detection.
       // 1. scale=${frameWidth}:-2: Optimize for AI reasoning
       // 2. fps=1/${frameInterval}: Configurable frame rate
-      // 3. -strict unofficial: Compatibility for screen recordings
       const command = `ffmpeg -i "${videoPath}" -vf "scale=${frameWidth}:-2,fps=1/${frameInterval}" -strict unofficial -an -q:v 2 "${outputDir}/scene_%04d.jpg" -y`;
 
       try {
@@ -125,6 +124,7 @@ export function createFfmpegVideoService(): VideoService {
 
     /**
      * Run visual indexing (OCR + CLIP) using the Python base script.
+     * OCR is parallelized across all available CPU cores.
      */
     runVisualIndexing: async (framesDir, outputPath) => {
       const scriptPath = path.join(
@@ -134,8 +134,11 @@ export function createFfmpegVideoService(): VideoService {
         'visual_observer_base.py'
       );
       const frameInterval = Number(process.env.ESCRIBANO_FRAME_INTERVAL) || 2;
+      const workers = os.cpus().length;
+
       // Use uv run to execute the script with its environment
-      const command = `uv run "${scriptPath}" --frames-dir "${framesDir}" --output "${outputPath}" --frame-interval ${frameInterval}`;
+      // --workers enables parallel OCR processing
+      const command = `uv run "${scriptPath}" --frames-dir "${framesDir}" --output "${outputPath}" --frame-interval ${frameInterval} --workers ${workers}`;
 
       try {
         await execAsync(command, {

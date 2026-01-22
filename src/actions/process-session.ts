@@ -10,52 +10,18 @@ import path from 'node:path';
 import type {
   IntelligenceService,
   Recording,
-  Session,
+  Session as SessionType,
   StorageService,
   TaggedTranscript,
-  Transcript,
   TranscriptionService,
   VideoService,
   VisualDescription,
   VisualIndex,
-  VisualIndexCluster,
   VisualLog,
   VisualLogEntry,
 } from '../0_types.js';
-
-/**
- * Check if a transcript is empty (no content)
- */
-function isEmptyTranscript(transcript: Transcript): boolean {
-  return !transcript.fullText.trim() || transcript.segments.length === 0;
-}
-
-/**
- * Calculate the total seconds of audio that overlap with a given time range.
- * This helps determine if a visual segment has corresponding spoken content.
- */
-export function calculateAudioOverlap(
-  timeRange: [number, number],
-  transcripts: TaggedTranscript[]
-): number {
-  const [rangeStart, rangeEnd] = timeRange;
-  let totalOverlapSeconds = 0;
-
-  for (const { transcript } of transcripts) {
-    for (const segment of transcript.segments) {
-      // Find the intersection between the segment and the target time range
-      const overlapStart = Math.max(rangeStart, segment.start);
-      const overlapEnd = Math.min(rangeEnd, segment.end);
-      const overlapDuration = overlapEnd - overlapStart;
-
-      if (overlapDuration > 0) {
-        totalOverlapSeconds += overlapDuration;
-      }
-    }
-  }
-
-  return totalOverlapSeconds;
-}
+import { Session } from '../domain/session.js';
+import { Transcript } from '../domain/transcript.js';
 
 /**
  * Transcribe multiple audio sources, optionally in parallel.
@@ -73,7 +39,7 @@ async function transcribeAudioSources(
       try {
         console.log(`Transcribing ${source} audio from: ${path}`);
         const transcript = await transcriber.transcribe(path);
-        if (isEmptyTranscript(transcript)) {
+        if (Transcript.isEmpty(transcript)) {
           console.log(`Warning: ${source} audio produced empty transcript`);
           return null;
         }
@@ -93,7 +59,7 @@ async function transcribeAudioSources(
     try {
       console.log(`Transcribing ${source} audio from: ${path}`);
       const transcript = await transcriber.transcribe(path);
-      if (isEmptyTranscript(transcript)) {
+      if (Transcript.isEmpty(transcript)) {
         console.log(`Warning: ${source} audio produced empty transcript`);
         continue;
       }
@@ -115,10 +81,10 @@ export async function processSession(
   videoService: VideoService,
   storageService: StorageService,
   intelligenceService?: IntelligenceService
-): Promise<Session> {
+): Promise<SessionType> {
   console.log(`Processing recording: ${recording.id}`);
 
-  const transcripts: TaggedTranscript[] = [];
+  let session = Session.create(recording);
   const parallelTranscription =
     process.env.ESCRIBANO_PARALLEL_TRANSCRIPTION === 'true';
 
@@ -132,55 +98,41 @@ export async function processSession(
   }
 
   if (audioSources.length > 0) {
-    const transcribed = await transcribeAudioSources(
+    const transcripts = await transcribeAudioSources(
       audioSources,
       transcriber,
       parallelTranscription
     );
-    transcripts.push(...transcribed);
+    session = Session.withTranscripts(session, transcripts);
   }
 
-  const theSession: Session = {
-    id: recording.id,
-    recording,
-    transcripts,
-    visualLogs: [],
-    status: 'transcribed',
-    classification: null,
-    metadata: null,
-    artifacts: [],
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-
   // Intermediate save to ensure we don't lose transcription work
-  await storageService.saveSession(theSession);
+  await storageService.saveSession(session);
 
   // 2. Visual Log Extraction
   if (!recording.videoPath) {
-    return finalizeSession(theSession, [], storageService);
+    return finalizeSession(session, [], storageService);
   }
 
-  const visualLogs = await extractVisualLogs(
-    recording,
+  const { visualLogs, updatedSession } = await extractVisualLogs(
+    session,
     videoService,
-    transcripts,
     intelligenceService
   );
 
-  return finalizeSession(theSession, visualLogs, storageService);
+  return finalizeSession(updatedSession, visualLogs, storageService);
 }
 
 /**
  * Extract visual logs from a video recording
  */
 async function extractVisualLogs(
-  recording: Recording,
+  session: SessionType,
   videoService: VideoService,
-  transcripts: TaggedTranscript[],
   intelligenceService?: IntelligenceService
-): Promise<VisualLog[]> {
-  if (!recording.videoPath) return [];
+): Promise<{ visualLogs: VisualLog[]; updatedSession: SessionType }> {
+  const { recording } = session;
+  if (!recording.videoPath) return { visualLogs: [], updatedSession: session };
 
   console.log(`Extracting visual log from: ${recording.videoPath}`);
   const visualLogDir = path.join(
@@ -192,13 +144,14 @@ async function extractVisualLogs(
   );
 
   try {
-    const sceneResults = await videoService.detectAndExtractScenes(
+    const sceneResults = await videoService.extractFramesAtInterval(
       recording.videoPath,
       0.3,
       visualLogDir
     );
 
-    if (sceneResults.length === 0) return [];
+    if (sceneResults.length === 0)
+      return { visualLogs: [], updatedSession: session };
 
     console.log('Running visual analysis (OCR + CLIP)...');
     const indexPath = path.join(visualLogDir, 'visual-index.json');
@@ -211,9 +164,12 @@ async function extractVisualLogs(
       `✓ Indexed ${visualIndex.frames.length} frames into ${visualIndex.clusters.length} clusters`
     );
 
+    // Update session with visual index (generates segments)
+    const updatedSession = Session.withVisualIndex(session, visualIndex);
+
     const descriptions = await getVisualDescriptions(
+      updatedSession,
       visualIndex,
-      transcripts,
       intelligenceService
     );
 
@@ -232,65 +188,28 @@ async function extractVisualLogs(
       };
     });
 
-    return [{ entries, source: 'screen' }];
+    return {
+      visualLogs: [{ entries, source: 'screen' }],
+      updatedSession,
+    };
   } catch (error) {
     console.error('Failed to extract visual log:', error);
-    return [];
+    return { visualLogs: [], updatedSession: session };
   }
 }
 
 /**
- * Determine which clusters need VLM descriptions
- */
-function determineClustersNeedingVLM(
-  clusters: VisualIndexCluster[],
-  transcripts: TaggedTranscript[]
-): number[] {
-  const needsVLM: number[] = [];
-
-  // TODO: Move to config
-  const OCR_DENSITY_THRESHOLD = 500;
-  const AUDIO_OVERLAP_MIN_SECONDS = 5;
-
-  for (const cluster of clusters) {
-    const audioOverlap = calculateAudioOverlap(cluster.timeRange, transcripts);
-
-    // Rule 1: No meaningful audio overlap
-    if (audioOverlap < AUDIO_OVERLAP_MIN_SECONDS) {
-      needsVLM.push(cluster.id);
-      continue;
-    }
-
-    // Rule 2: Low OCR density (likely images/diagrams)
-    if (cluster.avgOcrCharacters < OCR_DENSITY_THRESHOLD) {
-      needsVLM.push(cluster.id);
-      continue;
-    }
-
-    // Rule 3: Media indicators (video player, etc.)
-    if (cluster.mediaIndicators.length > 0) {
-      needsVLM.push(cluster.id);
-    }
-  }
-
-  return needsVLM;
-}
-
-/**
- * Get VLM descriptions for relevant visual clusters
+ * Get VLM descriptions for relevant segments
  */
 async function getVisualDescriptions(
+  session: SessionType,
   visualIndex: VisualIndex,
-  transcripts: TaggedTranscript[],
   intelligenceService?: IntelligenceService
 ): Promise<VisualDescription[]> {
-  const clustersNeedingVLM = determineClustersNeedingVLM(
-    visualIndex.clusters,
-    transcripts
-  );
+  const segmentsNeedingVLM = Session.getSegmentsNeedingVLM(session);
 
-  if (clustersNeedingVLM.length === 0 || !intelligenceService) {
-    if (clustersNeedingVLM.length > 0) {
+  if (segmentsNeedingVLM.length === 0 || !intelligenceService) {
+    if (segmentsNeedingVLM.length > 0) {
       console.log(
         '  Skipping VLM descriptions (no intelligence service provided)'
       );
@@ -299,11 +218,13 @@ async function getVisualDescriptions(
   }
 
   console.log(
-    `Describing ${clustersNeedingVLM.length} visual-heavy segments...`
+    `Describing ${segmentsNeedingVLM.length} visual-heavy segments...`
   );
 
-  const imagesToDescribe = clustersNeedingVLM
-    .map((clusterId: number) => {
+  const imagesToDescribe = segmentsNeedingVLM
+    .map((seg) => {
+      // Find representative frame for the first cluster in segment
+      const clusterId = seg.visualClusterIds[0];
       const cluster = visualIndex.clusters.find((c) => c.id === clusterId);
       const repFrame = visualIndex.frames.find(
         (f) => f.index === cluster?.representativeIdx
@@ -330,29 +251,32 @@ async function getVisualDescriptions(
  * Finalize session processing, perform validation and save
  */
 async function finalizeSession(
-  session: Session,
+  session: SessionType,
   visualLogs: VisualLog[],
   storageService: StorageService
-): Promise<Session> {
-  session.visualLogs = visualLogs;
-  session.updatedAt = new Date();
+): Promise<SessionType> {
+  const finalSession = {
+    ...session,
+    visualLogs,
+    updatedAt: new Date(),
+  };
 
-  const hasAudioContent = session.transcripts.length > 0;
+  const hasAudioContent = finalSession.transcripts.length > 0;
   const hasVisualContent =
     visualLogs.length > 0 && visualLogs[0].entries.length > 0;
 
   if (!hasAudioContent && !hasVisualContent) {
-    session.status = 'error';
-    const message = `Session processing failed: No audio content AND no visual changes detected for recording: ${session.id}`;
-    session.errorMessage = message;
-    await storageService.saveSession(session);
+    finalSession.status = 'error';
+    const message = `Session processing failed: No audio content AND no visual changes detected for recording: ${finalSession.id}`;
+    finalSession.errorMessage = message;
+    await storageService.saveSession(finalSession);
     throw new Error(message);
   }
 
   console.log(
-    `Processing complete. Sources: ${session.transcripts.length} audio, ${visualLogs.length} visual.`
+    `Processing complete. Sources: ${finalSession.transcripts.length} audio, ${visualLogs.length} visual. Segments: ${finalSession.segments.length}`
   );
 
-  await storageService.saveSession(session);
-  return session;
+  await storageService.saveSession(finalSession);
+  return finalSession;
 }

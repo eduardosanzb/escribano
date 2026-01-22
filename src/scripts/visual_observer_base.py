@@ -8,7 +8,9 @@ Usage:
 
 import argparse
 import json
+import os
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import TypedDict
 
@@ -81,6 +83,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--frame-interval", type=float, default=2.0,
                         help="Seconds between frames (default: 2)")
+    parser.add_argument("--workers", type=int, default=os.cpu_count(),
+                        help="Number of parallel OCR workers (default: CPU count)")
     return parser.parse_args()
 
 
@@ -119,6 +123,50 @@ def extract_ocr(image_path: Path) -> str:
     except Exception as e:
         print(f"  Warning: OCR failed for {image_path.name}: {e}")
         return ""
+
+
+def extract_ocr_parallel(
+    frames: list[tuple[int, float, Path]], 
+    max_workers: int
+) -> dict[int, str]:
+    """Extract OCR in parallel using multiprocessing.
+    
+    Args:
+        frames: List of (index, timestamp, path) tuples
+        max_workers: Number of parallel workers
+        
+    Returns:
+        Dictionary mapping frame index to OCR text
+    """
+    results = {}
+    total = len(frames)
+    completed = 0
+    
+    print(f"  Using {max_workers} parallel workers...")
+    
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_idx = {
+            executor.submit(extract_ocr, path): idx 
+            for idx, _, path in frames
+        }
+        
+        # Collect results as they complete
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            try:
+                results[idx] = future.result()
+            except Exception as e:
+                print(f"  Warning: OCR failed for frame {idx}: {e}")
+                results[idx] = ""
+            
+            completed += 1
+            # Progress indicator every 10%
+            if completed % max(1, total // 10) == 0:
+                pct = (completed / total) * 100
+                print(f"  OCR progress: {completed}/{total} ({pct:.0f}%)")
+    
+    return results
 
 
 def compute_clip_embeddings(
@@ -291,18 +339,19 @@ def main():
     timing = {"ocrMs": 0, "clipMs": 0, "clusterMs": 0, "totalMs": 0}
     total_start = time.time()
     
-    # Phase 1: OCR
-    print("Phase 1: Extracting text with OCR...")
+    # Phase 1: OCR (Parallel)
+    print(f"Phase 1: Extracting text with OCR ({args.workers} workers)...")
     ocr_start = time.time()
-    frames_data: list[FrameData] = []
     
+    ocr_results = extract_ocr_parallel(frames, args.workers)
+    
+    frames_data: list[FrameData] = []
     for idx, timestamp, path in frames:
-        ocr_text = extract_ocr(path)
         frames_data.append({
             "index": idx,
             "timestamp": timestamp,
             "imagePath": str(path),
-            "ocrText": ocr_text,
+            "ocrText": ocr_results.get(idx, ""),
             "clusterId": -1,  # Set later
             "changeScore": 0.0,  # TODO: Implement pixel delta if needed
         })

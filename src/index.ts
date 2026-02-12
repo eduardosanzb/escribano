@@ -125,7 +125,7 @@ async function run(force: boolean): Promise<void> {
   console.log('Generating summary...');
 
   // Generate summary
-  const artifact = await generateSummaryV3(recording.id, repos, {
+  const artifact = await generateSummaryV3(recording.id, repos, intelligence, {
     recordingId: recording.id,
   });
 

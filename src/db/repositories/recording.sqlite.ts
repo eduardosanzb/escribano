@@ -35,6 +35,11 @@ export function createSqliteRecordingRepository(
       SET status = ?, processing_step = ?, error_message = ?, updated_at = ? 
       WHERE id = ?
     `),
+    updateMetadata: db.prepare(`
+      UPDATE recordings 
+      SET source_metadata = ?, updated_at = ? 
+      WHERE id = ?
+    `),
     delete: db.prepare('DELETE FROM recordings WHERE id = ?'),
   };
 
@@ -78,6 +83,10 @@ export function createSqliteRecordingRepository(
       error?: string | null
     ): void {
       stmts.updateStatus.run(status, step ?? null, error ?? null, nowISO(), id);
+    },
+
+    updateMetadata(id: string, metadata: string): void {
+      stmts.updateMetadata.run(metadata, nowISO(), id);
     },
 
     delete(id: string): void {

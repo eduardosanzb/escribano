@@ -24,6 +24,10 @@ export function createSqliteContextRepository(
       INSERT INTO contexts (id, type, name, metadata, created_at)
       VALUES (?, ?, ?, ?, ?)
     `),
+    insertOrIgnore: db.prepare(`
+      INSERT OR IGNORE INTO contexts (id, type, name, metadata, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `),
     linkObservation: db.prepare(`
       INSERT OR REPLACE INTO observation_contexts (observation_id, context_id, confidence)
       VALUES (?, ?, ?)
@@ -62,6 +66,16 @@ export function createSqliteContextRepository(
 
     save(context: DbContextInsert): void {
       stmts.insert.run(
+        context.id,
+        context.type,
+        context.name,
+        context.metadata,
+        nowISO()
+      );
+    },
+
+    saveOrIgnore(context: DbContextInsert): void {
+      stmts.insertOrIgnore.run(
         context.id,
         context.type,
         context.name,

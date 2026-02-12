@@ -568,6 +568,7 @@ export interface RecordingRepository {
     step?: DbRecording['processing_step'],
     error?: string | null
   ): void;
+  updateMetadata(id: string, metadata: string): void;
   delete(id: string): void;
 }
 
@@ -592,6 +593,7 @@ export interface ContextRepository {
   findByTypeAndName(type: string, name: string): DbContext | null;
   findAll(): DbContext[];
   save(context: DbContextInsert): void;
+  saveOrIgnore(context: DbContextInsert): void;
   linkObservation(
     observationId: string,
     contextId: string,

@@ -455,6 +455,10 @@ export interface VideoService {
     framesDir: string,
     outputPath: string
   ): Promise<VisualIndex>;
+  detectSceneChanges(
+    videoPath: string,
+    config?: { threshold?: number; minInterval?: number }
+  ): Promise<number[]>;
 }
 
 // =============================================================================

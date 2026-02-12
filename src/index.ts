@@ -14,7 +14,7 @@ import { createCapCaptureSource } from './adapters/capture.cap.adapter.js';
 import { createOllamaIntelligenceService } from './adapters/intelligence.ollama.adapter.js';
 import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
 import { createFfmpegVideoService } from './adapters/video.ffmpeg.adapter.js';
-import { getRepositories } from './db/index.js';
+import { getDbPath, getRepositories } from './db/index.js';
 import { withPipeline } from './pipeline/context.js';
 
 const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
@@ -62,7 +62,11 @@ Output: Markdown summary saved to ~/.escribano/artifacts/
 }
 
 async function run(force: boolean): Promise<void> {
+  // Initialize database (runs migrations automatically)
+  console.log('Initializing database...');
   const repos = getRepositories();
+  console.log(`Database ready: ${getDbPath()}`);
+  console.log('');
   const cap = createCapCaptureSource();
   const intelligence = createOllamaIntelligenceService();
   const video = createFfmpegVideoService();

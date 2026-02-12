@@ -1,7 +1,15 @@
 # ADR-005: VLM-First Visual Pipeline
 
 ## Status
-Proposed
+Accepted
+
+## Implementation Status
+- Phase 1 (Core Pipeline): Implemented ✓
+- Phase 2 (Audio Alignment): Implemented ✓
+- Phase 3 (Context & TopicBlock): Implemented ✓ (simplified)
+- Phase 4 (Schema Migration): Deferred
+- Phase 5 (Artifact Generation): In progress (LLM summary)
+- Phase 6 (Cleanup): Deferred
 
 ## Date
 2026-01-22

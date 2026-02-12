@@ -66,11 +66,12 @@ erDiagram
     Recording {
         string id PK
         string videoPath
-        string audioMicPath  
+        string audioMicPath
         string audioSystemPath
         number duration
         date capturedAt
         string status "raw|processing|processed|error"
+        string sourceType "cap|file"
     }
 
     Observation {
@@ -156,7 +157,7 @@ erDiagram
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌─────────────┐                                                            │
-│  │  CAPTURE    │  Recording detected (Cap watcher)                          │
+│  │  CAPTURE    │  Recording detected (Cap watcher or direct file input)     │
 │  └──────┬──────┘                                                            │
 │         │                                                                   │
 │         ▼                                                                   │
@@ -169,8 +170,8 @@ erDiagram
 │         ▼                                                                   │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
 │  │                      VLM BATCH INFERENCE                                 ││
-│  │  1. Batch 10 images per request                                         ││
-│  │  2. VLM (Qwen3-VL-8B) identifies activity & context                     ││
+   │  1. Batch 8 images per request                                          ││
+   │  2. VLM (qwen3-vl:4b) identifies activity & context                     ││
 │  │  3. Store results in Observation entity                                 ││
 │  └──────────────────────────────────────────────────────────────────────────┘│
 │         │                                                                   │
@@ -197,9 +198,9 @@ erDiagram
 │         │                                                                   │
 │         ▼                                                                   │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                     ARTIFACT GENERATION                                  ││
-│  │  Run OCR-on-demand on keyframes for maximum code context                 ││
-│  │  Combine VLM + Audio + OCR text into final documents                     ││
+  │  │  ARTIFACT GENERATION                                  ││
+  │  │  LLM synthesis of VLM descriptions + audio transcripts                   ││
+  │  │  Model: qwen3:32b  |  Output: Markdown summary                           ││
 │  └──────────────────────────────────────────────────────────────────────────┘│
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -294,5 +295,5 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 | `AudioPreprocessor` | `audio.silero.adapter.ts` | VAD segmentation & cleanup |
 | `IntelligenceService` | `intelligence.ollama.adapter.ts` | VLM classification & generation |
 | `EmbeddingService` | `embedding.ollama.adapter.ts` | (Disabled in v3, kept for future) |
-| `StorageService` | `storage.fs.adapter.ts` | Persist sessions/artifacts |
+| `StorageService` | `storage.fs.adapter.ts` | (V1 only, not used in v3) |
 | `PublishingService` | `publishing.outline.adapter.ts` | Sync to Outline wiki |

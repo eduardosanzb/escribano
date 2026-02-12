@@ -17,7 +17,7 @@ export interface SamplingConfig {
 export interface SampledFrame {
   imagePath: string;
   timestamp: number;
-  reason: 'base' | 'gap_fill';
+  reason: 'base' | 'gap_fill' | 'scene_change';
 }
 
 export interface InputFrame {
@@ -131,6 +131,144 @@ export function adaptiveSample(
 }
 
 /**
+ * Adaptively sample frames with scene change awareness.
+ *
+ * Strategy:
+ * 1. Always include frames nearest to scene change timestamps
+ * 2. Between scene changes, sample at base interval
+ * 3. Detect gaps larger than threshold and fill with denser sampling
+ *
+ * @param allFrames - All extracted frames (typically at 2s intervals)
+ * @param sceneChanges - Timestamps of detected scene changes from ffmpeg
+ * @param config - Sampling configuration
+ * @returns Sampled frames with reason annotations
+ */
+export function adaptiveSampleWithScenes(
+  allFrames: InputFrame[],
+  sceneChanges: number[],
+  config: Partial<SamplingConfig> = {}
+): SampledFrame[] {
+  const cfg: SamplingConfig = { ...DEFAULT_CONFIG, ...config };
+
+  if (allFrames.length === 0) return [];
+
+  // Sort frames by timestamp
+  const sortedFrames = [...allFrames].sort((a, b) => a.timestamp - b.timestamp);
+
+  // Track which timestamps we've already sampled
+  const sampledTimestamps = new Set<number>();
+  const result: SampledFrame[] = [];
+
+  // Step 1: Always include frames nearest to scene changes
+  for (const changeTime of sceneChanges) {
+    const nearest = findNearestFrame(sortedFrames, changeTime);
+    if (nearest && !sampledTimestamps.has(nearest.timestamp)) {
+      result.push({
+        imagePath: nearest.imagePath,
+        timestamp: nearest.timestamp,
+        reason: 'scene_change',
+      });
+      sampledTimestamps.add(nearest.timestamp);
+    }
+  }
+
+  // Sort scene change frames by timestamp
+  result.sort((a, b) => a.timestamp - b.timestamp);
+
+  // Step 2: Between scene changes, sample at base interval
+  // Create segments between scene changes
+  const sceneTimestamps = result.map((f) => f.timestamp);
+  const segments: Array<{ start: number; end: number }> = [];
+
+  if (sceneTimestamps.length === 0) {
+    // No scene changes - sample entire video
+    segments.push({
+      start: sortedFrames[0].timestamp,
+      end: sortedFrames[sortedFrames.length - 1].timestamp,
+    });
+  } else {
+    // Create segments: before first scene, between scenes, after last scene
+    segments.push({
+      start: sortedFrames[0].timestamp,
+      end: sceneTimestamps[0],
+    });
+
+    for (let i = 0; i < sceneTimestamps.length - 1; i++) {
+      segments.push({
+        start: sceneTimestamps[i],
+        end: sceneTimestamps[i + 1],
+      });
+    }
+
+    segments.push({
+      start: sceneTimestamps[sceneTimestamps.length - 1],
+      end: sortedFrames[sortedFrames.length - 1].timestamp,
+    });
+  }
+
+  // Sample each segment at base interval
+  for (const segment of segments) {
+    let lastSampleTime = segment.start;
+
+    for (const frame of sortedFrames) {
+      if (frame.timestamp < segment.start || frame.timestamp > segment.end) {
+        continue;
+      }
+
+      if (
+        frame.timestamp - lastSampleTime >= cfg.baseIntervalSeconds &&
+        !sampledTimestamps.has(frame.timestamp)
+      ) {
+        result.push({
+          imagePath: frame.imagePath,
+          timestamp: frame.timestamp,
+          reason: 'base',
+        });
+        sampledTimestamps.add(frame.timestamp);
+        lastSampleTime = frame.timestamp;
+      }
+    }
+  }
+
+  // Sort before gap filling
+  result.sort((a, b) => a.timestamp - b.timestamp);
+
+  // Step 3: Fill large gaps between any samples
+  const withGapsFilled: SampledFrame[] = [];
+
+  for (let i = 0; i < result.length; i++) {
+    withGapsFilled.push(result[i]);
+
+    if (i < result.length - 1) {
+      const currentTime = result[i].timestamp;
+      const nextTime = result[i + 1].timestamp;
+      const gap = nextTime - currentTime;
+
+      if (gap > cfg.gapThresholdSeconds) {
+        // Fill the gap with denser samples
+        const gapStart = currentTime + cfg.gapFillIntervalSeconds;
+        const gapEnd = nextTime - cfg.gapFillIntervalSeconds;
+
+        for (let t = gapStart; t <= gapEnd; t += cfg.gapFillIntervalSeconds) {
+          const nearestFrame = findNearestFrame(sortedFrames, t);
+          if (nearestFrame && !sampledTimestamps.has(nearestFrame.timestamp)) {
+            withGapsFilled.push({
+              imagePath: nearestFrame.imagePath,
+              timestamp: nearestFrame.timestamp,
+              reason: 'gap_fill',
+            });
+            sampledTimestamps.add(nearestFrame.timestamp);
+          }
+        }
+      }
+    }
+  }
+
+  // Sort final result by timestamp
+  return withGapsFilled.sort((a, b) => a.timestamp - b.timestamp);
+}
+
+/**
  * Get sampling statistics for logging.
  */
 export function getSamplingStats(
@@ -142,9 +280,13 @@ export function getSamplingStats(
   reductionPercent: number;
   baseCount: number;
   gapFillCount: number;
+  sceneChangeCount: number;
 } {
   const baseCount = sampled.filter((f) => f.reason === 'base').length;
   const gapFillCount = sampled.filter((f) => f.reason === 'gap_fill').length;
+  const sceneChangeCount = sampled.filter(
+    (f) => f.reason === 'scene_change'
+  ).length;
 
   return {
     originalCount: original.length,
@@ -154,5 +296,6 @@ export function getSamplingStats(
     ),
     baseCount,
     gapFillCount,
+    sceneChangeCount,
   };
 }

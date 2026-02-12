@@ -27,7 +27,8 @@ import {
 // Debug logging controlled by environment variable
 const DEBUG_OLLAMA = process.env.ESCRIBANO_DEBUG_OLLAMA === 'true';
 
-function debugLog(...args: unknown[]): void {
+// TODO: put in an util
+export function debugLog(...args: unknown[]): void {
   if (DEBUG_OLLAMA) {
     console.log('[Ollama]', ...args);
   }
@@ -63,6 +64,8 @@ export function createOllamaIntelligenceService(
       generateArtifact(artifactType, context, parsedConfig),
     describeImages: (images, prompt) =>
       describeImagesWithOllama(images, parsedConfig, prompt),
+    describeImageBatch: (images, options) =>
+      describeImageBatchWithOllama(images, parsedConfig, options),
     embedText: (texts, options) =>
       embedTextWithOllama(texts, parsedConfig, options),
     extractTopics: (observations) =>
@@ -322,6 +325,244 @@ function loadClassifyPrompt(
   }
 
   return prompt;
+}
+
+/**
+ * Describe multiple images in a single VLM request.
+ * Uses Ollama's multi-image chat API for efficiency.
+ */
+async function describeImageBatchWithOllama(
+  images: Array<{ imagePath: string; timestamp: number }>,
+  config: IntelligenceConfig,
+  options: {
+    batchSize?: number;
+    model?: string;
+    onBatchComplete?: (
+      results: Array<{
+        index: number;
+        timestamp: number;
+        activity: string;
+        description: string;
+        apps: string[];
+        topics: string[];
+      }>,
+      batchIndex: number
+    ) => void;
+  } = {}
+): Promise<
+  Array<{
+    index: number;
+    timestamp: number;
+    activity: string;
+    description: string;
+    apps: string[];
+    topics: string[];
+  }>
+> {
+  const batchSize = options.batchSize ?? 8;
+  const model =
+    options.model ?? process.env.ESCRIBANO_VLM_MODEL ?? 'qwen3-vl:4b';
+  const endpoint = `${config.endpoint.replace('/generate', '').replace('/chat', '')}/chat`;
+
+  const allResults: Array<{
+    index: number;
+    timestamp: number;
+    activity: string;
+    description: string;
+    apps: string[];
+    topics: string[];
+  }> = [];
+
+  // Process in batches
+  for (
+    let batchStart = 0;
+    batchStart < images.length;
+    batchStart += batchSize
+  ) {
+    const batch = images.slice(batchStart, batchStart + batchSize);
+    const batchIndex = Math.floor(batchStart / batchSize) + 1;
+    const totalBatches = Math.ceil(images.length / batchSize);
+
+    console.log(
+      `[VLM] Processing batch ${batchIndex}/${totalBatches} (${batch.length} images)...`
+    );
+    const batchStartTime = Date.now();
+
+    // Read and encode images as base64
+    const base64Images: string[] = [];
+    for (const img of batch) {
+      try {
+        const buffer = readFileSync(img.imagePath);
+        base64Images.push(buffer.toString('base64'));
+      } catch (error) {
+        console.warn(
+          `Failed to read image ${img.imagePath}: ${(error as Error).message}`
+        );
+        base64Images.push(''); // Empty placeholder
+      }
+    }
+
+    // Build prompt
+    const prompt = `You are analyzing ${batch.length} screenshots from a developer's screen recording.
+
+For each image (indexed 0 to ${batch.length - 1}), provide:
+1. A brief 1-2 sentence description of what's shown
+2. The primary activity (suggest a concise label like "debugging", "coding", "reading docs", "meeting", "browsing")
+3. Visible applications (e.g., "VS Code", "Chrome", "Terminal", "Slack")
+4. Any key topics or projects visible (e.g., "authentication", "API design", "escribano")
+
+IMPORTANT: Return ONLY valid JSON array, no markdown, no explanation.
+Format:
+[
+  {"index": 0, "description": "...", "activity": "...", "apps": ["..."], "topics": ["..."]},
+  {"index": 1, "description": "...", "activity": "...", "apps": ["..."], "topics": ["..."]}
+]`;
+
+    try {
+      // Ensure model is loaded
+      await ensureModelWarmed(model, config);
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+              images: base64Images.filter((img) => img.length > 0),
+            },
+          ],
+          format: 'json',
+          stream: false,
+          options: {
+            num_predict: 6000,
+            temperature: 0.3,
+          },
+          think: false,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Ollama API error: ${response.status} ${response.statusText}`
+        );
+      }
+
+      console.log(response);
+
+      const data = await response.json();
+      console.log(data);
+      const content = data.message?.content || '';
+
+      // Parse JSON response
+      let parsed: any;
+
+      try {
+        // Try to extract JSON from response (handle markdown code blocks)
+        let jsonStr = content.trim();
+        if (jsonStr.startsWith('```')) {
+          jsonStr = jsonStr
+            .replace(/^```(?:json)?\n?/, '')
+            .replace(/\n?```$/, '');
+        }
+        parsed = JSON.parse(jsonStr);
+
+        // Handle object wrappers vs direct array
+        if (!Array.isArray(parsed)) {
+          console.log(
+            `[VLM] Batch ${batchIndex} response is an object, attempting to extract array...`
+          );
+          // Try common wrapper keys or just take the first array property found
+          parsed =
+            parsed.results ||
+            parsed.frames ||
+            parsed.images ||
+            parsed.data ||
+            Object.values(parsed).find((v) => Array.isArray(v));
+
+          if (!Array.isArray(parsed)) {
+            throw new Error('VLM response is not an array');
+          }
+        }
+      } catch (_parseError) {
+        console.warn(
+          `Failed to parse VLM response for batch ${batchIndex}:`,
+          content.substring(0, 200)
+        );
+        // Create fallback entries
+        parsed = batch.map((_, i) => ({
+          index: i,
+          description: 'Failed to parse VLM response',
+          activity: 'unknown',
+          apps: [],
+          topics: [],
+        }));
+      }
+
+      // Map results back to global indices with timestamps
+      const batchResults: Array<{
+        index: number;
+        timestamp: number;
+        activity: string;
+        description: string;
+        apps: string[];
+        topics: string[];
+      }> = [];
+
+      for (let i = 0; i < batch.length; i++) {
+        const globalIndex = batchStart + i;
+        const parsedItem = parsed.find((p: any) => p.index === i) || {
+          index: i,
+          description: 'No description',
+          activity: 'unknown',
+          apps: [],
+          topics: [],
+        };
+
+        const result = {
+          index: globalIndex,
+          timestamp: batch[i].timestamp,
+          activity: parsedItem.activity || 'unknown',
+          description: parsedItem.description || '',
+          apps: parsedItem.apps || [],
+          topics: parsedItem.topics || [],
+        };
+
+        batchResults.push(result);
+        allResults.push(result);
+      }
+
+      // Report progress per batch for eager saving
+      if (options.onBatchComplete) {
+        options.onBatchComplete(batchResults, batchIndex);
+      }
+
+      const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+      console.log(
+        `[VLM] Batch ${batchIndex}/${totalBatches} complete in ${batchDuration}s`
+      );
+    } catch (error) {
+      console.error(
+        `[VLM] Batch ${batchIndex} failed:`,
+        (error as Error).message
+      );
+      // Add fallback entries for failed batch
+      for (let i = 0; i < batch.length; i++) {
+        allResults.push({
+          index: batchStart + i,
+          timestamp: batch[i].timestamp,
+          activity: 'error',
+          description: `VLM processing failed: ${(error as Error).message}`,
+          apps: [],
+          topics: [],
+        });
+      }
+    }
+  }
+
+  return allResults;
 }
 
 async function extractTopicsWithOllama(

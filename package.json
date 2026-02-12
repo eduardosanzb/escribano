@@ -15,7 +15,8 @@
     "check": "biome ci .",
     "escribano": "tsx --env-file=.env src/index.ts",
     "db:reset": "rm -f ~/.escribano/escribano.db",
-    "ollama": "OLLAMA_NUM_PARALLEL=8 OLLAMA_MAX_LOADED_MODELS=3 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=40000 ollama serve"
+    "ollama": "OLLAMA_NUM_PARALLEL=4 OLLAMA_MAX_LOADED_MODELS=3 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=262144 ollama serve",
+    "ollama-2": "OLLAMA_NUM_PARALLEL=1 OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=262144 ollama serve"
   },
   "keywords": [],
   "author": "",

@@ -17,11 +17,11 @@ Dependencies point inward. The domain layer knows **nothing** about adapters, da
 │                     INFRASTRUCTURE (Adapters)                   │
 │   (cap, whisper, ffmpeg, ollama, fs)                            │
 │   (Naming: [port].[implementation].adapter.ts)                  │
-├─────────────────────────────────────────────────────────────────┤
+│├─────────────────────────────────────────────────────────────────┤
 │                     APPLICATION (Use Cases)                     │
 │   (ProcessSession, ClassifySession, GenerateArtifact)           │
 │   (Orchestrates the Domain and calls Ports)                     │
-├─────────────────────────────────────────────────────────────────┤
+│├─────────────────────────────────────────────────────────────────┤
 │                       DOMAIN (Core)                             │
 │   (Entities: Session, Artifact)                                 │
 │   (Value Objects: Transcript, VisualLog, Classification)        │
@@ -46,9 +46,9 @@ State changes emit domain events, enabling loose coupling and event-driven autom
 - `SessionClassified`: The AI has determined the session type.
 - `ArtifactGenerated`: A document has been created.
 
-## Domain Model (v2: Context-First)
+## Domain Model (v3: VLM-First)
 
-> **Note**: This model replaces the Session-centric v1 model. See ADR-003 for rationale.
+> **Note**: This model evolves the v2 model to a VLM-first approach. See ADR-005 for rationale.
 
 ### Aggregate Roots
 
@@ -78,13 +78,13 @@ erDiagram
         string recordingId FK
         string type "visual|audio"
         number timestamp
-        string ocrText "nullable"
         string imagePath "nullable"
         string vlmDescription "nullable"
+        string activityType "nullable"
         string text "nullable"
         string audioSource "nullable"
         string audioType "nullable"
-        blob embedding "nullable"
+        blob embedding "nullable (disabled in v3)"
     }
 
     Context {
@@ -126,9 +126,9 @@ erDiagram
 - References original source metadata
 
 **Observation** - Timestamped evidence from a recording
-- Visual: frame + OCR text + optional VLM description
+- Visual: frame + VLM description + Activity Type
 - Audio: transcript segment + source (mic/system) + type (speech/silence/music)
-- Immutable content, can add enrichments (vlmDescription)
+- Immutable content, can add enrichments
 
 **Context** - Semantic label, cross-recording
 - Types: project, app, url, topic, etc. (extensible)
@@ -146,11 +146,13 @@ erDiagram
 
 ---
 
-## Processing Pipeline (v2)
+## Processing Pipeline (v3: VLM-First)
+
+> **See ADR-005 for detailed rationale.**
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      PROCESSING PIPELINE (v2)                                │
+│                      PROCESSING PIPELINE (v3)                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌─────────────┐                                                            │
@@ -159,46 +161,46 @@ erDiagram
 │         │                                                                   │
 │         ▼                                                                   │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                         EXTRACTION                                       ││
-│  ├──────────────────────────────────┬──────────────────────────────────────┤│
-│  │         VISUAL TRACK             │           AUDIO TRACK                ││
-│  │  FFmpeg → Tesseract → OCR        │  Silero VAD → Whisper → Transcript   ││
-│  │  Optional: VLM for sparse frames │  + Hallucination filtering           ││
-│  └──────────────────────────────────┴──────────────────────────────────────┘│
+│  │                      FRAME SAMPLING                                      ││
+│  │  Adaptive Sampling: 10s base + gap fill (>15s)                          ││
+│  │  Output: ~25% of original frames                                        ││
+│  └──────────────────────────────────────────────────────────────────────────┘│
 │         │                                                                   │
 │         ▼                                                                   │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                         CLUSTERING                                       ││
-│  │  1. Embed observations (nomic-embed-text on OCR + audio text)           ││
-│  │  2. Cluster by semantic similarity (not visual CLIP)                    ││
-│  │  3. Each cluster = proto-TopicBlock                                     ││
-│  └─────────────────────────────────────────────────────────────────────────┘│
+│  │                      VLM BATCH INFERENCE                                 ││
+│  │  1. Batch 10 images per request                                         ││
+│  │  2. VLM (Qwen3-VL-8B) identifies activity & context                     ││
+│  │  3. Store results in Observation entity                                 ││
+│  └──────────────────────────────────────────────────────────────────────────┘│
+│         │                                                                   │
+│         ▼                                                                   │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                      ACTIVITY SEGMENTATION                               ││
+│  │  1. Group consecutive observations by activity continuity                ││
+│  │  2. Each segment = TopicBlock                                           ││
+│  └──────────────────────────────────────────────────────────────────────────┘│
+│         │                                                                   │
+│         ▼                                                                   │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                      TEMPORAL ALIGNMENT                                  ││
+│  │  Attach audio transcripts to TopicBlocks by timestamp overlap           ││
+│  │  (Eliminates unreliable semantic embedding merge)                        ││
+│  └──────────────────────────────────────────────────────────────────────────┘│
 │         │                                                                   │
 │         ▼                                                                   │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
 │  │                     CONTEXT DERIVATION                                   ││
-│  │  For each cluster:                                                      ││
-│  │    1. LLM analyzes observations → extracts signals                      ││
-│  │    2. Context matching:                                                 ││
-│  │       - Exact name match → reuse existing Context                       ││
-│  │       - Fuzzy/embedding match → suggest merge                           ││
-│  │       - No match → create new Context                                   ││
-│  │    3. Create ObservationContext links                                   ││
-│  │    4. Form TopicBlock referencing Context(s)                            ││
-│  └─────────────────────────────────────────────────────────────────────────┘│
+│  │  Extract labels (apps, topics) from VLM descriptions                     ││
+│  │  Match to existing Contexts or create new                               ││
+│  └──────────────────────────────────────────────────────────────────────────┘│
 │         │                                                                   │
 │         ▼                                                                   │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
 │  │                     ARTIFACT GENERATION                                  ││
-│  │  Source: TopicBlock(s) → single-recording artifact                      ││
-│  │          Context(s) → cross-recording artifact                          ││
-│  │  Observations provide imagePath for screenshot embedding                ││
-│  └─────────────────────────────────────────────────────────────────────────┘│
-│         │                                                                   │
-│         ▼                                                                   │
-│  ┌─────────────┐                                                            │
-│  │  PUBLISH    │  Sync to Outline, export, etc.                             │
-│  └─────────────┘                                                            │
+│  │  Run OCR-on-demand on keyframes for maximum code context                 ││
+│  │  Combine VLM + Audio + OCR text into final documents                     ││
+│  └──────────────────────────────────────────────────────────────────────────┘│
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -282,7 +284,7 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 
 ---
 
-## Ports (Updated)
+## Ports (v3)
 
 | Port | Adapter | Purpose |
 |------|---------|---------|
@@ -290,8 +292,7 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 | `TranscriptionService` | `transcription.whisper.adapter.ts` | Audio → Text (whisper.cpp) |
 | `VideoService` | `video.ffmpeg.adapter.ts` | Frame extraction, visual indexing |
 | `AudioPreprocessor` | `audio.silero.adapter.ts` | VAD segmentation & cleanup |
-| `IntelligenceService` | `intelligence.ollama.adapter.ts` | LLM classification & generation |
-| `EmbeddingService` | `embedding.ollama.adapter.ts` | Text → Vector embeddings |
+| `IntelligenceService` | `intelligence.ollama.adapter.ts` | VLM classification & generation |
+| `EmbeddingService` | `embedding.ollama.adapter.ts` | (Disabled in v3, kept for future) |
 | `StorageService` | `storage.fs.adapter.ts` | Persist sessions/artifacts |
 | `PublishingService` | `publishing.outline.adapter.ts` | Sync to Outline wiki |
-

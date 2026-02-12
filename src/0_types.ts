@@ -384,6 +384,33 @@ export interface IntelligenceService {
     images: Array<{ imagePath: string; clusterId: number; timestamp: number }>,
     prompt?: string
   ): Promise<VisualDescriptions>;
+  describeImageBatch(
+    images: Array<{ imagePath: string; timestamp: number }>,
+    config?: {
+      batchSize?: number;
+      model?: string;
+      onBatchComplete?: (
+        results: Array<{
+          index: number;
+          timestamp: number;
+          activity: string;
+          description: string;
+          apps: string[];
+          topics: string[];
+        }>,
+        batchIndex: number
+      ) => void;
+    }
+  ): Promise<
+    Array<{
+      index: number;
+      timestamp: number;
+      activity: string;
+      description: string;
+      apps: string[];
+      topics: string[];
+    }>
+  >;
   generate(
     artifactType: ArtifactType,
     context: {

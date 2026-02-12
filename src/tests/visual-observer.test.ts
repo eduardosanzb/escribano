@@ -116,6 +116,7 @@ describe('Visual Observer Pipeline', () => {
       extractMetadata: vi.fn(),
       generate: vi.fn(),
       describeImages: vi.fn().mockResolvedValue(mockVisualDescriptions),
+      describeImageBatch: vi.fn(),
       embedText: vi.fn(),
       extractTopics: vi.fn(),
     };
@@ -186,6 +187,7 @@ describe('Visual Observer Pipeline', () => {
       extractMetadata: vi.fn(),
       generate: vi.fn(),
       describeImages: vi.fn(), // Should NOT be called
+      describeImageBatch: vi.fn(),
       embedText: vi.fn(),
       extractTopics: vi.fn(),
     };

@@ -24,7 +24,7 @@ export interface DbRecording {
     | 'block_formation'
     | 'complete'
     | null;
-  source_type: 'cap' | 'meetily' | 'raw';
+  source_type: 'cap' | 'meetily' | 'raw' | 'file';
   source_metadata: string | null; // JSON
   error_message: string | null;
   created_at: string;

@@ -425,6 +425,10 @@ export interface IntelligenceService {
     options?: { batchSize?: number }
   ): Promise<number[][]>;
   extractTopics(observations: DbObservation[]): Promise<string[]>;
+  generateText(
+    prompt: string,
+    options?: { model?: string; expectJson?: boolean }
+  ): Promise<string>;
 }
 
 export interface StorageService {

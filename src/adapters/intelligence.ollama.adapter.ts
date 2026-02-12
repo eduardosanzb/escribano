@@ -70,6 +70,8 @@ export function createOllamaIntelligenceService(
       embedTextWithOllama(texts, parsedConfig, options),
     extractTopics: (observations) =>
       extractTopicsWithOllama(observations, parsedConfig),
+    generateText: (prompt, options) =>
+      generateTextWithOllama(prompt, parsedConfig, options),
   };
 }
 
@@ -605,6 +607,33 @@ Rules:
   } catch (error) {
     console.warn('Topic extraction failed:', error);
     return [];
+  }
+}
+
+async function generateTextWithOllama(
+  prompt: string,
+  config: IntelligenceConfig,
+  options?: { model?: string; expectJson?: boolean }
+): Promise<string> {
+  const model = options?.model || config.generationModel || config.model;
+  const expectJson = options?.expectJson ?? false;
+
+  try {
+    const result = await callOllama(prompt, config, {
+      expectJson,
+      model,
+    });
+
+    // If expectJson, result might be an object - stringify it
+    if (expectJson && typeof result === 'object') {
+      return JSON.stringify(result, null, 2);
+    }
+
+    // Otherwise return as string
+    return String(result);
+  } catch (error) {
+    console.error('Text generation failed:', (error as Error).message);
+    throw error;
   }
 }
 

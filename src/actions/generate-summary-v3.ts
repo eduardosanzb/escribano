@@ -1,13 +1,13 @@
 /**
  * Escribano - Generate Summary V3
  *
- * Generates a work session summary from V3 processed TopicBlocks.
+ * Generates a work session summary from V3 processed TopicBlocks using LLM.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import type { Repositories } from '../0_types.js';
+import type { IntelligenceService, Repositories } from '../0_types.js';
 import { log } from '../pipeline/context.js';
 
 export interface SummaryArtifact {
@@ -23,6 +23,8 @@ export interface GenerateSummaryOptions {
   recordingId: string;
   /** Output directory (defaults to ~/.escribano/artifacts) */
   outputDir?: string;
+  /** Skip LLM and use template fallback */
+  useTemplate?: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ export interface GenerateSummaryOptions {
 export async function generateSummaryV3(
   recordingId: string,
   repos: Repositories,
+  intelligence: IntelligenceService,
   options: GenerateSummaryOptions
 ): Promise<SummaryArtifact> {
   log(
@@ -60,19 +63,14 @@ export async function generateSummaryV3(
 
   log('info', `[Summary V3] Found ${topicBlocks.length} TopicBlocks`);
 
-  // Get all observations for transcript data
-  const observations = repos.observations.findByRecording(recordingId);
-  const visualObs = observations.filter(
-    (o) => o.type === 'visual' && o.vlm_description
-  );
-  const audioObs = observations.filter((o) => o.type === 'audio' && o.text);
-
   // Build sections from TopicBlocks
   const sections: Array<{
     activity: string;
     duration: number;
     description: string;
     transcript: string;
+    apps: string[];
+    topics: string[];
     startTime: number;
     endTime: number;
   }> = [];
@@ -80,32 +78,13 @@ export async function generateSummaryV3(
   for (const block of topicBlocks) {
     const classification = JSON.parse(block.classification || '{}');
 
-    // Get observations within this block's time range
-    const blockObs = visualObs.filter(
-      (o) =>
-        o.timestamp >= classification.start_time &&
-        o.timestamp <= classification.end_time
-    );
-
-    const blockAudio = audioObs.filter(
-      (o) =>
-        o.timestamp >= classification.start_time &&
-        o.timestamp <= classification.end_time
-    );
-
-    const description = blockObs
-      .map((o) => o.vlm_description)
-      .filter(Boolean)
-      .join('\n');
-    const transcript = blockAudio
-      .map((o) => `[${o.audio_source?.toUpperCase()}] ${o.text}`)
-      .join('\n');
-
     sections.push({
       activity: classification.activity_type || 'unknown',
       duration: block.duration || classification.duration || 0,
-      description,
-      transcript,
+      description: classification.key_description || '',
+      transcript: classification.combined_transcript || '',
+      apps: classification.apps || [],
+      topics: classification.topics || [],
       startTime: classification.start_time || 0,
       endTime: classification.end_time || 0,
     });
@@ -119,12 +98,22 @@ export async function generateSummaryV3(
     `[Summary V3] Building summary from ${sections.length} sections...`
   );
 
-  // Build the summary directly (skip LLM for MVP - just format nicely)
-  const summaryContent = formatSummary(
-    sections,
-    recording.duration,
-    recording.id
-  );
+  // Generate summary using LLM or template
+  let summaryContent: string;
+  const skipLlm =
+    options.useTemplate || process.env.ESCRIBANO_SKIP_LLM === 'true';
+
+  if (skipLlm) {
+    log('info', '[Summary V3] Using template fallback (LLM skipped)');
+    summaryContent = formatSummary(sections, recording.duration, recording.id);
+  } else {
+    log('info', '[Summary V3] Generating with LLM...');
+    summaryContent = await generateLlmSummary(
+      sections,
+      recording,
+      intelligence
+    );
+  }
 
   // Ensure output directory exists
   const outputDir =
@@ -151,7 +140,94 @@ export async function generateSummaryV3(
 }
 
 /**
- * Format sections into a readable markdown summary.
+ * Generate summary using LLM.
+ */
+async function generateLlmSummary(
+  sections: Array<{
+    activity: string;
+    duration: number;
+    description: string;
+    transcript: string;
+    apps: string[];
+    topics: string[];
+    startTime: number;
+    endTime: number;
+  }>,
+  recording: { id: string; duration: number; captured_at: string },
+  intelligence: IntelligenceService
+): Promise<string> {
+  // Read prompt template
+  const promptPath = path.join(process.cwd(), 'prompts', 'summary-v3.md');
+  let promptTemplate: string;
+
+  try {
+    promptTemplate = await readFile(promptPath, 'utf-8');
+  } catch {
+    // Fallback if prompt file not found
+    log('warn', '[Summary V3] Prompt template not found, using default');
+    promptTemplate = `Generate a summary of this work session.\n\nSession Duration: {{SESSION_DURATION}} minutes\nActivities: {{ACTIVITY_COUNT}}\n\n{{ACTIVITY_TIMELINE}}`;
+  }
+
+  // Build activity timeline
+  const activityTimeline = sections
+    .map((section, i) => {
+      const startMin = Math.round(section.startTime / 60);
+      const durationMin = Math.round(section.duration / 60);
+      const startTimeStr = `${Math.floor(section.startTime / 60)}:${Math.floor(
+        section.startTime % 60
+      )
+        .toString()
+        .padStart(2, '0')}`;
+      const endTimeStr = `${Math.floor(section.endTime / 60)}:${Math.floor(
+        section.endTime % 60
+      )
+        .toString()
+        .padStart(2, '0')}`;
+
+      return `### Segment ${i + 1}: ${section.activity} (${startTimeStr} - ${endTimeStr}, ${durationMin} minutes)
+
+**Description:**
+${section.description || 'No description available'}
+
+**Apps:** ${section.apps.join(', ') || 'None detected'}
+**Topics:** ${section.topics.join(', ') || 'None detected'}
+
+${section.transcript ? `**Audio Transcript:**\n${section.transcript}` : '*No audio transcript*'}
+`;
+    })
+    .join('\n---\n\n');
+
+  // Replace template variables
+  const prompt = promptTemplate
+    .replace(
+      '{{SESSION_DURATION}}',
+      String(Math.round(recording.duration / 60))
+    )
+    .replace(
+      '{{SESSION_DATE}}',
+      new Date(recording.captured_at).toLocaleDateString()
+    )
+    .replace('{{ACTIVITY_COUNT}}', String(sections.length))
+    .replace('{{ACTIVITY_TIMELINE}}', activityTimeline);
+
+  // Call LLM
+  try {
+    const result = await intelligence.generateText(prompt, {
+      expectJson: false,
+    });
+    return result;
+  } catch (error) {
+    log(
+      'error',
+      `[Summary V3] LLM generation failed: ${(error as Error).message}`
+    );
+    log('info', '[Summary V3] Falling back to template format');
+    return formatSummary(sections, recording.duration, recording.id);
+  }
+}
+
+/**
+ * Format sections into a readable markdown summary (template fallback).
  */
 function formatSummary(
   sections: Array<{
@@ -159,6 +235,8 @@ function formatSummary(
     duration: number;
     description: string;
     transcript: string;
+    apps: string[];
+    topics: string[];
     startTime: number;
     endTime: number;
   }>,
@@ -195,6 +273,8 @@ This work session consisted of ${sections.length} distinct activities over ${dur
 
 - **Time:** ${startMin} minutes into session
 - **Duration:** ${durationMin} minutes
+- **Apps:** ${section.apps.join(', ') || 'None detected'}
+- **Topics:** ${section.topics.join(', ') || 'None detected'}
 
 **What was happening:**
 ${section.description || '*No visual description available*'}

@@ -30,6 +30,7 @@ import { log, step } from '../pipeline/context.js';
 import {
   adaptiveSample,
   adaptiveSampleWithScenes,
+  calculateAdaptiveBaseInterval,
   getSamplingStats,
   type InputFrame,
 } from '../services/frame-sampling.js';
@@ -169,9 +170,6 @@ export async function processRecordingV3(
 
       if (!shouldSkipStep(recording.processingStep, 'frame_extraction')) {
         extractedFrames = await step('frame-extraction-v3', async () => {
-          recording = advanceStep(recording, 'frame_extraction');
-          updateRecordingInDb(repos, recording);
-
           const framesDir = path.join(
             os.tmpdir(),
             'escribano',
@@ -187,6 +185,11 @@ export async function processRecordingV3(
           );
 
           log('info', `[V3] Extracted ${frames.length} frames`);
+
+          // Only advance step after successful extraction
+          recording = advanceStep(recording, 'frame_extraction');
+          updateRecordingInDb(repos, recording);
+
           return frames;
         });
       } else {
@@ -248,9 +251,6 @@ export async function processRecordingV3(
       // Step: VLM Batch Inference (replaces OCR + Embedding + Clustering)
       if (!shouldSkipStep(recording.processingStep, 'vlm_enrichment')) {
         await step('vlm-batch-inference', async () => {
-          recording = advanceStep(recording, 'vlm_enrichment');
-          updateRecordingInDb(repos, recording);
-
           // Adaptive sampling with scene awareness
           log('info', '[V3] Applying adaptive sampling...');
           const sampledFrames =
@@ -258,6 +258,19 @@ export async function processRecordingV3(
               ? adaptiveSampleWithScenes(extractedFrames, sceneChanges)
               : adaptiveSample(extractedFrames);
           const stats = getSamplingStats(extractedFrames, sampledFrames);
+
+          // Log adaptive interval for visibility
+          if (sceneChanges.length > 0) {
+            const adaptiveInterval = calculateAdaptiveBaseInterval(
+              sceneChanges.length,
+              Number(process.env.ESCRIBANO_SAMPLE_INTERVAL) || 10
+            );
+            log(
+              'info',
+              `[V3] Adaptive base interval: ${adaptiveInterval}s (${sceneChanges.length} scenes detected)`
+            );
+          }
+
           log(
             'info',
             `[V3] Sampled ${stats.sampledCount} frames (${stats.reductionPercent}% reduction): ` +
@@ -265,9 +278,15 @@ export async function processRecordingV3(
           );
 
           // Check for already-processed frames (crash-safe resumption)
+          // IMPORTANT: Exclude fallback descriptions ("No description", "Parse error")
           const existingObs = repos.observations
             .findByRecording(recording.id)
-            .filter((o) => o.type === 'visual' && o.vlm_description);
+            .filter((o) => o.type === 'visual' && o.vlm_description)
+            .filter(
+              (o) =>
+                !o.vlm_description?.startsWith('No description') &&
+                !o.vlm_description?.startsWith('Parse error')
+            );
 
           const processedTimestamps = new Set(
             existingObs.map((o) => o.timestamp)
@@ -291,7 +310,8 @@ export async function processRecordingV3(
           } else {
             // VLM batch inference with eager saving per batch
             log('info', '[V3] Starting VLM batch inference...');
-            await batchDescribeFrames(sampledFrames, adapters.intelligence, {
+            await batchDescribeFrames(framesToProcess, adapters.intelligence, {
+              recordingId: recording.id,
               onBatchComplete: (batchResults, batchIndex) => {
                 // Eager save: persist each batch immediately
                 const observations: DbObservationInsert[] = batchResults.map(
@@ -329,6 +349,10 @@ export async function processRecordingV3(
               `[V3] VLM complete: ${allVisualObs.length} total visual observations`
             );
           }
+
+          // Only advance step after all VLM processing is complete
+          recording = advanceStep(recording, 'vlm_enrichment');
+          updateRecordingInDb(repos, recording);
         });
       } else {
         log('info', '[V3] Skipping VLM inference (already completed)');
@@ -337,9 +361,6 @@ export async function processRecordingV3(
       // Phase 2 - Activity Segmentation & TopicBlock Formation
       if (!shouldSkipStep(recording.processingStep, 'block_formation')) {
         await step('activity-segmentation-and-alignment', async () => {
-          recording = advanceStep(recording, 'context_creation');
-          updateRecordingInDb(repos, recording);
-
           // Get all observations for this recording
           const allObservations = repos.observations.findByRecording(
             recording.id
@@ -388,10 +409,6 @@ export async function processRecordingV3(
             'info',
             `[V3] Aligned audio: ${alignStats.segmentsWithAudio}/${alignStats.totalSegments} segments have transcripts (${alignStats.totalTranscriptSegments} total transcript segments)`
           );
-
-          // Create TopicBlocks from enriched segments
-          recording = advanceStep(recording, 'block_formation');
-          updateRecordingInDb(repos, recording);
 
           log(
             'info',
@@ -459,6 +476,13 @@ export async function processRecordingV3(
           }
 
           log('info', `[V3] Created ${blockCount} TopicBlocks`);
+
+          // Only advance steps after all processing is complete
+          recording = advanceStep(recording, 'context_creation');
+          updateRecordingInDb(repos, recording);
+
+          recording = advanceStep(recording, 'block_formation');
+          updateRecordingInDb(repos, recording);
         });
       } else {
         log(

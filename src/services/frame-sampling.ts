@@ -131,6 +131,30 @@ export function adaptiveSample(
 }
 
 /**
+ * Calculate adaptive base interval based on scene change density.
+ *
+ * When scene changes are dense, they already provide good timeline coverage,
+ * so we increase the base interval to avoid excessive frames.
+ *
+ * Thresholds:
+ * - < 20 scenes: 10s base (scenes too sparse, need dense base sampling)
+ * - 20-50 scenes: 20s base (moderate coverage from scenes)
+ * - > 50 scenes: 30s base (scenes provide excellent coverage)
+ *
+ * @param sceneCount - Number of detected scene changes
+ * @param configBaseInterval - User-configured base interval (used as minimum)
+ * @returns Adjusted base interval in seconds
+ */
+export function calculateAdaptiveBaseInterval(
+  sceneCount: number,
+  configBaseInterval: number
+): number {
+  if (sceneCount > 50) return Math.max(configBaseInterval, 30);
+  if (sceneCount > 20) return Math.max(configBaseInterval, 20);
+  return configBaseInterval;
+}
+
+/**
  * Adaptively sample frames with scene change awareness.
  *
  * Strategy:
@@ -151,6 +175,22 @@ export function adaptiveSampleWithScenes(
   const cfg: SamplingConfig = { ...DEFAULT_CONFIG, ...config };
 
   if (allFrames.length === 0) return [];
+
+  // Adjust base interval based on scene density
+  cfg.baseIntervalSeconds = calculateAdaptiveBaseInterval(
+    sceneChanges.length,
+    cfg.baseIntervalSeconds
+  );
+
+  // When scene density is high, also increase gap threshold to prevent
+  // gap filling between closely-spaced scene changes
+  if (sceneChanges.length > 50) {
+    cfg.gapThresholdSeconds = Math.max(cfg.gapThresholdSeconds, 60);
+    cfg.gapFillIntervalSeconds = Math.max(cfg.gapFillIntervalSeconds, 10);
+  } else if (sceneChanges.length > 20) {
+    cfg.gapThresholdSeconds = Math.max(cfg.gapThresholdSeconds, 40);
+    cfg.gapFillIntervalSeconds = Math.max(cfg.gapFillIntervalSeconds, 5);
+  }
 
   // Sort frames by timestamp
   const sortedFrames = [...allFrames].sort((a, b) => a.timestamp - b.timestamp);

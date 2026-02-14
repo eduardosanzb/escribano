@@ -14,6 +14,8 @@ export interface VLMBatchConfig {
   batchSize: number;
   /** Vision model to use (default: qwen3-vl:4b) */
   model: string;
+  /** Recording ID for debug output */
+  recordingId?: string;
   /** Callback invoked after each batch is processed */
   onBatchComplete?: (
     results: Array<{
@@ -86,11 +88,15 @@ export async function batchDescribeFrames(
   const results = await intelligence.describeImageBatch(images, {
     batchSize: cfg.batchSize,
     model: cfg.model,
+    recordingId: cfg.recordingId,
     onBatchComplete: cfg.onBatchComplete,
   });
 
-  console.log(results);
-  debugLog(results);
+  debugLog(
+    '[VLM Batch] Results:',
+    JSON.stringify(results.slice(0, 3), null, 2),
+    '...'
+  );
   // Enrich results with image paths
   const enrichedResults: FrameDescription[] = results.map((r, i) => ({
     ...r,

@@ -389,6 +389,7 @@ export interface IntelligenceService {
     config?: {
       batchSize?: number;
       model?: string;
+      recordingId?: string;
       onBatchComplete?: (
         results: Array<{
           index: number;

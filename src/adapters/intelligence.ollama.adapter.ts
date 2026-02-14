@@ -343,23 +343,33 @@ function loadClassifyPrompt(
 
 /**
  * Build VLM prompt for batch image analysis.
- * Single prompt - thinking parser handles incomplete output.
+ * Explicit about JSON ARRAY format to avoid numbered-key objects.
  */
 function buildVLMImageBatchPrompt(batchLength: number): string {
   return `Analyze these ${batchLength} screenshots from a developer's screen recording.
 
-For each image (index 0 to ${batchLength - 1}), provide:
+CRITICAL OUTPUT FORMAT:
+- Output a JSON ARRAY that starts with [ and ends with ]
+- DO NOT output an object with string keys like {"0": {...}, "1": {...}}
+- Each item MUST have "index" as a NUMBER field (not string key)
+
+Required format:
+[
+  {"index": 0, "description": "...", "activity": "...", "apps": [...], "topics": [...]},
+  {"index": 1, "description": "...", "activity": "...", "apps": [...], "topics": [...]},
+  ... (all ${batchLength} items)
+]
+
+For each image (index 0 to ${batchLength - 1}):
 - description: What is shown (1-2 sentences)
 - activity: Primary activity (debugging/coding/reading/meeting/browsing/terminal/other)
 - apps: Visible applications (e.g., ["VS Code", "Chrome"])
-- topics: Key topics or projects (e.g., ["authentication"])
-
-Think through each image carefully, then output a JSON array.`;
+- topics: Key topics or projects (e.g., ["authentication"])`;
 }
 
 /**
  * Try to parse content field directly into structured JSON.
- * Returns empty array if parsing fails.
+ * Returns empty array if parsing fails or format is wrong.
  */
 function tryParseContent(
   content: string,
@@ -377,30 +387,14 @@ function tryParseContent(
     }
 
     const rawParsed = JSON.parse(jsonStr);
-    let arrayData: unknown = rawParsed;
 
-    // Handle wrappers
+    // Must be an array - reject objects (including numbered keys)
     if (!Array.isArray(rawParsed)) {
-      arrayData =
-        rawParsed.results ||
-        rawParsed.frames ||
-        rawParsed.images ||
-        rawParsed.data;
-
-      if (!arrayData && rawParsed.index !== undefined) {
-        debugLog('[tryParseContent] Single item detected, wrapping in array');
-        arrayData = [rawParsed];
-      }
-
-      if (!arrayData && Object.keys(rawParsed).every((k) => /^\d+$/.test(k))) {
-        debugLog(
-          '[tryParseContent] Numbered keys detected, converting to array'
-        );
-        arrayData = Object.values(rawParsed);
-      }
+      debugLog('[tryParseContent] Response is not an array, rejecting');
+      return [];
     }
 
-    const validation = vlmBatchResponseSchema.safeParse(arrayData);
+    const validation = vlmBatchResponseSchema.safeParse(rawParsed);
     if (validation.success) {
       debugLog(
         `[tryParseContent] Parsed ${validation.data.length}/${batchLength} items from content`
@@ -424,26 +418,29 @@ async function parseVLMThinkingField(
   thinking: string,
   content: string,
   batchLength: number,
-  config: IntelligenceConfig
+  config: IntelligenceConfig,
+  recordingId: string,
+  batchIndex: number
 ): Promise<z.infer<typeof vlmBatchItemSchema>[]> {
   debugLog('[VLM Parser] Starting with thinking length:', thinking.length);
 
   const parsePrompt = `Extract structured data from this image analysis.
 
-The analysis covers ${batchLength} images (index 0 to ${batchLength - 1}).
+CRITICAL OUTPUT FORMAT:
+- Output a JSON ARRAY that starts with [ and ends with ]
+- DO NOT output an object with string keys like {"0": {...}, "1": {...}}
+- Each item MUST have "index" as a NUMBER field (not string key)
 
-Partial output from content field:
-${content || '(empty)'}
-
-Full analysis from thinking field:
-${thinking}
-
-Return a JSON array with EXACTLY ${batchLength} objects:
+Required format:
 [
   {"index": 0, "description": "...", "activity": "...", "apps": [...], "topics": [...]},
-  {"index": 1, ...},
-  ...
+  {"index": 1, "description": "...", "activity": "...", "apps": [...], "topics": [...]},
+  ... (all ${batchLength} items, indices 0 to ${batchLength - 1})
 ]
+
+The analysis covers ${batchLength} images. Here is the thinking field:
+
+${thinking}
 
 Output ONLY the JSON array.`;
 
@@ -456,21 +453,34 @@ Output ONLY the JSON array.`;
     num_predict: 4000,
   });
 
-  debugLog(`[VLM Parser] Response received in ${Date.now() - requestStart}ms`);
+  const duration = Date.now() - requestStart;
+  debugLog(`[VLM Parser] Response received in ${duration}ms`);
   debugLog(
     '[VLM Parser] Raw result type:',
     typeof result,
-    Array.isArray(result) ? `(array of ${result.length})` : ''
+    Array.isArray(result) ? `(array of ${result.length})` : '(not array!)'
   );
 
-  // Handle single item vs array
-  const parsed = Array.isArray(result) ? result : [result];
+  // Save parser response for debugging
+  await saveVlmResponse(recordingId, batchIndex, {
+    prompt: parsePrompt,
+    response: { result, duration },
+    timestamp: new Date().toISOString(),
+  });
+
+  // Must be an array - reject objects (including numbered keys)
+  if (!Array.isArray(result)) {
+    debugLog('[VLM Parser] Result is not an array, rejecting');
+    throw new Error('Parser returned object instead of array');
+  }
 
   // Validate with Zod
-  const validation = vlmBatchResponseSchema.safeParse(parsed);
+  const validation = vlmBatchResponseSchema.safeParse(result);
   if (!validation.success) {
     debugLog('[VLM Parser] Validation failed:', validation.error.message);
-    throw new Error(`Thinking parser failed: ${validation.error.message}`);
+    throw new Error(
+      `Thinking parser validation failed: ${validation.error.message}`
+    );
   }
 
   debugLog(
@@ -530,7 +540,6 @@ async function describeImageBatchWithOllama(
   }> = [];
 
   let successCount = 0;
-  let failCount = 0;
 
   // Process in batches
   for (
@@ -646,20 +655,15 @@ async function describeImageBatchWithOllama(
           `[VLM] Batch ${batchIndex}: Content has ${parsed.length}/${batch.length} items, parsing thinking field...`
         );
 
-        try {
-          parsed = await parseVLMThinkingField(
-            thinking,
-            content,
-            batch.length,
-            config
-          );
-          usedThinkingParser = true;
-        } catch (parseError) {
-          console.error(
-            `[VLM] Batch ${batchIndex}: Thinking parser failed: ${(parseError as Error).message}`
-          );
-          debugLog('[VLM Parser] Error details:', parseError);
-        }
+        parsed = await parseVLMThinkingField(
+          thinking,
+          content,
+          batch.length,
+          config,
+          options.recordingId || 'unknown',
+          batchIndex
+        );
+        usedThinkingParser = true;
       }
 
       // 4. Validate final count
@@ -711,17 +715,17 @@ async function describeImageBatchWithOllama(
         `[VLM] Batch ${batchIndex}/${totalBatches} ✓ (${duration}s${usedThinkingParser ? ', thinking parser' : ''})`
       );
     } catch (error) {
-      failCount++;
       console.error(
         `[VLM] Batch ${batchIndex}/${totalBatches} ✗: ${(error as Error).message}`
       );
       debugLog(`[VLM Batch ${batchIndex}] Full error:`, error);
-      // Continue to next batch - partial results are acceptable
+      // Stop on any error - don't continue with partial results
+      throw error;
     }
   }
 
   console.log(
-    `\n[VLM] Complete: ${successCount}/${successCount + failCount} batches succeeded (${allResults.length} frames)`
+    `\n[VLM] Complete: ${successCount}/${successCount} batches succeeded (${allResults.length} frames)`
   );
 
   return allResults;

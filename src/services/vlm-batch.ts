@@ -21,6 +21,7 @@ export interface VLMBatchConfig {
     results: Array<{
       index: number;
       timestamp: number;
+      imagePath: string;
       activity: string;
       description: string;
       apps: string[];
@@ -97,11 +98,26 @@ export async function batchDescribeFrames(
     JSON.stringify(results.slice(0, 3), null, 2),
     '...'
   );
-  // Enrich results with image paths
-  const enrichedResults: FrameDescription[] = results.map((r, i) => ({
-    ...r,
-    imagePath: frames[i]?.imagePath || '',
-  }));
+
+  // Log sample results with their paths
+  console.log('[VLM Batch] Results received:');
+  results.slice(0, 3).forEach((r, i) => {
+    const path = r.imagePath || 'NO_PATH';
+    console.log(
+      `  [${i}] ${path.split('/').pop()} - ${r.description?.slice(0, 50)}...`
+    );
+  });
+  if (results.length > 3) {
+    console.log(`  ... and ${results.length - 3} more`);
+  }
+
+  // Validate all results have imagePath
+  const missingPaths = results.filter((r) => !r.imagePath);
+  if (missingPaths.length > 0) {
+    console.warn(
+      `[VLM Batch] WARNING: ${missingPaths.length} results missing imagePath!`
+    );
+  }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   const fps = ((frames.length / (Date.now() - startTime || 1)) * 1000).toFixed(
@@ -111,7 +127,8 @@ export async function batchDescribeFrames(
     `[VLM Batch] Completed ${frames.length} frames in ${duration}s (${fps} fps)`
   );
 
-  return enrichedResults;
+  // Results should already have imagePath from the adapter
+  return results as FrameDescription[];
 }
 
 /**

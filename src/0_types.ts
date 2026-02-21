@@ -394,6 +394,7 @@ export interface IntelligenceService {
         results: Array<{
           index: number;
           timestamp: number;
+          imagePath: string;
           activity: string;
           description: string;
           apps: string[];
@@ -410,6 +411,7 @@ export interface IntelligenceService {
       description: string;
       apps: string[];
       topics: string[];
+      imagePath: string;
     }>
   >;
   generate(

@@ -14,14 +14,14 @@
 - **Linting/Formatting**: Biome
 - **Database**: SQLite (better-sqlite3)
 - **Transcription**: whisper.cpp (whisper-cli)
-- **VLM**: Ollama (local, qwen3-vl:4b) - frame analysis
+- **VLM**: Ollama (local, qwen3-vl:4b) - frame analysis (sequential single-image)
 - **Summary LLM**: Ollama (local, qwen3:32b) - artifact generation
 
 ## Development Environment
 
 - **Machine**: MacBook Pro M4 Max
 - **Unified Memory**: 128GB (Optimized for VLM inference)
-- **Primary VLM Model**: `qwen3-vl:4b` (3.3GB, ~38 tok/s with 8-image batches)
+- **Primary VLM Model**: `qwen3-vl:4b` (3.3GB, ~8s per frame)
 - **Summary Model**: `qwen3:32b` (for high-quality narrative generation)
 
 ## Configuration
@@ -29,7 +29,7 @@
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
 | `ESCRIBANO_VLM_MODEL` | Ollama model for VLM frame analysis | `qwen3-vl:4b` |
-| `ESCRIBANO_VLM_NUM_PREDICT` | Token limit for VLM response (single-image) | `30000` |
+| `ESCRIBANO_VLM_NUM_PREDICT` | Token limit for VLM response (minimum enforced) | `30000` |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
@@ -66,7 +66,7 @@ src/
 │   └── intelligence.ollama.adapter.ts # VLM + LLM inference
 ├── services/                          # Pure business logic (no I/O)
 │   ├── frame-sampling.ts              # Adaptive frame reduction
-│   ├── vlm-batch.ts                   # Multi-image VLM orchestration
+│   ├── vlm-service.ts                 # Sequential VLM orchestration (single-image)
 │   ├── activity-segmentation.ts       # Group by activity continuity
 │   └── temporal-alignment.ts          # Attach audio by timestamp
 ├── db/

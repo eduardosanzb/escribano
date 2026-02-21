@@ -34,7 +34,7 @@ import {
   getSamplingStats,
   type InputFrame,
 } from '../services/frame-sampling.js';
-import { batchDescribeFrames } from '../services/vlm-batch.js';
+import { batchDescribeFrames } from '../services/vlm-service.js';
 
 export interface ProcessRecordingV3Options {
   /** Force reprocessing even if already processed */

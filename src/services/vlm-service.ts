@@ -1,22 +1,20 @@
 /**
- * Escribano - VLM Batch Processing Service
+ * Escribano - VLM Service
  *
- * Orchestrates multi-image VLM inference for frame descriptions.
- * Wraps the intelligence adapter with logging and error handling.
+ * Orchestrates sequential VLM inference for frame descriptions.
+ * Each frame is processed individually for accurate image-description mapping.
  */
 
 import type { IntelligenceService } from '../0_types.js';
 import { debugLog } from '../adapters/intelligence.ollama.adapter.js';
 import type { SampledFrame } from './frame-sampling.js';
 
-export interface VLMBatchConfig {
-  /** Images per VLM request (default: 8) */
-  batchSize: number;
+export interface VLMConfig {
   /** Vision model to use (default: qwen3-vl:4b) */
   model: string;
   /** Recording ID for debug output */
   recordingId?: string;
-  /** Callback invoked after each batch is processed */
+  /** Callback invoked after processing completes */
   onBatchComplete?: (
     results: Array<{
       index: number;
@@ -48,35 +46,32 @@ export interface FrameDescription {
   imagePath: string;
 }
 
-const DEFAULT_CONFIG: VLMBatchConfig = {
-  batchSize: Number(process.env.ESCRIBANO_VLM_BATCH_SIZE) || 8,
+const DEFAULT_CONFIG: VLMConfig = {
   model: process.env.ESCRIBANO_VLM_MODEL || 'qwen3-vl:4b',
 };
 
 /**
- * Process sampled frames through VLM in batches.
+ * Process sampled frames through VLM sequentially (one image at a time).
  *
  * @param frames - Sampled frames from adaptiveSample()
  * @param intelligence - Intelligence service with describeImageBatch
- * @param config - Batch configuration
+ * @param config - Processing configuration
  * @returns Array of frame descriptions with VLM analysis
  */
 export async function batchDescribeFrames(
   frames: SampledFrame[],
   intelligence: IntelligenceService,
-  config: Partial<VLMBatchConfig> = {}
+  config: Partial<VLMConfig> = {}
 ): Promise<FrameDescription[]> {
-  const cfg: VLMBatchConfig = { ...DEFAULT_CONFIG, ...config };
+  const cfg: VLMConfig = { ...DEFAULT_CONFIG, ...config };
 
   if (frames.length === 0) {
-    console.log('[VLM Batch] No frames to process');
+    console.log('[VLM] No frames to process');
     return [];
   }
 
-  console.log(
-    `[VLM Batch] Processing ${frames.length} frames with batch size ${cfg.batchSize}`
-  );
-  console.log(`[VLM Batch] Model: ${cfg.model}`);
+  console.log(`[VLM] Processing ${frames.length} frames sequentially...`);
+  console.log(`[VLM] Model: ${cfg.model}`);
   const startTime = Date.now();
 
   // Prepare input for intelligence service
@@ -85,22 +80,21 @@ export async function batchDescribeFrames(
     timestamp: f.timestamp,
   }));
 
-  // Call the batch API
+  // Call the sequential VLM API
   const results = await intelligence.describeImageBatch(images, {
-    batchSize: cfg.batchSize,
     model: cfg.model,
     recordingId: cfg.recordingId,
     onBatchComplete: cfg.onBatchComplete,
   });
 
   debugLog(
-    '[VLM Batch] Results:',
+    '[VLM] Results:',
     JSON.stringify(results.slice(0, 3), null, 2),
     '...'
   );
 
   // Log sample results with their paths
-  console.log('[VLM Batch] Results received:');
+  console.log('[VLM] Results received:');
   results.slice(0, 3).forEach((r, i) => {
     const path = r.imagePath || 'NO_PATH';
     console.log(
@@ -115,7 +109,7 @@ export async function batchDescribeFrames(
   const missingPaths = results.filter((r) => !r.imagePath);
   if (missingPaths.length > 0) {
     console.warn(
-      `[VLM Batch] WARNING: ${missingPaths.length} results missing imagePath!`
+      `[VLM] WARNING: ${missingPaths.length} results missing imagePath!`
     );
   }
 
@@ -124,7 +118,7 @@ export async function batchDescribeFrames(
     1
   );
   console.log(
-    `[VLM Batch] Completed ${frames.length} frames in ${duration}s (${fps} fps)`
+    `[VLM] Completed ${results.length}/${frames.length} frames in ${duration}s (${fps} fps)`
   );
 
   // Results should already have imagePath from the adapter

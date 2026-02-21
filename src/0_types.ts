@@ -380,14 +380,15 @@ export interface IntelligenceService {
     classification: Classification,
     visualLogs?: VisualLog[]
   ): Promise<TranscriptMetadata>;
+  /** @deprecated Legacy - uses minicpm-v model. Use describeImageBatch for V3 pipeline. */
   describeImages(
     images: Array<{ imagePath: string; clusterId: number; timestamp: number }>,
     prompt?: string
   ): Promise<VisualDescriptions>;
+  /** Sequential VLM processing - one image per request for accurate image-description mapping. */
   describeImageBatch(
     images: Array<{ imagePath: string; timestamp: number }>,
     config?: {
-      batchSize?: number;
       model?: string;
       recordingId?: string;
       onBatchComplete?: (

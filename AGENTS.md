@@ -29,16 +29,17 @@
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
 | `ESCRIBANO_VLM_MODEL` | Ollama model for VLM frame analysis | `qwen3-vl:4b` |
-| `ESCRIBANO_VLM_BATCH_SIZE` | Images per VLM request | `8` |
+| `ESCRIBANO_VLM_NUM_PREDICT` | Token limit for VLM response (single-image) | `30000` |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
 | `ESCRIBANO_VERBOSE` | Enable verbose pipeline logging | `false` |
 | `ESCRIBANO_DEBUG_OLLAMA` | Debug Ollama request/response logging | `false` |
 | `ESCRIBANO_SKIP_LLM` | Skip LLM summary, use template fallback | `false` |
-| `OLLAMA_NUM_PARALLEL` | Ollama inference slots (keep at 1 for VLM) | `1` |
+| `OLLAMA_NUM_PARALLEL` | Ollama inference slots (sequential processing) | `1` |
 
-### Deprecated (V2 only)
+### Deprecated
+- `ESCRIBANO_VLM_BATCH_SIZE` — Batch processing disabled (causes image confusion)
 - `ESCRIBANO_EMBED_MODEL` — Embeddings disabled in V3
 - `ESCRIBANO_EMBED_BATCH_SIZE` — Embeddings disabled in V3
 - `ESCRIBANO_CLUSTER_TIME_WINDOW` — Clustering disabled in V3
@@ -124,7 +125,7 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
    ├─ ffmpeg extracts frames at 2s intervals (~1776 frames/hour)
    ├─ Scene detection (ffmpeg) → timestamps of visual changes
    ├─ Adaptive sampling (10s base + scene changes + gap fill) → ~100-150 frames
-   ├─ VLM batch inference (qwen3-vl:4b, 8 images/batch) → activity + description per frame
+   ├─ VLM sequential inference (qwen3-vl:4b, 1 image/request, 30k tokens) → activity + description per frame
    └─ Save as Observation rows (type='visual', vlm_description)
 
 4. Activity Segmentation

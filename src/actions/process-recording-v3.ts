@@ -308,11 +308,32 @@ export async function processRecordingV3(
               '[V3] All frames already processed, skipping VLM inference'
             );
           } else {
+            // Debug: Log frames being processed
+            log('info', `[V3] Frames to process (${framesToProcess.length}):`);
+            framesToProcess.slice(0, 10).forEach((f, i) => {
+              log(
+                'info',
+                `  [${i}] ${f.imagePath.split('/').pop()} @ ${f.timestamp}s`
+              );
+            });
+            if (framesToProcess.length > 10) {
+              log('info', `  ... and ${framesToProcess.length - 10} more`);
+            }
+
             // VLM batch inference with eager saving per batch
             log('info', '[V3] Starting VLM batch inference...');
             await batchDescribeFrames(framesToProcess, adapters.intelligence, {
               recordingId: recording.id,
               onBatchComplete: (batchResults, batchIndex) => {
+                // Debug: Log results being processed
+                log('info', `[V3] Batch ${batchIndex} results before saving:`);
+                batchResults.slice(0, 3).forEach((desc, i) => {
+                  log(
+                    'info',
+                    `  [${i}] ${desc.imagePath.split('/').pop()} @ ${desc.timestamp}s - ${desc.description?.slice(0, 50)}...`
+                  );
+                });
+
                 // Eager save: persist each batch immediately
                 const observations: DbObservationInsert[] = batchResults.map(
                   (desc) => ({
@@ -321,9 +342,12 @@ export async function processRecordingV3(
                     type: 'visual' as const,
                     timestamp: desc.timestamp,
                     end_timestamp: desc.timestamp,
-                    image_path: sampledFrames[desc.index]?.imagePath || '',
+                    image_path: desc.imagePath, // ← FIXED: Use explicit path from result
                     ocr_text: null,
                     vlm_description: desc.description,
+                    activity_type: desc.activity,
+                    apps: JSON.stringify(desc.apps),
+                    topics: JSON.stringify(desc.topics),
                     embedding: null,
                     text: null,
                     audio_source: null,
@@ -564,6 +588,9 @@ async function processAudioPipeline(
               image_path: null,
               ocr_text: null,
               vlm_description: null,
+              activity_type: null,
+              apps: null,
+              topics: null,
               embedding: null,
             });
           }

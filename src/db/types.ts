@@ -42,6 +42,9 @@ export interface DbObservation {
   image_path: string | null;
   ocr_text: string | null;
   vlm_description: string | null;
+  activity_type: string | null; // VLM: coding, debugging, reading, etc.
+  apps: string | null; // VLM: JSON array of app names
+  topics: string | null; // VLM: JSON array of topics
   text: string | null;
   audio_source: 'mic' | 'system' | null;
   audio_type: 'speech' | 'music' | 'silence' | null;

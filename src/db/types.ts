@@ -9,7 +9,7 @@ export interface DbRecording {
   audio_system_path: string | null;
   duration: number;
   captured_at: string;
-  status: 'raw' | 'processing' | 'processed' | 'error';
+  status: 'raw' | 'processing' | 'processed' | 'published' | 'error';
   processing_step:
     | 'vad'
     | 'transcription'
@@ -42,6 +42,9 @@ export interface DbObservation {
   image_path: string | null;
   ocr_text: string | null;
   vlm_description: string | null;
+  activity_type: string | null; // VLM: coding, debugging, reading, etc.
+  apps: string | null; // VLM: JSON array of app names
+  topics: string | null; // VLM: JSON array of topics
   text: string | null;
   audio_source: 'mic' | 'system' | null;
   audio_type: 'speech' | 'music' | 'silence' | null;

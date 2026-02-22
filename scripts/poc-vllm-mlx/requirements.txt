@@ -1,0 +1,4 @@
+# mlx-vlm POC Dependencies
+# Install with: uv pip install -r requirements.txt
+
+mlx-vlm[torch]>=0.1.0

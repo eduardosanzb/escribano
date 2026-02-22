@@ -12,66 +12,92 @@
 - **Development**: tsx (for running TypeScript directly)
 - **Testing**: Vitest
 - **Linting/Formatting**: Biome
-- **Transcription**: whisper.cpp (via Cap)
-- **LLM**: Future: Ollama (local) or Claude API
+- **Database**: SQLite (better-sqlite3)
+- **Transcription**: whisper.cpp (whisper-cli)
+- **VLM**: Ollama (local, qwen3-vl:4b) - frame analysis (sequential single-image)
+- **Summary LLM**: Ollama (local, qwen3:32b) - artifact generation
 
 ## Development Environment
 
 - **Machine**: MacBook Pro M4 Max
-- **Unified Memory**: 128GB (Optimized for 8B+ models)
-- **Primary Embedding Model**: `qwen3-embedding:8b` (40K Context)
+- **Unified Memory**: 128GB (Optimized for VLM inference)
+- **Primary VLM Model**: `qwen3-vl:4b` (3.3GB, ~8s per frame)
+- **Summary Model**: `qwen3:32b` (for high-quality narrative generation)
 
 ## Configuration
 
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
-| `ESCRIBANO_EMBED_MODEL` | Ollama model for text embeddings | `qwen3-embedding:8b` |
-| `ESCRIBANO_EMBED_BATCH_SIZE` | Number of texts per embedding request | `64` |
-| `ESCRIBANO_EMBED_CONCURRENCY` | Parallel embedding requests | `4` |
-| `OLLAMA_CONTEXT_LENGTH` | Context window size for Ollama | `40000` |
-| `OLLAMA_NUM_PARALLEL` | Ollama inference slots (set when starting Ollama) | `4` |
-| `ESCRIBANO_CLUSTER_TIME_WINDOW` | Max seconds between observations in a cluster | `600` |
-| `ESCRIBANO_CLUSTER_DISTANCE_THRESHOLD` | Max cosine distance for semantic similarity | `0.4` |
+| `ESCRIBANO_VLM_MODEL` | Ollama model for VLM frame analysis | `qwen3-vl:4b` |
+| `ESCRIBANO_VLM_NUM_PREDICT` | Token limit for VLM response (minimum enforced) | `30000` |
+| `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
+| `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
+| `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
+| `ESCRIBANO_VERBOSE` | Enable verbose pipeline logging | `false` |
+| `ESCRIBANO_DEBUG_OLLAMA` | Debug Ollama request/response logging | `false` |
+| `ESCRIBANO_SKIP_LLM` | Skip LLM summary, use template fallback | `false` |
+| `OLLAMA_NUM_PARALLEL` | Ollama inference slots (sequential processing) | `1` |
+
+### Deprecated
+- `ESCRIBANO_VLM_BATCH_SIZE` — Batch processing disabled (causes image confusion)
+- `ESCRIBANO_EMBED_MODEL` — Embeddings disabled in V3
+- `ESCRIBANO_EMBED_BATCH_SIZE` — Embeddings disabled in V3
+- `ESCRIBANO_CLUSTER_TIME_WINDOW` — Clustering disabled in V3
+- `ESCRIBANO_CLUSTER_DISTANCE_THRESHOLD` — Clustering disabled in V3
 
 ## Architecture
 
 This project follows **Clean Architecture** principles with a simplified flat structure.
 
-### Current Implementation (Milestone 3.5)
+### Current Implementation (Milestone 4 — VLM-First MVP)
 
 ```
 src/
-├── 0_types.ts                    # Core types, interfaces, Zod schemas
-├── index.ts                      # CLI entry point
+├── 0_types.ts                         # Core types, interfaces, Zod schemas
+├── index.ts                           # CLI entry point (single command)
 ├── actions/
-│   ├── process-recording-v2.ts   # V2 Pipeline: Recording → Observations → Clusters → Contexts
-│   ├── create-contexts.ts        # Signals → Context entities
-│   ├── create-topic-blocks.ts    # Clusters → TopicBlocks
-│   └── ...
+│   ├── process-recording-v3.ts        # V3 Pipeline: Recording → VLM → Segments → TopicBlocks
+│   └── generate-summary-v3.ts         # V3 Summary: TopicBlocks → LLM → Markdown
 ├── adapters/
-│   ├── capture.cap.adapter.ts
-│   ├── transcription.whisper.adapter.ts
-│   ├── audio.silero.adapter.ts          # VAD preprocessing
-│   ├── video.ffmpeg.adapter.ts
-│   ├── intelligence.ollama.adapter.ts
-│   ├── embedding.ollama.adapter.ts      # Text embeddings
-│   ├── storage.fs.adapter.ts
-│   └── publishing.outline.adapter.ts
-├── services/                     # Pure business logic (no I/O)
-│   ├── clustering.ts             # Agglomerative hierarchical clustering
-│   ├── signal-extraction.ts      # Multi-tier signal extraction
-│   ├── cluster-merge.ts          # Audio-visual cluster fusion
-│   └── vlm-enrichment.ts         # VLM frame selection & description
-├── utils/
-│   ├── ocr.ts                    # OCR text cleanup
-│   └── index.ts                  # Buffer utilities
+│   ├── capture.cap.adapter.ts         # Cap recording discovery
+│   ├── transcription.whisper.adapter.ts # Audio → Text (whisper-cli)
+│   ├── audio.silero.adapter.ts        # VAD preprocessing (Python)
+│   ├── video.ffmpeg.adapter.ts        # Frame extraction + scene detection
+│   └── intelligence.ollama.adapter.ts # VLM + LLM inference
+├── services/                          # Pure business logic (no I/O)
+│   ├── frame-sampling.ts              # Adaptive frame reduction
+│   ├── vlm-service.ts                 # Sequential VLM orchestration (single-image)
+│   ├── activity-segmentation.ts       # Group by activity continuity
+│   └── temporal-alignment.ts          # Attach audio by timestamp
 ├── db/
-│   ├── index.ts                  # DB connection & repository factory
-│   ├── migrate.ts                # Auto-run SQL migrations
-│   ├── repositories/             # SQLite implementations
-│   └── types.ts                  # Manual DB types
-└── domain/
-    └── recording.ts              # Recording entity & state machine
+│   ├── index.ts                       # DB connection & repository factory
+│   ├── migrate.ts                     # Auto-run SQL migrations
+│   ├── repositories/                  # SQLite implementations
+│   └── types.ts                       # Manual DB types
+├── domain/
+│   └── recording.ts                   # Recording entity & state machine
+├── pipeline/
+│   └── context.ts                     # AsyncLocalStorage observability
+└── utils/
+    └── index.ts                       # Buffer utilities
+```
+
+### Deprecated (V2)
+```
+src/
+├── actions/
+│   ├── process-recording-v2.ts        # OCR → Embedding → Clustering pipeline
+│   ├── create-contexts.ts             # Signal extraction
+│   └── create-topic-blocks.ts         # V2 block formation
+├── adapters/
+│   └── embedding.ollama.adapter.ts    # Text embeddings (disabled)
+├── services/
+│   ├── clustering.ts                  # Agglomerative clustering
+│   ├── signal-extraction.ts           # Regex signal extraction
+│   ├── cluster-merge.ts               # Audio-visual merge
+│   └── vlm-enrichment.ts              # V2 VLM on representative frames
+└── utils/
+    └── ocr.ts                         # OCR text cleanup
 ```
 
 ### Key Principle: Port Interfaces
@@ -81,52 +107,121 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
 - **TranscriptionService**: `transcription.whisper.adapter.ts`
 - **CaptureSource**: `capture.cap.adapter.ts`
 - **IntelligenceService**: `intelligence.ollama.adapter.ts`
-- **StorageService**: `storage.fs.adapter.ts`
 - **VideoService**: `video.ffmpeg.adapter.ts`
+- **AudioPreprocessor**: `audio.silero.adapter.ts`
 
-### Visual Pipeline
+## V3 Pipeline Flow
 
-The visual pipeline uses a hybrid approach:
-- **Python** (`visual_observer_base.py`): Frame analysis (OCR + CLIP)
-- **TypeScript** (`src/utils/ocr.ts`): Semantic OCR cleanup
-- **TypeScript** (`src/services/clustering.ts`): Agglomerative hierarchical clustering
-- **TypeScript** (`src/services/vlm-enrichment.ts`): VLM descriptions via Ollama
+```
+1. Input (Cap recording)
+   └─ Latest recording detected via Cap watcher
 
-## Session Types (Multi-Label Classification)
+2. Audio Pipeline (reused from V2)
+   ├─ Silero VAD → speech segments
+   ├─ Whisper transcription per segment
+   └─ Save as Observation rows (type='audio')
 
-**Format**: Each type scored 0-100. Sessions can have multiple types (e.g., 85% meeting + 45% learning).
+3. Visual Pipeline (VLM-First)
+   ├─ ffmpeg extracts frames at 2s intervals (~1776 frames/hour)
+   ├─ Scene detection (ffmpeg) → timestamps of visual changes
+   ├─ Adaptive sampling (10s base + scene changes + gap fill) → ~100-150 frames
+   ├─ VLM sequential inference (qwen3-vl:4b, 1 image/request, 30k tokens) → activity + description per frame
+   └─ Save as Observation rows (type='visual', vlm_description)
 
-| Type | Description | Indicators | Default Artifacts |
-|------|-------------|------------|-------------------|
-| meeting | Conversations, interviews, discussions | Multiple speakers, Q&A, decisions being made | Summary, action items |
-| debugging | Fixing errors, troubleshooting | Error messages, "not working", investigation steps | Runbook, error screenshots |
-| tutorial | Teaching, demonstrating | Step-by-step instructions, teaching tone | Step-by-step guide, screenshots |
-| learning | Researching, studying | "Let me understand", research, exploration | Study notes & resources |
-| working | Building, coding (not debugging) | Creating files, implementing features | Code snippets, commit message |
+4. Activity Segmentation
+   ├─ Group consecutive frames by activity continuity
+   ├─ Merge short segments (<30s) into neighbors
+   └─ Extract apps/topics from VLM descriptions
 
-**Classification Example**:
-```json
-{
-  "meeting": 85,
-  "debugging": 10, 
-  "tutorial": 0,
-  "learning": 45,
-  "working": 20
-}
+5. Temporal Audio Alignment
+   ├─ Attach audio transcripts to segments by timestamp overlap (>=1s)
+   └─ Audio becomes metadata on visual segments
+
+6. Context & Topic Block Creation
+   ├─ Create/find Context rows for apps/topics (INSERT OR IGNORE)
+   ├─ Create TopicBlock with full context in classification JSON
+   └─ Recording marked as 'processed'
+
+7. Summary Generation
+   ├─ Read TopicBlocks + observations
+   ├─ Build prompt from template (prompts/summary-v3.md)
+   ├─ LLM call (qwen3:32b) → narrative summary
+   └─ Save markdown to ~/.escribano/artifacts/
 ```
 
-## Automation Levels
+## Activity Types (V3 Per-Segment)
 
-0. **Manual** - User triggers everything
-1. **Detect + Ask** - Detects recordings, asks to process
-2. **Process + Ask** - Auto transcribe/classify, asks for generation
-3. **Generate + Ask** - Auto generate, asks before publishing
-4. **Full Auto** - Everything automatic
+| Type | Detection Keywords | Description |
+|------|-------------------|-------------|
+| `debugging` | debugging, troubleshooting, error, stack trace, fixing bug | Investigating errors |
+| `coding` | writing code, implementing, developing, programming | Writing/editing code |
+| `review` | reviewing pr, pull request, code review | Code review workflow |
+| `meeting` | zoom, google meet, slack huddle, video call | Video calls/collaboration |
+| `research` | browsing, stack overflow, googling, researching | Information gathering |
+| `reading` | reading documentation, reading docs | Reading docs/articles |
+| `terminal` | in terminal, in iterm, command line, running git | CLI operations |
+| `other` | (fallback) | Unclassified activity |
 
-## Learnings and Implementation Details
+## CLI
 
-For detailed technical findings on OCR quality, VLM benchmarks, and clustering rationale, see [docs/learnings.md](docs/learnings.md).
+```bash
+# Process latest recording and generate summary
+pnpm escribano
+
+# Reprocess from scratch
+pnpm escribano --force
+```
+
+Output: Markdown summary saved to `~/.escribano/artifacts/`
+
+## Resume Safety
+
+The pipeline saves progress aggressively to enable crash recovery:
+
+| Step | Saved To | Resume Behavior |
+|------|----------|----------------|
+| Audio processing | `observations` table | Skipped if already completed |
+| Scene detection | `recordings.source_metadata` | Loaded from DB |
+| VLM inference | `observations` table (per batch) | Skips already-processed frames |
+| Segmentation | In-memory (fast) | Re-runs from observations |
+| Context/TopicBlock | `contexts` + `topic_blocks` tables | Uses UNIQUE INDEX for idempotency |
+
+## Database Schema
+
+### Active Tables (V3)
+
+- **recordings** — One row per recording with metadata
+- **observations** — Visual frames (vlm_description) + audio transcripts
+- **contexts** — Semantic labels (app, topic) — created but not yet used for queries
+- **observation_contexts** — Join table (created but not yet used)
+- **topic_blocks** — Work segments with full classification JSON
+
+### Deprecated Tables (V2, not used)
+
+- **clusters** — Embedding-based groupings
+- **observation_clusters** — Join table
+- **cluster_merges** — Audio-visual merge records
+
+## Backlog
+
+### Current Work (In Progress)
+
+- **VLM Parallel Processing Optimizations** — MLX/VLLM POC for true parallel continuous batching (tag: VLM Paralell processing optimizations)
+
+### P2 — Next Iteration
+- OCR on keyframes at artifact generation time (adds actual code/commands/URLs to summary)
+- ✅ **Outline publishing wired to V3 TopicBlocks** — Auto-publishes summaries to Outline with global index
+- Cross-recording Context queries ("show me all debugging sessions this week")
+
+### P3 — Cleanup
+- Schema migration: rename `clusters` → `segments`, delete `cluster_merges`
+- Remove deprecated V2 code (`clustering.ts`, `signal-extraction.ts`, `cluster-merge.ts`, etc.)
+- Remove deprecated V1 code (`process-session.ts`, `classify-session.ts`, etc.)
+- Split `0_types.ts` into domain/port/config modules
 
 ## Code Conventions
 
-
+- Single types file — `0_types.ts` is the source of truth
+- Ports & Adapters — External systems accessed through interfaces
+- Repository Pattern — Decouples business logic from storage
+- Functional over classes — Factory functions return typed interfaces

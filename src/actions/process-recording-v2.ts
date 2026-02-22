@@ -230,6 +230,9 @@ export async function processRecordingV2(
               image_path: frame.imagePath,
               ocr_text: cleanedOcr,
               vlm_description: null, // Phase 3D.5 TODO
+              activity_type: null,
+              apps: null,
+              topics: null,
               embedding: null, // Updated in next step
               text: null,
               audio_source: null,
@@ -721,6 +724,9 @@ async function processAudioPipeline(
               image_path: null,
               ocr_text: null,
               vlm_description: null,
+              activity_type: null,
+              apps: null,
+              topics: null,
               embedding: null,
             });
           }

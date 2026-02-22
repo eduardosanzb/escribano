@@ -380,25 +380,23 @@ export interface IntelligenceService {
     classification: Classification,
     visualLogs?: VisualLog[]
   ): Promise<TranscriptMetadata>;
+  /** Sequential VLM processing - one image per request for accurate image-description mapping. */
   describeImages(
-    images: Array<{ imagePath: string; clusterId: number; timestamp: number }>,
-    prompt?: string
-  ): Promise<VisualDescriptions>;
-  describeImageBatch(
     images: Array<{ imagePath: string; timestamp: number }>,
     config?: {
-      batchSize?: number;
       model?: string;
-      onBatchComplete?: (
-        results: Array<{
+      recordingId?: string;
+      onImageProcessed?: (
+        result: {
           index: number;
           timestamp: number;
+          imagePath: string;
           activity: string;
           description: string;
           apps: string[];
           topics: string[];
-        }>,
-        batchIndex: number
+        },
+        progress: { current: number; total: number }
       ) => void;
     }
   ): Promise<
@@ -409,6 +407,7 @@ export interface IntelligenceService {
       description: string;
       apps: string[];
       topics: string[];
+      imagePath: string;
     }>
   >;
   generate(
@@ -425,6 +424,10 @@ export interface IntelligenceService {
     options?: { batchSize?: number }
   ): Promise<number[][]>;
   extractTopics(observations: DbObservation[]): Promise<string[]>;
+  generateText(
+    prompt: string,
+    options?: { model?: string; expectJson?: boolean }
+  ): Promise<string>;
 }
 
 export interface StorageService {
@@ -455,6 +458,10 @@ export interface VideoService {
     framesDir: string,
     outputPath: string
   ): Promise<VisualIndex>;
+  detectSceneChanges(
+    videoPath: string,
+    config?: { threshold?: number; minInterval?: number }
+  ): Promise<number[]>;
 }
 
 // =============================================================================
@@ -564,6 +571,7 @@ export interface RecordingRepository {
     step?: DbRecording['processing_step'],
     error?: string | null
   ): void;
+  updateMetadata(id: string, metadata: string): void;
   delete(id: string): void;
 }
 
@@ -588,6 +596,7 @@ export interface ContextRepository {
   findByTypeAndName(type: string, name: string): DbContext | null;
   findAll(): DbContext[];
   save(context: DbContextInsert): void;
+  saveOrIgnore(context: DbContextInsert): void;
   linkObservation(
     observationId: string,
     contextId: string,

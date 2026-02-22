@@ -108,6 +108,7 @@ describe('Visual Observer Pipeline', () => {
         .fn()
         .mockResolvedValue({ duration: 60, width: 1920, height: 1080 }),
       runVisualIndexing: vi.fn().mockResolvedValue(mockVisualIndex),
+      detectSceneChanges: vi.fn().mockResolvedValue([]),
     };
 
     const mockIntelligenceService: IntelligenceService = {
@@ -116,9 +117,9 @@ describe('Visual Observer Pipeline', () => {
       extractMetadata: vi.fn(),
       generate: vi.fn(),
       describeImages: vi.fn().mockResolvedValue(mockVisualDescriptions),
-      describeImageBatch: vi.fn(),
       embedText: vi.fn(),
       extractTopics: vi.fn(),
+      generateText: vi.fn().mockResolvedValue('Mock generated summary'),
     };
 
     const session = await processSession(
@@ -187,9 +188,9 @@ describe('Visual Observer Pipeline', () => {
       extractMetadata: vi.fn(),
       generate: vi.fn(),
       describeImages: vi.fn(), // Should NOT be called
-      describeImageBatch: vi.fn(),
       embedText: vi.fn(),
       extractTopics: vi.fn(),
+      generateText: vi.fn().mockResolvedValue('Mock generated summary'),
     };
 
     const session = await processSession(

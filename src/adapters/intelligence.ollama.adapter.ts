@@ -397,6 +397,7 @@ function parseVLMResponse(content: string): ParsedVLM {
   }
 
   debugLog('[parseVLMResponse] No match, using content as description');
+  debugLog('[parseVLMResponse] Raw content:', content.substring(0, 500));
   return {
     description: content.trim(),
     activity: 'unknown',
@@ -443,10 +444,7 @@ async function describeImagesWithOllama(
     options.model ?? process.env.ESCRIBANO_VLM_MODEL ?? 'qwen3-vl:4b';
   const endpoint = `${config.endpoint.replace('/generate', '').replace('/chat', '')}/chat`;
   const { timeout, keepAlive } = config;
-  const numPredict = Math.max(
-    30000,
-    Number(process.env.ESCRIBANO_VLM_NUM_PREDICT) || 30000
-  );
+  const numPredict = Number(process.env.ESCRIBANO_VLM_NUM_PREDICT) || 30000;
 
   const allResults: Array<{
     index: number;
@@ -519,10 +517,14 @@ async function describeImagesWithOllama(
         }
 
         const data = await response.json();
-        const content = data.message?.content || '';
+        debugLog('[VLM] Response data keys:', Object.keys(data).join(', '));
+        const content = data.message?.content || data.response || '';
+        debugLog('[VLM] Raw content length:', content.length);
+        debugLog('[VLM] Raw content preview:', content.substring(0, 500));
         const parsed = parseVLMResponse(content);
 
         if (parsed.activity === 'unknown' && parsed.description.length === 0) {
+          debugLog('[VLM] Parsed as empty/unknown, full response:', content);
           throw new Error('VLM returned empty/unparseable response');
         }
 

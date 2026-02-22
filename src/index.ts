@@ -6,17 +6,26 @@
 
 import { homedir } from 'node:os';
 import path from 'node:path';
-import type { CaptureSource } from './0_types.js';
+import type { CaptureSource, OutlineConfig } from './0_types.js';
 import { generateSummaryV3 } from './actions/generate-summary-v3.js';
+import { updateGlobalIndex } from './actions/outline-index.js';
 import { processRecordingV3 } from './actions/process-recording-v3.js';
+import {
+  getOutlineMetadata,
+  hasContentChanged,
+  type OutlineMetadata,
+  publishSummaryV3,
+  updateRecordingOutlineMetadata,
+} from './actions/publish-summary-v3.js';
 import { createSileroPreprocessor } from './adapters/audio.silero.adapter.js';
 import { createCapCaptureSource } from './adapters/capture.cap.adapter.js';
 import { createFilesystemCaptureSource } from './adapters/capture.filesystem.adapter.js';
 import { createOllamaIntelligenceService } from './adapters/intelligence.ollama.adapter.js';
+import { createOutlinePublishingService } from './adapters/publishing.outline.adapter.js';
 import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
 import { createFfmpegVideoService } from './adapters/video.ffmpeg.adapter.js';
 import { getDbPath, getRepositories } from './db/index.js';
-import { withPipeline } from './pipeline/context.js';
+import { log, withPipeline } from './pipeline/context.js';
 
 const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
@@ -141,21 +150,34 @@ async function run(force: boolean, filePath: string | null): Promise<void> {
     repos.observations.deleteByRecording(recording.id);
     repos.topicBlocks.deleteByRecording(recording.id);
     repos.recordings.updateStatus(recording.id, 'raw', null, null);
-  } else if (dbRec.status === 'processed') {
-    console.log('Recording already processed. Use --force to reprocess.');
+  } else if (dbRec.status === 'published') {
+    // Check if already published with same content
+    console.log('Recording already published to Outline.');
+    const outlineMeta = getOutlineMetadata(dbRec);
+    if (outlineMeta) {
+      console.log(`Published document: ${outlineMeta.url}`);
+    }
+    console.log('Use --force to reprocess.');
     console.log('');
     return;
+  } else if (dbRec.status === 'processed') {
+    // Already processed, skip to summary generation + publishing
+    console.log('Recording already processed. Publishing to Outline...');
+    console.log('');
   }
 
-  // Process recording
-  await withPipeline(recording.id, async () => {
-    await processRecordingV3(
-      recording.id,
-      repos,
-      { preprocessor, transcription, video, intelligence },
-      { force }
-    );
-  });
+  // Process recording (skip if already processed)
+  const skipProcessing = dbRec && dbRec.status === 'processed' && !force;
+  if (!skipProcessing) {
+    await withPipeline(recording.id, async () => {
+      await processRecordingV3(
+        recording.id,
+        repos,
+        { preprocessor, transcription, video, intelligence },
+        { force }
+      );
+    });
+  }
 
   console.log('');
   console.log('Generating summary...');
@@ -166,8 +188,120 @@ async function run(force: boolean, filePath: string | null): Promise<void> {
   });
 
   console.log('');
+
+  // Publish to Outline if configured
+  const outlineConfig = getOutlineConfig();
+  if (outlineConfig) {
+    console.log('Publishing to Outline...');
+    try {
+      const publishing = createOutlinePublishingService(outlineConfig);
+      const topicBlocks = repos.topicBlocks.findByRecording(recording.id);
+
+      // Check if already published with same content
+      const dbRecording = repos.recordings.findById(recording.id);
+      if (dbRecording && !hasContentChanged(dbRecording, artifact.content)) {
+        console.log('Content unchanged, skipping publish.');
+      } else {
+        // Publish the summary
+        const published = await publishSummaryV3(
+          recording.id,
+          artifact.content,
+          topicBlocks,
+          repos,
+          publishing,
+          { collectionName: outlineConfig.collectionName }
+        );
+
+        // Update recording metadata with outline info
+        const outlineInfo: OutlineMetadata = {
+          url: published.url,
+          documentId: published.documentId,
+          collectionId: published.collectionId,
+          publishedAt: new Date().toISOString(),
+          contentHash: published.contentHash,
+        };
+        updateRecordingOutlineMetadata(recording.id, outlineInfo, repos);
+
+        console.log(`Published to Outline: ${published.url}`);
+
+        // Update global index
+        const indexResult = await updateGlobalIndex(repos, publishing, {
+          collectionName: outlineConfig.collectionName,
+        });
+        console.log(`Updated index: ${indexResult.url}`);
+      }
+
+      // Update status to 'published' (whether we just published or skipped due to no changes)
+      repos.recordings.updateStatus(recording.id, 'published', null, null);
+      log(
+        'info',
+        `[Outline] Recording ${recording.id} status updated to 'published'`
+      );
+    } catch (error) {
+      // Keep 'processed' status but store error in metadata
+      const errorMessage = (error as Error).message;
+      console.warn(`Warning: Failed to publish to Outline: ${errorMessage}`);
+      log('warn', `[Outline] Publishing failed: ${errorMessage}`);
+
+      // Store error in metadata
+      try {
+        const dbRecording = repos.recordings.findById(recording.id);
+        const currentMetadata = dbRecording?.source_metadata
+          ? JSON.parse(dbRecording.source_metadata)
+          : {};
+        const existingOutline = currentMetadata.outline || {};
+        const updatedMetadata = {
+          ...currentMetadata,
+          outline: {
+            ...existingOutline,
+            error: errorMessage,
+            failedAt: new Date().toISOString(),
+          },
+        };
+        repos.recordings.updateMetadata(
+          recording.id,
+          JSON.stringify(updatedMetadata)
+        );
+        log('info', `[Outline] Error stored in metadata for ${recording.id}`);
+      } catch (metaError) {
+        log(
+          'error',
+          `[Outline] Failed to store error metadata: ${(metaError as Error).message}`
+        );
+      }
+    }
+  } else {
+    // No Outline config, but processing is complete - mark as published locally
+    console.log('No Outline configuration found. Marking as complete locally.');
+    repos.recordings.updateStatus(recording.id, 'published', null, null);
+    log(
+      'info',
+      `[Outline] Recording ${recording.id} marked as 'published' (no Outline config)`
+    );
+  }
+
+  console.log('');
   console.log('✓ Complete!');
   console.log(`Summary saved: ${artifact.filePath}`);
+}
+
+/**
+ * Get Outline configuration from environment if available.
+ */
+function getOutlineConfig(): OutlineConfig | null {
+  const url = process.env.ESCRIBANO_OUTLINE_URL;
+  const token = process.env.ESCRIBANO_OUTLINE_TOKEN;
+
+  if (!url || !token) {
+    return null;
+  }
+
+  return {
+    url,
+    token,
+    collectionName:
+      process.env.ESCRIBANO_OUTLINE_COLLECTION ?? 'Escribano Sessions',
+  };
 }
 
 main();

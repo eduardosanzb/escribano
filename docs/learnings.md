@@ -141,3 +141,15 @@ limitation.
 - Total: ~48s per batch (vs 45s single-model ideal)
 
 The overhead is minimal compared to the 100% success rate improvement.
+
+## MLX-VLM Interleaved Processing (Feb 2026)
+
+POC validated interleaved multi-image processing with mlx-vlm:
+- **Throughput:** 0.59 frames/sec (4.7x vs Ollama baseline)
+- **Accuracy:** Frame-to-description mapping confirmed correct
+- **Model:** Qwen3-VL-2B-Instruct-bf16
+
+**Key Finding:** Token budget truncation on later frames (tunable via MAX_TOKENS or batch size).
+
+**Full findings:** [MLX-VLM POC Learnings](./MLX-VLM-POC-LEARNINGS.md)  
+**ADR:** [ADR-006: MLX-VLM Adapter](./adr/006-mlx-vlm-adapter.md)

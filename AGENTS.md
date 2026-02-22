@@ -204,10 +204,13 @@ The pipeline saves progress aggressively to enable crash recovery:
 
 ## Backlog
 
+### Current Work (In Progress)
+
+- **VLM Parallel Processing Optimizations** — MLX/VLLM POC for true parallel continuous batching (tag: VLM Paralell processing optimizations)
+
 ### P2 — Next Iteration
 - OCR on keyframes at artifact generation time (adds actual code/commands/URLs to summary)
-- VLM pool abstraction for MLX migration (true parallel continuous batching)
-- Outline publishing wired to V3 TopicBlocks
+- ✅ **Outline publishing wired to V3 TopicBlocks** — Auto-publishes summaries to Outline with global index
 - Cross-recording Context queries ("show me all debugging sessions this week")
 
 ### P3 — Cleanup

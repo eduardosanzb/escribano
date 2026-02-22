@@ -184,6 +184,15 @@ def generate_html_report(
             html_parts.append(f"          <span class='badge badge-topic'>{topic}</span>")
         html_parts.append(f"        </div>")
         
+        # Raw output section for debugging
+        if vllm.get('raw_output'):
+            html_parts.append(f"        <div style='margin-top: 10px;'>")
+            html_parts.append(f"          <details style='font-size: 0.8rem;'>")
+            html_parts.append(f"            <summary style='cursor: pointer; color: #666;'>🔍 Raw Model Output</summary>")
+            html_parts.append(f"            <pre style='margin-top: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;'>{vllm.get('raw_output', '').replace('<', '&lt;').replace('>', '&gt;')}</pre>")
+            html_parts.append(f"          </details>")
+            html_parts.append(f"        </div>")
+        
         html_parts.append(f"      </div>")
         
         # Ollama column

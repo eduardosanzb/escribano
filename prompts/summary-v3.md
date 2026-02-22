@@ -26,7 +26,10 @@ Write 500-1500 words depending on session complexity. Be specific, not generic.
 
 Do NOT include a section listing raw observations — synthesize them into narrative.
 Do NOT use bullet points for every segment — organize into flowing paragraphs.
-Write in work log style using present continuous tense: "Working on..." "Debugging..." "Reviewing..."
+Write in work log style using **FIRST PERSON** present continuous tense:
+- "Working on..." "Debugging..." "Reviewing..." 
+- "Editing the config file..." "Running tests..." "Checking the logs..."
+- NOT: "The developer..." "The user was..." "They were..."
 
 ## Format Example
 
@@ -34,11 +37,11 @@ Write in work log style using present continuous tense: "Working on..." "Debuggi
 # Session Summary: [Date]
 
 ## Overview
-[Brief 2-3 sentence overview of the entire session]
+[Brief 2-3 sentence overview in first person: "Spent 45 minutes debugging authentication issues..."]
 
 ## [Activity Type]: [Time Range]
-Working on [specific task or app]. [Details about what was being done, files being edited, tools used. Include transcript quotes that add context.]
+Debugging authentication issues in the API. Checked the auth.ts file and noticed the token validation was missing. Added proper error handling and tested with the test suite. The tests now pass after fixing the JWT verification logic.
 
 ## [Next Activity Type]: [Time Range]
-Continuing with [next activity shift...]
+Refactoring the user controller. Extracted the validation logic into a separate middleware to improve code organization. This makes the endpoints cleaner and easier to test.
 ```

@@ -204,20 +204,48 @@ The pipeline saves progress aggressively to enable crash recovery:
 
 ## Backlog
 
-### Current Work (In Progress)
+**Strategic Context**: See [Balanced Scorecard](./docs/escribano-balanced-scorecard.md). Critical constraint: March 2026 bandwidth drop (new role = 10-15 hrs/week). Must ship essentials before March.
 
-- **VLM Parallel Processing Optimizations** — MLX/VLLM POC for true parallel continuous batching (tag: VLM Paralell processing optimizations)
+### P0 — Critical Path (Pre-March Sprint)
 
-### P2 — Next Iteration
-- OCR on keyframes at artifact generation time (adds actual code/commands/URLs to summary)
+**Existential: Validate the product works**
+- ☐ **Validate artifact quality** — Process 5 real sessions, identify bottleneck layer (VLM? Segmentation? Prompt?) — *Scorecard: Artifact quality is the product*
+- ☐ **MLX-VLM Migration** — Execute ADR-006. POC proven 4.7x speedup (25min → ~5min for 182 frames). Critical for "Processing < 10 min/hr" target.
+  - Token budget tuning (500 → ? for 4-frame batches)
+  - New adapter: `intelligence.mlx.adapter.ts`
+  - Config switch: `ESCRIBANO_VLM_BACKEND=mlx|ollama`
+
+### P1 — Launch Blockers (Pre-March)
+
+**Must have for public launch**
+- ☐ **README with before/after** — First impression for every GitHub visitor
+- ☐ **Make repo public** — Unlocks all distribution channels
+- ☐ **Landing page** — Single page for HN/Twitter links
+- ☐ **2-min Loom demo** — Shows the product, not describes it
+- ☐ **ADR-005 blog post** — "Why OCR-based screen intelligence fails" — best marketing asset
+
+### P2 — Next Iteration (Post-March)
+
+**When bandwidth drops to 10-15 hrs/week**
+- ☐ OCR on keyframes at artifact generation time (adds actual code/commands/URLs to summary)
 - ✅ **Outline publishing wired to V3 TopicBlocks** — Auto-publishes summaries to Outline with global index
-- Cross-recording Context queries ("show me all debugging sessions this week")
+- ☐ Cross-recording Context queries ("show me all debugging sessions this week")
+- ☐ MCP server integration — Screenpipe pipe for distribution
+- ☐ Compare pages (SEO) — "Escribano vs Screenpipe", "Escribano vs Granola"
 
-### P3 — Cleanup
-- Schema migration: rename `clusters` → `segments`, delete `cluster_merges`
-- Remove deprecated V2 code (`clustering.ts`, `signal-extraction.ts`, `cluster-merge.ts`, etc.)
-- Remove deprecated V1 code (`process-session.ts`, `classify-session.ts`, etc.)
-- Split `0_types.ts` into domain/port/config modules
+### P3 — Cleanup (Post-Launch)
+
+**Technical debt when product is validated**
+- ☐ Schema migration: rename `clusters` → `segments`, delete `cluster_merges`
+- ☐ Remove deprecated V2 code (`clustering.ts`, `signal-extraction.ts`, `cluster-merge.ts`, etc.)
+- ☐ Remove deprecated V1 code (`process-session.ts`, `classify-session.ts`, etc.)
+- ☐ Split `0_types.ts` into domain/port/config modules
+
+### Deferred (6+ months)
+
+- ☐ Cloud inference tier — $15-25/mo SaaS option
+- ☐ Own capture (ScreenCaptureKit) — Remove Cap dependency
+- ☐ Team/Enterprise features — Per-seat pricing
 
 ## Code Conventions
 

@@ -101,7 +101,7 @@ async function run(force: boolean, filePath: string | null): Promise<void> {
     );
   } else {
     console.log('Using Cap recordings source');
-    captureSource = createCapCaptureSource();
+    captureSource = createCapCaptureSource({}, video);
   }
 
   // Get recording
@@ -137,12 +137,14 @@ async function run(force: boolean, filePath: string | null): Promise<void> {
     });
     console.log('Created database entry');
   } else if (force) {
-    console.log('Force flag set: clearing existing observations');
+    console.log('Force flag set: clearing existing data');
     repos.observations.deleteByRecording(recording.id);
+    repos.topicBlocks.deleteByRecording(recording.id);
     repos.recordings.updateStatus(recording.id, 'raw', null, null);
   } else if (dbRec.status === 'processed') {
     console.log('Recording already processed. Use --force to reprocess.');
     console.log('');
+    return;
   }
 
   // Process recording

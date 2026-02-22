@@ -1,45 +1,38 @@
 #!/usr/bin/env python3
 """
-mlx-vlm POC - Multi-Model Benchmark
+mlx-vlm Batching POC - Test batch_size=4
 
-Tests 4 models sequentially:
-1. Qwen3-VL-2B-Instruct-4bit (smallest, ~2GB) - Direct comparison to Ollama
-2. gemma-3n-E4B-it-bf16 (fast, ~8GB)
-3. pixtral-12b-8bit (medium, ~12GB)  
-4. InternVL3-14B-8bit (highest quality, ~14GB)
+Tests batching performance for multiple models:
+1. Qwen3-VL-2B-Instruct-4bit
+2. Qwen3-VL-4B-Instruct-4bit  
+3. gemma-3n-E4B-it-bf16
 
 Usage:
-    python scripts/poc-vllm-mlx/run.py
-    
-Prerequisites:
-    uv pip install -r scripts/poc-vllm-mlx/requirements.txt
+    uv run python run_batch.py
 """
 
 import sys
 from pathlib import Path
+from datetime import datetime
 
-# Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import (
-    DB_PATH, TEST_FRAMES, MODELS_TO_TEST, TEMPERATURE, MAX_TOKENS,
-    DUPLICATE_FRAMES, BASELINE_SECONDS_PER_FRAME, VLM_PROMPT
-)
+from config import DB_PATH, TEST_FRAMES, TEMPERATURE, MAX_TOKENS, VLM_PROMPT, BATCH_SIZE, MODELS_TO_TEST, BASELINE_SECONDS_PER_FRAME
 from db import get_frames
 from benchmark import MLXVLMBenchmark, format_as_pipe_delimited
 from report import generate_html_report
 
 
-def test_model(model_info: dict, frames: list, model_index: int, total_models: int) -> dict:
-    """Test a single model and return results."""
+def test_model_batched(model_info: dict, frames: list, model_index: int, total_models: int) -> dict:
+    """Test a single model with batching and return results."""
     model_name = model_info["name"]
     
     print("\n" + "=" * 70)
     print(f"🧪 MODEL {model_index}/{total_models}: {model_name}")
     print("=" * 70)
     print(f"   Size: {model_info['size']}")
-    print(f"   Expected Quality: {model_info['quality']}")
-    print(f"   Expected Speed: {model_info['expected_speed']}")
+    print(f"   Quality: {model_info['quality']}")
+    print(f"   Batch Size: {BATCH_SIZE}")
     print("=" * 70)
     
     try:
@@ -47,9 +40,11 @@ def test_model(model_info: dict, frames: list, model_index: int, total_models: i
         print(f"\n[1/3] Loading model...")
         benchmark = MLXVLMBenchmark(model_name)
         
-        # Run benchmark
-        print(f"\n[2/3] Running benchmark...")
-        result = benchmark.run_benchmark(frames, VLM_PROMPT, TEMPERATURE, MAX_TOKENS)
+        # Run batched benchmark
+        print(f"\n[2/3] Running batched benchmark...")
+        result = benchmark.run_benchmark_batched(
+            frames, VLM_PROMPT, BATCH_SIZE, TEMPERATURE, MAX_TOKENS
+        )
         
         # Format outputs
         print(f"\n[3/3] Formatting outputs...")
@@ -57,21 +52,19 @@ def test_model(model_info: dict, frames: list, model_index: int, total_models: i
             if not r["error"]:
                 r["formatted_output"] = format_as_pipe_delimited(r)
         
-        # Generate model-specific report
+        # Generate model-specific report with timestamp
         model_slug = model_name.split("/")[-1].replace("-", "_")
-        output_path = f"docs/mlx-vlm-poc-{model_slug}.html"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        output_path = f"docs/mlx-vlm-poc-batched-{model_slug}-{timestamp}.html"
         generate_html_report([result], frames, output_path)
         print(f"   ✓ Report: {output_path}")
         
         # Calculate metrics
         total_s = result["total_ms"] / 1000
         fps = result["frames"] / total_s if result["frames"] > 0 else 0
+        ms_per_frame = result["total_ms"] / result["frames"]
         baseline_fps = 1 / BASELINE_SECONDS_PER_FRAME
         speedup = fps / baseline_fps if baseline_fps > 0 else 0
-        
-        # Calculate token rate
-        total_tokens = sum(r.get("tokens", 0) for r in result["results"] if not r["error"])
-        tok_per_sec = total_tokens / total_s if total_s > 0 else 0
         
         return {
             "model_name": model_name,
@@ -81,8 +74,8 @@ def test_model(model_info: dict, frames: list, model_index: int, total_models: i
             "metrics": {
                 "total_s": total_s,
                 "fps": fps,
+                "ms_per_frame": ms_per_frame,
                 "speedup": speedup,
-                "tok_per_sec": tok_per_sec,
                 "successful": result["successful"],
                 "failed": result["failed"]
             },
@@ -103,10 +96,10 @@ def test_model(model_info: dict, frames: list, model_index: int, total_models: i
 
 def main():
     print("=" * 70)
-    print("🚀 mlx-vlm POC - Multi-Model Benchmark")
+    print("🚀 mlx-vlm Batching POC")
     print("=" * 70)
-    print(f"\nTesting {len(MODELS_TO_TEST)} models sequentially")
-    print("Each model will process 10 frames")
+    print(f"\nTesting {len(MODELS_TO_TEST)} models with batch_size={BATCH_SIZE}")
+    print(f"Each model will process {TEST_FRAMES} frames")
     print()
     
     # 1. Fetch frames once
@@ -119,10 +112,10 @@ def main():
         print("\n❌ ERROR: No frames found in database!")
         sys.exit(1)
     
-    # 2. Test each model
+    # 2. Test each model with batching
     results = []
     for i, model_info in enumerate(MODELS_TO_TEST, 1):
-        result = test_model(model_info, frames, i, len(MODELS_TO_TEST))
+        result = test_model_batched(model_info, frames, i, len(MODELS_TO_TEST))
         results.append(result)
         
         # Brief pause between models to clear memory
@@ -133,12 +126,12 @@ def main():
     
     # 3. Print comparison summary
     print("\n" + "=" * 70)
-    print("📊 COMPARISON SUMMARY")
+    print("📊 BATCHED COMPARISON SUMMARY")
     print("=" * 70)
     
     # Header
-    print(f"\n{'Model':<35} {'Time':<8} {'FPS':<8} {'Speedup':<10} {'Tok/s':<8} {'Status':<10}")
-    print("-" * 90)
+    print(f"\n{'Model':<35} {'Time':<8} {'ms/frame':<10} {'Speedup':<10} {'Status':<10}")
+    print("-" * 80)
     
     # Results table
     best_model = None
@@ -150,21 +143,21 @@ def main():
         if r["success"]:
             m = r["metrics"]
             status = "✅ PASS" if m["speedup"] >= 1.0 else "⚠️  SLOW"
-            print(f"{model_name:<35} {m['total_s']:<8.1f} {m['fps']:<8.2f} {m['speedup']:<10.1f}x {m['tok_per_sec']:<8.1f} {status:<10}")
+            print(f"{model_name:<35} {m['total_s']:<8.1f} {m['ms_per_frame']:<10.0f} {m['speedup']:<10.1f}x {status:<10}")
             
             if m["speedup"] > best_speedup:
                 best_speedup = m["speedup"]
                 best_model = r
         else:
-            print(f"{model_name:<35} {'N/A':<8} {'N/A':<8} {'N/A':<10} {'N/A':<8} ❌ FAIL")
+            print(f"{model_name:<35} {'N/A':<8} {'N/A':<10} {'N/A':<10} ❌ FAIL")
     
-    print("-" * 90)
+    print("-" * 80)
     
     # Best model highlight
     if best_model:
         print(f"\n🏆 BEST MODEL: {best_model['model_name']}")
         print(f"   Speedup: {best_model['metrics']['speedup']:.1f}x vs Ollama baseline")
-        print(f"   Token Rate: {best_model['metrics']['tok_per_sec']:.1f} tok/s")
+        print(f"   Time per frame: {best_model['metrics']['ms_per_frame']:.0f}ms")
         print(f"   Report: {best_model['report_path']}")
     
     # Overall verdict
@@ -187,7 +180,7 @@ def main():
         print(f"\n📝 Open best model report:")
         print(f"   open {best_model['report_path']}")
     
-    print(f"\n📁 All reports:")
+    print(f"\n📁 All batched reports:")
     for r in results:
         if r.get("report_path"):
             print(f"   open {r['report_path']}")

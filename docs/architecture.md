@@ -169,9 +169,9 @@ erDiagram
 │         │                                                                   │
 │         ▼                                                                   │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                      VLM BATCH INFERENCE                                 ││
-   │  1. Batch 8 images per request                                          ││
-   │  2. VLM (qwen3-vl:4b) identifies activity & context                     ││
+│  │                      VLM SEQUENTIAL INFERENCE                            ││
+    │  1. Sequential single-image processing (one image per request)          ││
+    │  2. VLM (qwen3-vl:4b) identifies activity & context                     ││
 │  │  3. Store results in Observation entity                                 ││
 │  └──────────────────────────────────────────────────────────────────────────┘│
 │         │                                                                   │
@@ -294,6 +294,6 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 | `VideoService` | `video.ffmpeg.adapter.ts` | Frame extraction, visual indexing |
 | `AudioPreprocessor` | `audio.silero.adapter.ts` | VAD segmentation & cleanup |
 | `IntelligenceService` | `intelligence.ollama.adapter.ts` | VLM classification & generation |
-| `EmbeddingService` | `embedding.ollama.adapter.ts` | (Disabled in v3, kept for future) |
-| `StorageService` | `storage.fs.adapter.ts` | (V1 only, not used in v3) |
-| `PublishingService` | `publishing.outline.adapter.ts` | Sync to Outline wiki |
+| `EmbeddingService` | `embedding.ollama.adapter.ts` | **(deprecated in V3, kept for future)** |
+| `StorageService` | `storage.fs.adapter.ts` | **(deprecated in V3, V1 only)** |
+| `PublishingService` | `publishing.outline.adapter.ts` | **(deprecated in V3, V1 only)** |

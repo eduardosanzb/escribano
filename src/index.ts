@@ -4,13 +4,14 @@
  * Single command: process latest recording and generate summary
  */
 
-import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import type { CaptureSource } from './0_types.js';
 import { generateSummaryV3 } from './actions/generate-summary-v3.js';
 import { processRecordingV3 } from './actions/process-recording-v3.js';
 import { createSileroPreprocessor } from './adapters/audio.silero.adapter.js';
 import { createCapCaptureSource } from './adapters/capture.cap.adapter.js';
+import { createFilesystemCaptureSource } from './adapters/capture.filesystem.adapter.js';
 import { createOllamaIntelligenceService } from './adapters/intelligence.ollama.adapter.js';
 import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
 import { createFfmpegVideoService } from './adapters/video.ffmpeg.adapter.js';
@@ -24,6 +25,7 @@ const MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
 interface ParsedArgs {
   force: boolean;
   help: boolean;
+  file: string | null;
 }
 
 function main(): void {
@@ -34,7 +36,7 @@ function main(): void {
     process.exit(0);
   }
 
-  run(args.force).catch((error) => {
+  run(args.force, args.file).catch((error) => {
     console.error('Error:', (error as Error).message);
     console.error((error as Error).stack);
     process.exit(1);
@@ -42,9 +44,13 @@ function main(): void {
 }
 
 function parseArgs(argsArray: string[]): ParsedArgs {
+  const fileIndex = argsArray.indexOf('--file');
+  const filePath = fileIndex !== -1 ? argsArray[fileIndex + 1] || null : null;
+
   return {
     force: argsArray.includes('--force'),
     help: argsArray.includes('--help') || argsArray.includes('-h'),
+    file: filePath,
   };
 }
 
@@ -53,21 +59,28 @@ function showHelp(): void {
 Escribano - Session Intelligence Tool
 
 Usage:
-  pnpm escribano           Process latest recording and generate summary
-  pnpm escribano --force   Reprocess from scratch
-  pnpm escribano --help    Show this help
+  pnpm escribano                           Process latest Cap recording
+  pnpm escribano --file <path>             Process video from filesystem
+  pnpm escribano --force                   Reprocess from scratch
+  pnpm escribano --file <path> --force     Reprocess specific file
+  pnpm escribano --help                    Show this help
+
+Examples:
+  pnpm escribano --file "~/Desktop/Screen Recording.mov"
+  pnpm escribano --file "/path/to/video.mp4"
 
 Output: Markdown summary saved to ~/.escribano/artifacts/
 `);
 }
 
-async function run(force: boolean): Promise<void> {
+async function run(force: boolean, filePath: string | null): Promise<void> {
   // Initialize database (runs migrations automatically)
   console.log('Initializing database...');
   const repos = getRepositories();
   console.log(`Database ready: ${getDbPath()}`);
   console.log('');
-  const cap = createCapCaptureSource();
+
+  // Initialize adapters
   const intelligence = createOllamaIntelligenceService();
   const video = createFfmpegVideoService();
   const preprocessor = createSileroPreprocessor();
@@ -78,10 +91,27 @@ async function run(force: boolean): Promise<void> {
     outputFormat: 'json',
   });
 
-  // Get latest Cap recording
-  const recording = await cap.getLatestRecording();
+  // Create appropriate capture source
+  let captureSource: CaptureSource;
+  if (filePath) {
+    console.log(`Using filesystem source: ${filePath}`);
+    captureSource = createFilesystemCaptureSource(
+      { videoPath: filePath },
+      video
+    );
+  } else {
+    console.log('Using Cap recordings source');
+    captureSource = createCapCaptureSource();
+  }
+
+  // Get recording
+  const recording = await captureSource.getLatestRecording();
   if (!recording) {
-    console.log('No Cap recordings found.');
+    if (filePath) {
+      console.log(`Failed to load video file: ${filePath}`);
+    } else {
+      console.log('No Cap recordings found.');
+    }
     return;
   }
 
@@ -101,7 +131,7 @@ async function run(force: boolean): Promise<void> {
       captured_at: recording.capturedAt.toISOString(),
       status: 'raw',
       processing_step: null,
-      source_type: 'cap',
+      source_type: recording.source.type,
       source_metadata: JSON.stringify(recording.source),
       error_message: null,
     });

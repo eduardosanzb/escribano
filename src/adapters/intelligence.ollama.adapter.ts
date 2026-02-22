@@ -19,11 +19,8 @@ import {
   type Transcript,
   type TranscriptMetadata,
   transcriptMetadataSchema,
-  type VisualDescription,
-  type VisualDescriptions,
   type VisualLog,
 } from '../0_types.js';
-import { copyFramesForDebug, saveVlmResponse } from '../services/debug.js';
 
 // Debug logging controlled by environment variable
 const DEBUG_OLLAMA = process.env.ESCRIBANO_DEBUG_OLLAMA === 'true';
@@ -74,9 +71,7 @@ export function createOllamaIntelligenceService(
       extractMetadata(transcript, classification, parsedConfig, visualLogs),
     generate: (artifactType, context) =>
       generateArtifact(artifactType, context, parsedConfig),
-    describeImages: (images, prompt) =>
-      describeImagesWithOllamaLegacy(images, parsedConfig, prompt),
-    describeImageBatch: (images, options) =>
+    describeImages: (images, options) =>
       describeImagesWithOllama(images, parsedConfig, options),
     embedText: (texts, options) =>
       embedTextWithOllama(texts, parsedConfig, options),
@@ -420,8 +415,8 @@ async function describeImagesWithOllama(
   options: {
     model?: string;
     recordingId?: string;
-    onBatchComplete?: (
-      results: Array<{
+    onImageProcessed?: (
+      result: {
         index: number;
         timestamp: number;
         imagePath: string;
@@ -429,8 +424,8 @@ async function describeImagesWithOllama(
         description: string;
         apps: string[];
         topics: string[];
-      }>,
-      batchIndex: number
+      },
+      progress: { current: number; total: number }
     ) => void;
   } = {}
 ): Promise<
@@ -463,17 +458,14 @@ async function describeImagesWithOllama(
     topics: string[];
   }> = [];
 
-  console.log(`[VLM] Processing ${images.length} images sequentially...`);
+  const total = images.length;
+  console.log(`[VLM] Processing ${total} images sequentially...`);
   console.log(`[VLM] Model: ${model}, num_predict: ${numPredict}`);
   const startTime = Date.now();
 
   for (let i = 0; i < images.length; i++) {
     const image = images[i];
-    const progress = `${i + 1}/${images.length}`;
-    console.log(
-      `[VLM] [${progress}] Processing ${image.imagePath.split('/').pop()} @ ${image.timestamp}s...`
-    );
-
+    const current = i + 1;
     const imageStartTime = Date.now();
     let lastError: Error | null = null;
     let success = false;
@@ -534,7 +526,7 @@ async function describeImagesWithOllama(
           throw new Error('VLM returned empty/unparseable response');
         }
 
-        allResults.push({
+        const result = {
           index: i,
           timestamp: image.timestamp,
           imagePath: image.imagePath,
@@ -542,18 +534,29 @@ async function describeImagesWithOllama(
           description: parsed.description,
           apps: parsed.apps,
           topics: parsed.topics,
-        });
+        };
+
+        allResults.push(result);
 
         success = true;
         const duration = Date.now() - imageStartTime;
-        console.log(
-          `[VLM] [${progress}] ✓ (${(duration / 1000).toFixed(1)}s) - ${parsed.description.slice(0, 50)}...`
-        );
+
+        // Log every 10 frames
+        if (current % 10 === 0) {
+          console.log(
+            `[VLM] [${current}/${total}] ✓ (${(duration / 1000).toFixed(1)}s)`
+          );
+        }
+
+        // Call callback immediately after each image
+        if (options.onImageProcessed) {
+          options.onImageProcessed(result, { current, total });
+        }
       } catch (error) {
         lastError = error as Error;
         if (attempt < 3) {
           debugLog(
-            `[VLM] [${progress}] Attempt ${attempt}/3 failed: ${lastError.message}, retrying...`
+            `[VLM] [${current}/${total}] Attempt ${attempt}/3 failed: ${lastError.message}, retrying...`
           );
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
@@ -562,7 +565,7 @@ async function describeImagesWithOllama(
 
     if (!success) {
       console.warn(
-        `[VLM] [${progress}] ✗ Failed after 3 attempts: ${lastError?.message}`
+        `[VLM] [${current}/${total}] ✗ Failed after 3 attempts: ${lastError?.message}`
       );
       // Don't save - frame will be re-processed on next run
     }
@@ -571,13 +574,8 @@ async function describeImagesWithOllama(
   const totalDuration = ((Date.now() - startTime) / 1000).toFixed(1);
   const successCount = allResults.length;
   console.log(
-    `\n[VLM] Complete: ${successCount}/${images.length} frames in ${totalDuration}s`
+    `\n[VLM] Complete: ${successCount}/${total} frames in ${totalDuration}s`
   );
-
-  // Call onBatchComplete with all results (for DB saving)
-  if (options.onBatchComplete && allResults.length > 0) {
-    options.onBatchComplete(allResults, 1);
-  }
 
   return allResults;
 }
@@ -952,183 +950,4 @@ function loadArtifactPrompt(
   }
 
   return prompt;
-}
-
-/**
- * Describe a set of images using a vision-capable model.
- * @deprecated LEGACY - Uses minicpm-v model. Use describeImageBatch (which maps to
- *             describeImagesWithOllama with qwen3-vl:4b) for better output.
- *             This function is kept for V2 pipeline compatibility only.
- */
-async function describeImagesWithOllamaLegacy(
-  images: Array<{ imagePath: string; clusterId: number; timestamp: number }>,
-  config: IntelligenceConfig,
-  customPrompt?: string
-): Promise<VisualDescriptions> {
-  if (images.length === 0) {
-    return {
-      descriptions: [],
-      processingTime: { vlmMs: 0, framesProcessed: 0 },
-    };
-  }
-
-  console.log(`Describing ${images.length} images with vision model...`);
-  debugLog(`Vision model: ${config.visionModel}`);
-  const startTime = Date.now();
-
-  await ensureModelWarmed(config.visionModel, config);
-
-  const BATCH_SIZE = 3; // Stable batch size for minicpm-v
-  const allDescriptions: VisualDescription[] = [];
-
-  for (let i = 0; i < images.length; i += BATCH_SIZE) {
-    const batch = images.slice(i, i + BATCH_SIZE);
-    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-    const totalBatches = Math.ceil(images.length / BATCH_SIZE);
-    const batchStart = Date.now();
-
-    console.log(`  Processing batch ${batchNum}/${totalBatches}...`);
-    debugLog(`  Batch ${batchNum}: ${batch.length} images`);
-
-    try {
-      const descriptions = await callOllamaVision(batch, config, customPrompt);
-      allDescriptions.push(...descriptions);
-      debugLog(`  Batch ${batchNum} completed in ${Date.now() - batchStart}ms`);
-    } catch (error) {
-      console.error(`  Error in batch ${batchNum}:`, error);
-      debugLog(`  Batch ${batchNum} failed:`, (error as Error).message);
-      // Add error placeholders to maintain alignment
-      for (const img of batch) {
-        allDescriptions.push({
-          clusterId: img.clusterId,
-          timestamp: img.timestamp,
-          description: `Error: ${(error as Error).message}`,
-        });
-      }
-    }
-
-    // Small delay between batches to avoid overwhelming Ollama
-    if (i + BATCH_SIZE < images.length) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
-
-  const vlmMs = Date.now() - startTime;
-  console.log(`✓ Described ${allDescriptions.length} images in ${vlmMs}ms`);
-  debugLog(`Total vision processing time: ${vlmMs}ms`);
-
-  return {
-    descriptions: allDescriptions,
-    processingTime: { vlmMs, framesProcessed: allDescriptions.length },
-  };
-}
-
-async function callOllamaVision(
-  images: Array<{ imagePath: string; clusterId: number; timestamp: number }>,
-  config: IntelligenceConfig,
-  customPrompt?: string
-): Promise<VisualDescription[]> {
-  const requestId = Math.random().toString(36).substring(2, 8);
-  const requestStart = Date.now();
-
-  debugLog(`[${requestId}] Vision request started`);
-  debugLog(`  Model: ${config.visionModel}`);
-  debugLog(`  Images: ${images.length}`);
-
-  // Convert images to base64 (Ollama expects raw base64 strings)
-  const imageContents = images.map((img) => {
-    const data = readFileSync(img.imagePath);
-    return data.toString('base64');
-  });
-
-  const prompt =
-    customPrompt ||
-    `Analyze these ${images.length} screenshots from a screen recording.
-For each screenshot (in order), provide a one-sentence description of what the user is doing.
-Focus on: the application being used, the specific activity, and any visible content.
-
-Return a JSON object with this structure:
-{
-  "descriptions": [
-    {"index": 0, "summary": "description for first image"},
-    {"index": 1, "summary": "description for second image"}
-  ]
-}`;
-
-  const response = await fetch(config.endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: config.visionModel,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-          images: imageContents,
-        },
-      ],
-      format: {
-        type: 'object',
-        properties: {
-          descriptions: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                index: { type: 'number' },
-                summary: { type: 'string' },
-              },
-              required: ['index', 'summary'],
-            },
-          },
-        },
-        required: ['descriptions'],
-      },
-      stream: false,
-      options: { num_ctx: 131072 },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`  HTTP ${response.status}: ${errorText.substring(0, 500)}`);
-    debugLog(`[${requestId}] Vision error: ${response.status}`);
-    throw new Error(
-      `Ollama vision error: ${response.status} ${response.statusText}`
-    );
-  }
-
-  const data = await response.json();
-
-  debugLog(`[${requestId}] Vision response in ${Date.now() - requestStart}ms`);
-  if (data.eval_count) {
-    debugLog(`  Tokens: ${data.eval_count} eval`);
-  }
-
-  const content = data.message?.content;
-
-  if (!content) {
-    console.error(
-      '  Empty response from Ollama:',
-      JSON.stringify(data).substring(0, 500)
-    );
-    throw new Error('Empty response from Ollama vision model');
-  }
-
-  const parsed = JSON.parse(content);
-  const descriptionsList = parsed.descriptions || [];
-
-  // Map back to our format
-  return images.map((img, i) => {
-    const desc = descriptionsList.find(
-      (d: { index: number }) => d.index === i
-    ) ||
-      descriptionsList[i] || { summary: 'No description generated' };
-
-    return {
-      clusterId: img.clusterId,
-      timestamp: img.timestamp,
-      description: desc.summary,
-    };
-  });
 }

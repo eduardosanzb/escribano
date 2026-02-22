@@ -9,7 +9,7 @@ export interface DbRecording {
   audio_system_path: string | null;
   duration: number;
   captured_at: string;
-  status: 'raw' | 'processing' | 'processed' | 'error';
+  status: 'raw' | 'processing' | 'processed' | 'published' | 'error';
   processing_step:
     | 'vad'
     | 'transcription'

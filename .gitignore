@@ -155,5 +155,22 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# POC scripts
+scripts/poc-vllm-mlx/__pycache__/
+scripts/poc-vllm-mlx/.venv/
+scripts/poc-vllm-mlx/docs/
+
+# Legacy scripts
 src/scripts/__pycache__/
 src/scripts/.venv/

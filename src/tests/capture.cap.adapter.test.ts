@@ -2,23 +2,37 @@
  * Cap Adapter Tests
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { VideoService } from '../0_types.js';
 import { createCapCaptureSource } from '../adapters/capture.cap.adapter.js';
+
+// Mock VideoService
+const mockVideoService: VideoService = {
+  extractFramesAtInterval: vi.fn(),
+  extractFramesAtTimestamps: vi.fn(),
+  getMetadata: vi
+    .fn()
+    .mockResolvedValue({ duration: 300, width: 1920, height: 1080, fps: 30 }),
+  detectSceneChanges: vi.fn(),
+  runVisualIndexing: vi.fn(),
+};
 
 describe('Cap Adapter', () => {
   it('should create a CapSource', () => {
-    const capSource = createCapCaptureSource({
-      recordingsPath: '~/tmp/recordings',
-    });
+    const capSource = createCapCaptureSource(
+      { recordingsPath: '~/tmp/recordings' },
+      mockVideoService
+    );
 
     expect(capSource).toBeDefined();
     expect(capSource.getLatestRecording).toBeInstanceOf(Function);
   });
 
   it('should handle nonexistent directory gracefully', async () => {
-    const capSource = createCapCaptureSource({
-      recordingsPath: '/nonexistent/path',
-    });
+    const capSource = createCapCaptureSource(
+      { recordingsPath: '/nonexistent/path' },
+      mockVideoService
+    );
 
     const latest = await capSource.getLatestRecording();
     expect(latest).toBeNull();

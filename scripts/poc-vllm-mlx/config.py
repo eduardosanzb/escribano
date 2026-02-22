@@ -1,5 +1,5 @@
 # VLM-MLX POC Configuration
-"""Configuration settings for vLLM-MLX benchmarking POC."""
+"""Configuration settings for mlx-vlm benchmarking POC."""
 
 # VLM Prompt - exact same as used in production
 VLM_PROMPT = """Analyze this screenshot from a screen recording.
@@ -23,11 +23,9 @@ DB_PATH = "~/.escribano/escribano.db"
 
 # Test configuration
 TEST_FRAMES = 10
-CONCURRENCY_LEVELS = [1, 2]
-VLLM_SERVER = "http://localhost:8000/v1"
 
 # Vision caching test: include some duplicates
-DUPLICATE_FRAMES = 0  # Repeat 3 frames to test caching
+DUPLICATE_FRAMES = 0  # Disabled for now
 
 # Baseline performance (from VLM-BENCHMARK-LEARNINGS.md)
 BASELINE_SECONDS_PER_FRAME = 8.0

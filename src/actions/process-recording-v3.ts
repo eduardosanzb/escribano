@@ -95,9 +95,10 @@ export async function processRecordingV3(
   if (options.force) {
     log(
       'info',
-      `[V3] Force flag set, deleting existing observations for ${recordingId}...`
+      `[V3] Force flag set, deleting existing data for ${recordingId}...`
     );
     repos.observations.deleteByRecording(recordingId);
+    repos.topicBlocks.deleteByRecording(recordingId);
   }
 
   // Map DB to Domain

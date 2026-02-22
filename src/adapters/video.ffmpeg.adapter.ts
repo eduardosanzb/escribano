@@ -150,5 +150,56 @@ export function createFfmpegVideoService(): VideoService {
         throw new Error(`Visual indexing failed: ${(error as Error).message}`);
       }
     },
+
+    /**
+     * Detect scene changes in video using ffmpeg scene filter.
+     * Returns timestamps of significant visual changes.
+     */
+    detectSceneChanges: async (videoPath, config = {}) => {
+      const threshold = config.threshold ?? 0.4;
+      const minInterval = config.minInterval ?? 2;
+
+      // ffmpeg scene detection command
+      // -vf "select='gt(scene,0.4)',showinfo" detects frames where scene change > threshold
+      // -vsync vfr outputs only selected frames
+      // -f null discards video output, we only need the metadata from stderr
+      const command = `ffmpeg -i "${videoPath}" -vf "select='gt(scene,${threshold})',showinfo" -vsync vfr -f null -`;
+
+      try {
+        const { stderr } = await execAsync(command, {
+          maxBuffer: 1024 * 1024 * 10,
+        }); // 10MB buffer for large outputs
+
+        // Parse stderr for pts_time values
+        // Format: [Parsed_showinfo_0 @ 0x...] n:0 pts:12345 pts_time:5.678 ...
+        const timestamps: number[] = [];
+        const ptsTimeRegex = /pts_time:(\d+\.?\d*)/g;
+        const matches = stderr.matchAll(ptsTimeRegex);
+
+        for (const match of matches) {
+          const timestamp = Number.parseFloat(match[1] ?? '0');
+          if (!Number.isNaN(timestamp) && timestamp > 0) {
+            timestamps.push(timestamp);
+          }
+        }
+
+        // Sort and deduplicate (remove timestamps within minInterval of each other)
+        const sortedTimestamps = timestamps.sort((a, b) => a - b);
+        const deduplicated: number[] = [];
+
+        for (const ts of sortedTimestamps) {
+          // Check if this timestamp is at least minInterval seconds after the last one
+          const lastTs = deduplicated[deduplicated.length - 1];
+          if (lastTs === undefined || ts - lastTs >= minInterval) {
+            deduplicated.push(ts);
+          }
+        }
+
+        return deduplicated;
+      } catch (error) {
+        console.warn(`Scene detection failed: ${(error as Error).message}`);
+        return []; // Return empty array on failure, pipeline can fall back to time-based sampling
+      }
+    },
   };
 }

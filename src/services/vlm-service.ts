@@ -1,30 +1,22 @@
 /**
- * Escribano - VLM Batch Processing Service
+ * Escribano - VLM Service
  *
- * Orchestrates multi-image VLM inference for frame descriptions.
- * Wraps the intelligence adapter with logging and error handling.
+ * Orchestrates sequential VLM inference for frame descriptions.
+ * Each frame is processed individually for accurate image-description mapping.
  */
 
 import type { IntelligenceService } from '../0_types.js';
-import { debugLog } from '../adapters/intelligence.ollama.adapter.js';
 import type { SampledFrame } from './frame-sampling.js';
 
-export interface VLMBatchConfig {
-  /** Images per VLM request (default: 8) */
-  batchSize: number;
+export interface VLMConfig {
   /** Vision model to use (default: qwen3-vl:4b) */
   model: string;
-  /** Callback invoked after each batch is processed */
-  onBatchComplete?: (
-    results: Array<{
-      index: number;
-      timestamp: number;
-      activity: string;
-      description: string;
-      apps: string[];
-      topics: string[];
-    }>,
-    batchIndex: number
+  /** Recording ID for debug output */
+  recordingId?: string;
+  /** Callback invoked after each image is processed */
+  onImageProcessed?: (
+    result: FrameDescription,
+    progress: { current: number; total: number }
   ) => void;
 }
 
@@ -45,36 +37,33 @@ export interface FrameDescription {
   imagePath: string;
 }
 
-const DEFAULT_CONFIG: VLMBatchConfig = {
-  batchSize: Number(process.env.ESCRIBANO_VLM_BATCH_SIZE) || 8,
+const DEFAULT_CONFIG: VLMConfig = {
   model: process.env.ESCRIBANO_VLM_MODEL || 'qwen3-vl:4b',
 };
 
 /**
- * Process sampled frames through VLM in batches.
+ * Process sampled frames through VLM sequentially (one image at a time).
  *
  * @param frames - Sampled frames from adaptiveSample()
- * @param intelligence - Intelligence service with describeImageBatch
- * @param config - Batch configuration
+ * @param intelligence - Intelligence service with describeImages
+ * @param config - Processing configuration
  * @returns Array of frame descriptions with VLM analysis
  */
-export async function batchDescribeFrames(
+export async function describeFrames(
   frames: SampledFrame[],
   intelligence: IntelligenceService,
-  config: Partial<VLMBatchConfig> = {}
+  config: Partial<VLMConfig> = {}
 ): Promise<FrameDescription[]> {
-  const cfg: VLMBatchConfig = { ...DEFAULT_CONFIG, ...config };
+  const cfg: VLMConfig = { ...DEFAULT_CONFIG, ...config };
 
   if (frames.length === 0) {
-    console.log('[VLM Batch] No frames to process');
+    console.log('[VLM] No frames to process');
     return [];
   }
 
-  console.log(
-    `[VLM Batch] Processing ${frames.length} frames with batch size ${cfg.batchSize}`
-  );
-  console.log(`[VLM Batch] Model: ${cfg.model}`);
-  const startTime = Date.now();
+  const total = frames.length;
+  console.log(`[VLM] Processing ${total} frames sequentially...`);
+  console.log(`[VLM] Model: ${cfg.model}`);
 
   // Prepare input for intelligence service
   const images = frames.map((f) => ({
@@ -82,31 +71,20 @@ export async function batchDescribeFrames(
     timestamp: f.timestamp,
   }));
 
-  // Call the batch API
-  const results = await intelligence.describeImageBatch(images, {
-    batchSize: cfg.batchSize,
+  // Call the sequential VLM API with per-image callback
+  const results = await intelligence.describeImages(images, {
     model: cfg.model,
-    onBatchComplete: cfg.onBatchComplete,
+    recordingId: cfg.recordingId,
+    onImageProcessed: cfg.onImageProcessed,
   });
 
-  console.log(results);
-  debugLog(results);
-  // Enrich results with image paths
-  const enrichedResults: FrameDescription[] = results.map((r, i) => ({
-    ...r,
-    imagePath: frames[i]?.imagePath || '',
-  }));
+  console.log(`\n[VLM] Completed ${results.length}/${total} frames`);
 
-  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-  const fps = ((frames.length / (Date.now() - startTime || 1)) * 1000).toFixed(
-    1
-  );
-  console.log(
-    `[VLM Batch] Completed ${frames.length} frames in ${duration}s (${fps} fps)`
-  );
-
-  return enrichedResults;
+  return results as FrameDescription[];
 }
+
+/** @deprecated Use describeFrames instead */
+export const batchDescribeFrames = describeFrames;
 
 /**
  * Normalize activity labels to canonical forms.

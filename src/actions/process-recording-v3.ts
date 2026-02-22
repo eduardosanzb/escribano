@@ -29,10 +29,12 @@ import {
 import { log, step } from '../pipeline/context.js';
 import {
   adaptiveSample,
+  adaptiveSampleWithScenes,
+  calculateAdaptiveBaseInterval,
   getSamplingStats,
   type InputFrame,
 } from '../services/frame-sampling.js';
-import { batchDescribeFrames } from '../services/vlm-batch.js';
+import { describeFrames } from '../services/vlm-service.js';
 
 export interface ProcessRecordingV3Options {
   /** Force reprocessing even if already processed */
@@ -93,9 +95,10 @@ export async function processRecordingV3(
   if (options.force) {
     log(
       'info',
-      `[V3] Force flag set, deleting existing observations for ${recordingId}...`
+      `[V3] Force flag set, deleting existing data for ${recordingId}...`
     );
     repos.observations.deleteByRecording(recordingId);
+    repos.topicBlocks.deleteByRecording(recordingId);
   }
 
   // Map DB to Domain
@@ -168,9 +171,6 @@ export async function processRecordingV3(
 
       if (!shouldSkipStep(recording.processingStep, 'frame_extraction')) {
         extractedFrames = await step('frame-extraction-v3', async () => {
-          recording = advanceStep(recording, 'frame_extraction');
-          updateRecordingInDb(repos, recording);
-
           const framesDir = path.join(
             os.tmpdir(),
             'escribano',
@@ -186,6 +186,11 @@ export async function processRecordingV3(
           );
 
           log('info', `[V3] Extracted ${frames.length} frames`);
+
+          // Only advance step after successful extraction
+          recording = advanceStep(recording, 'frame_extraction');
+          updateRecordingInDb(repos, recording);
+
           return frames;
         });
       } else {
@@ -207,26 +212,82 @@ export async function processRecordingV3(
         // );
       }
 
+      // Step: Scene Detection (for smarter sampling)
+      let sceneChanges: number[] = [];
+      const dbRecording = repos.recordings.findById(recording.id);
+      const sourceMetadata = dbRecording?.source_metadata
+        ? JSON.parse(dbRecording.source_metadata)
+        : {};
+
+      if (sourceMetadata.scene_changes) {
+        // Load from DB for resume
+        sceneChanges = sourceMetadata.scene_changes;
+        log('info', `[V3] Loaded ${sceneChanges.length} scene changes from DB`);
+      } else if (
+        !shouldSkipStep(recording.processingStep, 'frame_extraction')
+      ) {
+        // Run scene detection only once (during initial processing)
+        sceneChanges = await step('scene-detection', async () => {
+          const changes = await adapters.video.detectSceneChanges(
+            recording.videoPath!
+          );
+          log('info', `[V3] Detected ${changes.length} scene changes`);
+
+          // Save to DB for resume safety
+          if (dbRecording) {
+            const updatedMetadata = {
+              ...sourceMetadata,
+              scene_changes: changes,
+            };
+            repos.recordings.updateMetadata(
+              recording.id,
+              JSON.stringify(updatedMetadata)
+            );
+          }
+
+          return changes;
+        });
+      }
+
       // Step: VLM Batch Inference (replaces OCR + Embedding + Clustering)
       if (!shouldSkipStep(recording.processingStep, 'vlm_enrichment')) {
         await step('vlm-batch-inference', async () => {
-          recording = advanceStep(recording, 'vlm_enrichment');
-          updateRecordingInDb(repos, recording);
-
-          // Adaptive sampling
+          // Adaptive sampling with scene awareness
           log('info', '[V3] Applying adaptive sampling...');
-          const sampledFrames = adaptiveSample(extractedFrames);
+          const sampledFrames =
+            sceneChanges.length > 0
+              ? adaptiveSampleWithScenes(extractedFrames, sceneChanges)
+              : adaptiveSample(extractedFrames);
           const stats = getSamplingStats(extractedFrames, sampledFrames);
+
+          // Log adaptive interval for visibility
+          if (sceneChanges.length > 0) {
+            const adaptiveInterval = calculateAdaptiveBaseInterval(
+              sceneChanges.length,
+              Number(process.env.ESCRIBANO_SAMPLE_INTERVAL) || 10
+            );
+            log(
+              'info',
+              `[V3] Adaptive base interval: ${adaptiveInterval}s (${sceneChanges.length} scenes detected)`
+            );
+          }
+
           log(
             'info',
             `[V3] Sampled ${stats.sampledCount} frames (${stats.reductionPercent}% reduction): ` +
-              `${stats.baseCount} base + ${stats.gapFillCount} gap fill`
+              `${stats.baseCount} base + ${stats.gapFillCount} gap fill + ${stats.sceneChangeCount} scene`
           );
 
           // Check for already-processed frames (crash-safe resumption)
+          // IMPORTANT: Exclude fallback descriptions ("No description", "Parse error")
           const existingObs = repos.observations
             .findByRecording(recording.id)
-            .filter((o) => o.type === 'visual' && o.vlm_description);
+            .filter((o) => o.type === 'visual' && o.vlm_description)
+            .filter(
+              (o) =>
+                !o.vlm_description?.startsWith('No description') &&
+                !o.vlm_description?.startsWith('Parse error')
+            );
 
           const processedTimestamps = new Set(
             existingObs.map((o) => o.timestamp)
@@ -248,33 +309,51 @@ export async function processRecordingV3(
               '[V3] All frames already processed, skipping VLM inference'
             );
           } else {
-            // VLM batch inference with eager saving per batch
-            log('info', '[V3] Starting VLM batch inference...');
-            await batchDescribeFrames(sampledFrames, adapters.intelligence, {
-              onBatchComplete: (batchResults, batchIndex) => {
-                // Eager save: persist each batch immediately
-                const observations: DbObservationInsert[] = batchResults.map(
-                  (desc) => ({
-                    id: generateId(),
-                    recording_id: recording.id,
-                    type: 'visual' as const,
-                    timestamp: desc.timestamp,
-                    end_timestamp: desc.timestamp,
-                    image_path: sampledFrames[desc.index]?.imagePath || '',
-                    ocr_text: null,
-                    vlm_description: desc.description,
-                    embedding: null,
-                    text: null,
-                    audio_source: null,
-                    audio_type: null,
-                  })
-                );
+            // Debug: Log frames being processed
+            log('info', `[V3] Frames to process (${framesToProcess.length}):`);
+            framesToProcess.slice(0, 10).forEach((f, i) => {
+              log(
+                'info',
+                `  [${i}] ${f.imagePath.split('/').pop()} @ ${f.timestamp}s`
+              );
+            });
+            if (framesToProcess.length > 10) {
+              log('info', `  ... and ${framesToProcess.length - 10} more`);
+            }
 
-                repos.observations.saveBatch(observations);
-                log(
-                  'info',
-                  `[V3] Batch ${batchIndex}: Eagerly saved ${observations.length} observations`
-                );
+            // VLM sequential inference with immediate saving after each image
+            log('info', '[V3] Starting VLM inference...');
+            await describeFrames(framesToProcess, adapters.intelligence, {
+              recordingId: recording.id,
+              onImageProcessed: (result, progress) => {
+                // Save immediately after each image
+                const observation: DbObservationInsert = {
+                  id: generateId(),
+                  recording_id: recording.id,
+                  type: 'visual' as const,
+                  timestamp: result.timestamp,
+                  end_timestamp: result.timestamp,
+                  image_path: result.imagePath,
+                  ocr_text: null,
+                  vlm_description: result.description,
+                  activity_type: result.activity,
+                  apps: JSON.stringify(result.apps),
+                  topics: JSON.stringify(result.topics),
+                  embedding: null,
+                  text: null,
+                  audio_source: null,
+                  audio_type: null,
+                };
+
+                repos.observations.save(observation);
+
+                // Log progress every 10 frames
+                if (progress.current % 10 === 0) {
+                  log(
+                    'info',
+                    `[V3] Processed ${progress.current}/${progress.total} frames`
+                  );
+                }
               },
             });
 
@@ -288,6 +367,10 @@ export async function processRecordingV3(
               `[V3] VLM complete: ${allVisualObs.length} total visual observations`
             );
           }
+
+          // Only advance step after all VLM processing is complete
+          recording = advanceStep(recording, 'vlm_enrichment');
+          updateRecordingInDb(repos, recording);
         });
       } else {
         log('info', '[V3] Skipping VLM inference (already completed)');
@@ -296,9 +379,6 @@ export async function processRecordingV3(
       // Phase 2 - Activity Segmentation & TopicBlock Formation
       if (!shouldSkipStep(recording.processingStep, 'block_formation')) {
         await step('activity-segmentation-and-alignment', async () => {
-          recording = advanceStep(recording, 'context_creation');
-          updateRecordingInDb(repos, recording);
-
           // Get all observations for this recording
           const allObservations = repos.observations.findByRecording(
             recording.id
@@ -348,10 +428,6 @@ export async function processRecordingV3(
             `[V3] Aligned audio: ${alignStats.segmentsWithAudio}/${alignStats.totalSegments} segments have transcripts (${alignStats.totalTranscriptSegments} total transcript segments)`
           );
 
-          // Create TopicBlocks from enriched segments
-          recording = advanceStep(recording, 'block_formation');
-          updateRecordingInDb(repos, recording);
-
           log(
             'info',
             `[V3] Creating ${enrichedSegments.length} TopicBlocks...`
@@ -361,43 +437,41 @@ export async function processRecordingV3(
             // Create context from segment apps/topics
             const contextIds: string[] = [];
 
-            // Create or find contexts for apps and topics
+            // Simplified context creation using INSERT OR IGNORE
             for (const app of segment.apps) {
+              const ctxId = generateId();
+              repos.contexts.saveOrIgnore({
+                id: ctxId,
+                type: 'app',
+                name: app,
+                metadata: JSON.stringify({ source: 'vlm-v3' }),
+              });
+              // Fetch the context to get its ID (existing or newly created)
               const existingCtx = repos.contexts.findByTypeAndName('app', app);
               if (existingCtx) {
                 contextIds.push(existingCtx.id);
-              } else {
-                const newContextId = generateId();
-                repos.contexts.save({
-                  id: newContextId,
-                  type: 'app',
-                  name: app,
-                  metadata: JSON.stringify({ source: 'vlm-extraction' }),
-                });
-                contextIds.push(newContextId);
               }
             }
 
             for (const topic of segment.topics) {
+              const ctxId = generateId();
+              repos.contexts.saveOrIgnore({
+                id: ctxId,
+                type: 'topic',
+                name: topic,
+                metadata: JSON.stringify({ source: 'vlm-v3' }),
+              });
+              // Fetch the context to get its ID (existing or newly created)
               const existingCtx = repos.contexts.findByTypeAndName(
                 'topic',
                 topic
               );
               if (existingCtx) {
                 contextIds.push(existingCtx.id);
-              } else {
-                const newContextId = generateId();
-                repos.contexts.save({
-                  id: newContextId,
-                  type: 'topic',
-                  name: topic,
-                  metadata: JSON.stringify({ source: 'vlm-extraction' }),
-                });
-                contextIds.push(newContextId);
               }
             }
 
-            // Create the TopicBlock
+            // Create the TopicBlock with enriched classification
             repos.topicBlocks.save({
               id: generateId(),
               recording_id: recording.id,
@@ -408,8 +482,11 @@ export async function processRecordingV3(
                 start_time: segment.startTime,
                 end_time: segment.endTime,
                 duration: segment.duration,
+                apps: segment.apps,
+                topics: segment.topics,
                 transcript_count: segment.transcripts.length,
                 has_transcript: segment.combinedTranscript.length > 0,
+                combined_transcript: segment.combinedTranscript,
               }),
               duration: segment.duration,
             });
@@ -417,6 +494,13 @@ export async function processRecordingV3(
           }
 
           log('info', `[V3] Created ${blockCount} TopicBlocks`);
+
+          // Only advance steps after all processing is complete
+          recording = advanceStep(recording, 'context_creation');
+          updateRecordingInDb(repos, recording);
+
+          recording = advanceStep(recording, 'block_formation');
+          updateRecordingInDb(repos, recording);
         });
       } else {
         log(
@@ -498,6 +582,9 @@ async function processAudioPipeline(
               image_path: null,
               ocr_text: null,
               vlm_description: null,
+              activity_type: null,
+              apps: null,
+              topics: null,
               embedding: null,
             });
           }

@@ -84,3 +84,72 @@ Moving from Ollama (Go-based wrapper) to **MLX (Native Metal)** unlocks the M4 M
 *   **Rotated Text**: 180° text sometimes read in reverse ("ABC" -> "CBA").
 *   **Infinite Loops**: Dense tables can trigger infinite repetition ("| | |"). Fix: `temperature=0.1-0.3`.
 *   **Numeric Regression**: 8B model struggles with long numeric strings compared to Qwen2.5-VL.
+
+## qwen3-vl Multi-Image Output Failure (Feb 2026)
+
+### Problem
+
+qwen3-vl:4b fails to output JSON arrays for multi-image batches. The model correctly 
+analyzes ALL images in the `thinking` field but only outputs ONE item to the `content` 
+field.
+
+### Evidence
+
+Test batch with 8 images:
+- **thinking field**: 12,000+ chars with complete analysis for all 8 images
+- **content field**: 318 chars with only index 0
+
+The thinking field contained properly structured data:
+```
+Index 0: LinkedIn profile → Viewing LinkedIn profile
+Index 1: LinkedIn post (Bun/Next.js) → Reading technical blog
+Index 2: Terminal with tests → Executing test sessions
+...
+Index 7: LinkedIn post → Reading LinkedIn post
+```
+
+### `/no_think` Prefix Does NOT Work
+
+Contrary to qwen3 documentation, the `/no_think` prefix is ignored by qwen3-vl:4b:
+- With `/no_think`: thinking field still populated with 12K chars
+- Without `/no_think`: same behavior
+
+This appears to be a known quirk in qwen3 vision models.
+
+### Root Cause
+
+Hypothesis: qwen3-vl's output generator has a token limit or stopping condition 
+that triggers after outputting the first complete JSON object, despite having 
+analyzed all images.
+
+### Solution: Two-Model Approach
+
+Use qwen3-vl for vision analysis + tiny model to parse thinking field:
+
+| Step | Model | Role |
+|------|-------|------|
+| 1 | qwen3-vl:4b | Analyze images, populate thinking field |
+| 2 | qwen3:0.6b | Parse thinking field → structured JSON array |
+
+This leverages qwen3-vl's strong visual analysis while bypassing its output 
+limitation.
+
+### Performance Impact
+
+- VLM call: ~45s per batch (8 images)
+- Thinking parser: ~2-3s per batch
+- Total: ~48s per batch (vs 45s single-model ideal)
+
+The overhead is minimal compared to the 100% success rate improvement.
+
+## MLX-VLM Interleaved Processing (Feb 2026)
+
+POC validated interleaved multi-image processing with mlx-vlm:
+- **Throughput:** 0.59 frames/sec (4.7x vs Ollama baseline)
+- **Accuracy:** Frame-to-description mapping confirmed correct
+- **Model:** Qwen3-VL-2B-Instruct-bf16
+
+**Key Finding:** Token budget truncation on later frames (tunable via MAX_TOKENS or batch size).
+
+**Full findings:** [MLX-VLM POC Learnings](./MLX-VLM-POC-LEARNINGS.md)  
+**ADR:** [ADR-006: MLX-VLM Adapter](./adr/006-mlx-vlm-adapter.md)

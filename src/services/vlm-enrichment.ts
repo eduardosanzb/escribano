@@ -1,5 +1,6 @@
 /**
  * Escribano - VLM Enrichment Service
+ * @deprecated V2 pipeline - uses old clustering approach. Use V3 pipeline instead.
  *
  * Selects representative frames from clusters and describes them with a vision model.
  */
@@ -114,7 +115,7 @@ export async function describeFrames(
   const descriptions = await intelligence.describeImages(images);
 
   for (const [index, frame] of frames.entries()) {
-    const desc = descriptions.descriptions[index];
+    const desc = descriptions[index];
     if (desc?.description) {
       results.set(frame.observation.id, desc.description);
     }

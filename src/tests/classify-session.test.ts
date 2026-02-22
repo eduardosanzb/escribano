@@ -80,9 +80,9 @@ const mockIntelligence: IntelligenceService = {
   extractMetadata: mockExtractMetadata,
   generate: mockGenerate,
   describeImages: vi.fn(),
-  describeImageBatch: vi.fn(),
   embedText: vi.fn(),
   extractTopics: vi.fn(),
+  generateText: vi.fn().mockResolvedValue('Mock generated text'),
 };
 
 describe('classifySession', () => {

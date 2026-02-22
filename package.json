@@ -14,9 +14,11 @@
     "format": "biome format --write .",
     "check": "biome ci .",
     "escribano": "tsx --env-file=.env src/index.ts",
+    "dashboard": "node tools/dashboard/server.js",
     "db:reset": "rm -f ~/.escribano/escribano.db",
     "ollama": "OLLAMA_NUM_PARALLEL=4 OLLAMA_MAX_LOADED_MODELS=3 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=262144 ollama serve",
-    "ollama-2": "OLLAMA_NUM_PARALLEL=1 OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=262144 ollama serve"
+    "ollama-2": "OLLAMA_NUM_PARALLEL=1 OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=262144 ollama serve",
+    "index:rebuild": "tsx --env-file=.env src/scripts/rebuild-index.ts"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +26,7 @@
   "packageManager": "pnpm@10.8.0",
   "dependencies": {
     "better-sqlite3": "^12.6.2",
+    "express": "^5.0.0",
     "uuidv7": "1.1.0",
     "zod": "^4.3.5"
   },

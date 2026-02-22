@@ -1,5 +1,6 @@
 /**
  * Process Session Action
+ * @deprecated V2 pipeline - use process-recording-v3.ts instead.
  *
  * Takes a recording and transcribes all available audio sources, creating a Session.
  * Supports multiple audio sources (mic, system) with parallel transcription option.
@@ -240,7 +241,12 @@ async function getVisualDescriptions(
   try {
     const descResult =
       await intelligenceService.describeImages(imagesToDescribe);
-    return descResult.descriptions;
+    // New interface returns array directly
+    return descResult.map((d) => ({
+      clusterId: 0,
+      timestamp: d.timestamp,
+      description: d.description,
+    }));
   } catch (descError) {
     console.warn(`  Warning: Visual description failed: ${descError}`);
     return [];

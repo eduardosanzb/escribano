@@ -1,7 +1,12 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { CapConfig, CaptureSource, Recording } from '../0_types.js';
+import type {
+  CapConfig,
+  CaptureSource,
+  Recording,
+  VideoService,
+} from '../0_types.js';
 import { capConfigSchema } from '../0_types.js';
 import { normalizeSessionId } from '../utils/id-normalization.js';
 
@@ -13,7 +18,8 @@ function expandPath(path: string): string {
 }
 
 async function parseCapRecording(
-  capDirPath: string
+  capDirPath: string,
+  videoService: VideoService
 ): Promise<Recording | null> {
   try {
     const metaPath = join(capDirPath, 'recording-meta.json');
@@ -55,6 +61,19 @@ async function parseCapRecording(
     const stats = await stat(audioToStat);
     const capturedAt = stats.mtime;
 
+    // Calculate duration from video if available
+    let duration = 0;
+    if (videoPath) {
+      try {
+        const metadata = await videoService.getMetadata(videoPath);
+        duration = metadata.duration;
+      } catch (e) {
+        console.warn(
+          `Failed to get video duration for ${capDirPath}: ${(e as Error).message}`
+        );
+      }
+    }
+
     const rawId = capDirPath.split('/').pop() || 'unknown';
     const recordingId = normalizeSessionId(rawId);
 
@@ -68,7 +87,7 @@ async function parseCapRecording(
       videoPath,
       audioMicPath: micAudio ? micAudio : null,
       audioSystemPath: systemAudio ? systemAudio : null,
-      duration: 0,
+      duration,
       capturedAt,
     };
   } catch (error) {
@@ -85,7 +104,8 @@ async function parseCapRecording(
 }
 
 export function createCapCaptureSource(
-  config: Partial<CapConfig> = {}
+  config: Partial<CapConfig> = {},
+  videoService: VideoService
 ): CaptureSource {
   const parsedConfig = capConfigSchema.parse(config);
   const recordingsPath = expandPath(parsedConfig.recordingsPath);
@@ -102,7 +122,7 @@ export function createCapCaptureSource(
 
       const recordings = await Promise.allSettled(
         capDirs.map(async (dir) =>
-          parseCapRecording(join(recordingsPath, dir.name))
+          parseCapRecording(join(recordingsPath, dir.name), videoService)
         )
       );
       // logging errors

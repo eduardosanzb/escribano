@@ -180,3 +180,94 @@ Complete gibberish. Unusable.
    parallel continuous batching (2-4 concurrent streams)
 3. **V3 pipeline integration** -- Wire qwen3-vl:4b into the VLM-first
    architecture defined in ADR-005
+
+## Batch vs Single-Image Processing (February 2026)
+
+### Problem Discovery
+
+Batch processing (8 images per request) with qwen3-vl:4b produced incorrect
+image-to-description mappings. The VLM confused which image corresponded to
+which description index.
+
+**Root Cause:** Small VLM (4B parameters) struggles to track 8 separate images
+in a single context. The model mixes up which image is being described.
+
+### POC Results: Sequential Single-Image Processing
+
+**Test setup:**
+- Model: qwen3-vl:4b
+- Images: 8 frames with known batch mismatches
+- `num_predict`: 30000 tokens
+
+**Results:**
+
+| Metric | Value |
+|--------|-------|
+| Total time | 64.2s |
+| Avg per frame | 8.0s |
+| Parsing success | 8/8 (100%) |
+| Accuracy | ✅ Correct |
+
+**Key Finding:** Single-image processing produces **correct** descriptions.
+Frames previously misidentified as "Terminal window" were correctly identified
+as LinkedIn, terminal, etc.
+
+### Comparison: Batch vs Single-Image
+
+| Metric | Batch (8 images) | Single-Image Sequential |
+|--------|-----------------|------------------------|
+| Accuracy | ❌ Image mixing | ✅ Correct mapping |
+| HTTP calls | 1 per 8 frames | 8 per 8 frames |
+| Time per 8 frames | ~80s | 65s |
+| Reliability | ⚠️ Parsing failures | ✅ More stable |
+| Debug complexity | High | Low (1:1 mapping) |
+
+**Surprising result:** Single-image sequential is **faster** than batch
+despite 8x more HTTP calls. This is because:
+- Batch mode spends more tokens thinking about tracking 8 images
+- Single-image has simpler prompt (no index confusion)
+- No parsing complexity for extracting indices
+
+### Extrapolation to Full Session (182 frames)
+
+| Approach | Total Time | Accuracy |
+|----------|-----------|----------|
+| Batch (8 images) | ~24 min | ❌ Wrong |
+| Single-Image Sequential | ~25 min | ✅ Correct |
+
+### Updated Recommended Configuration
+
+```json
+{
+  "model": "qwen3-vl:4b",
+  "processing": "sequential-single-image",
+  "options": {
+    "temperature": 0.3,
+    "num_predict": 30000
+  },
+  "prompt_strategy": "simple",
+  "batch_size": 1
+}
+```
+
+**Key changes:**
+- Switched from batch to sequential single-image processing
+- Increased `num_predict` from 6000 → 30000 (1 frame, plenty of room for thinking + output)
+- Simplified prompt (no index tracking needed)
+
+### Trade-offs Accepted
+
+- More HTTP overhead (182 calls instead of 23)
+- Similar overall time (~25 min vs ~24 min)
+- **But accurate** - correct image-description mapping
+
+### Conclusion
+
+**Winner remains:** qwen3-vl:4b
+
+**Processing mode changed:**
+- ❌ Batch mode (8 images per request) - causes image confusion
+- ✅ Sequential single-image (1 image per request) - correct results
+
+Reason: Accuracy > raw throughput. Batch mode's speed advantage is negated by
+incorrect results requiring manual review.

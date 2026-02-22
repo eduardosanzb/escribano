@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Escribano Debug Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    :root {
+      --pico-font-size: 14px;
+    }
+    
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--pico-muted-border-color);
+    }
+    
+    .header h1 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    
+    select {
+      min-width: 300px;
+    }
+    
+    .stats {
+      display: flex;
+      gap: 2rem;
+      padding: 1rem;
+      background: var(--pico-background-color);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    
+    .stat {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--pico-muted-color);
+      text-transform: uppercase;
+    }
+    
+    .stat-value {
+      font-size: 1.25rem;
+      font-weight: bold;
+    }
+    
+    .observations-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1rem;
+    }
+    
+    .observation-card {
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      transition: box-shadow 0.2s;
+    }
+    
+    .observation-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    .observation-image {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      background: #000;
+      cursor: pointer;
+    }
+    
+    .observation-content {
+      padding: 0.75rem;
+      position: relative;
+    }
+    
+    .copy-path-btn {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+      background: var(--pico-primary-background);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    .observation-timestamp {
+      font-size: 0.875rem;
+      color: var(--pico-muted-color);
+      margin-bottom: 0.5rem;
+    }
+    
+    .observation-description {
+      font-size: 0.875rem;
+      line-height: 1.4;
+      margin-bottom: 0.5rem;
+    }
+    
+    .observation-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+    }
+    
+    .badge {
+      padding: 0.125rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    
+    .badge-activity {
+      background: #e0e7ff;
+      color: #3730a3;
+    }
+    
+    .badge-app {
+      background: #dcfce7;
+      color: #166534;
+    }
+    
+    .badge-topic {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: var(--pico-muted-color);
+    }
+    
+    .empty {
+      text-align: center;
+      padding: 2rem;
+      color: var(--pico-muted-color);
+    }
+    
+    #recording-date {
+      font-size: 0.875rem;
+      color: var(--pico-muted-color);
+    }
+    
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.9);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    .modal.active {
+      display: flex;
+    }
+    
+    .modal img {
+      max-width: 90%;
+      max-height: 90%;
+      object-fit: contain;
+    }
+    
+    .modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      color: white;
+      font-size: 2rem;
+      cursor: pointer;
+      background: none;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <div class="header">
+      <h1>🔍 Escribano Debug Dashboard</h1>
+    </div>
+    
+    <div class="controls">
+      <label>
+        Select Recording
+        <select id="recording-select">
+          <option value="">-- Select a recording --</option>
+        </select>
+      </label>
+      <span id="recording-date"></span>
+    </div>
+    
+    <div class="stats" id="stats" style="display: none;">
+      <div class="stat">
+        <span class="stat-label">Duration</span>
+        <span class="stat-value" id="stat-duration">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Observations</span>
+        <span class="stat-value" id="stat-count">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Status</span>
+        <span class="stat-value" id="stat-status">--</span>
+      </div>
+    </div>
+    
+    <div id="observations-container">
+      <div class="empty">Select a recording to view observations</div>
+    </div>
+  </main>
+  
+  <div class="modal" id="image-modal">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <img id="modal-image" src="" alt="Full size image">
+  </div>
+  
+  <script>
+    const recordingSelect = document.getElementById('recording-select');
+    const recordingDate = document.getElementById('recording-date');
+    const stats = document.getElementById('stats');
+    const observationsContainer = document.getElementById('observations-container');
+    
+    let recordings = [];
+    
+    async function loadRecordings() {
+      try {
+        const res = await fetch('/api/recordings');
+        recordings = await res.json();
+        
+        recordings.forEach(rec => {
+          const option = document.createElement('option');
+          option.value = rec.id;
+          const date = new Date(rec.captured_at).toLocaleString();
+          option.textContent = `${date} (${formatDuration(rec.duration)}) - ${rec.status}`;
+          recordingSelect.appendChild(option);
+        });
+      } catch (err) {
+        console.error('Failed to load recordings:', err);
+        observationsContainer.innerHTML = `<div class="loading">Error loading recordings: ${err.message}</div>`;
+      }
+    }
+    
+    recordingSelect.addEventListener('change', async (e) => {
+      const recordingId = e.target.value;
+      if (!recordingId) {
+        stats.style.display = 'none';
+        recordingDate.textContent = '';
+        observationsContainer.innerHTML = '<div class="empty">Select a recording to view observations</div>';
+        return;
+      }
+      
+      await loadObservations(recordingId);
+    });
+    
+    async function loadObservations(recordingId) {
+      observationsContainer.innerHTML = '<div class="loading">Loading observations...</div>';
+      
+      try {
+        const [recRes, obsRes] = await Promise.all([
+          fetch(`/api/recording/${recordingId}`),
+          fetch(`/api/observations/${recordingId}`)
+        ]);
+        
+        const recording = await recRes.json();
+        const observations = await obsRes.json();
+        
+        recordingDate.textContent = recording ? new Date(recording.captured_at).toLocaleString() : '';
+        
+        document.getElementById('stat-duration').textContent = formatDuration(recording?.duration || 0);
+        document.getElementById('stat-count').textContent = observations.length;
+        document.getElementById('stat-status').textContent = recording?.status || 'unknown';
+        stats.style.display = 'flex';
+        
+        if (observations.length === 0) {
+          observationsContainer.innerHTML = '<div class="empty">No visual observations found for this recording</div>';
+          return;
+        }
+        
+        const grid = document.createElement('div');
+        grid.className = 'observations-grid';
+        
+        observations.forEach(obs => {
+          const card = createObservationCard(obs);
+          grid.appendChild(card);
+        });
+        
+        observationsContainer.innerHTML = '';
+        observationsContainer.appendChild(grid);
+      } catch (err) {
+        console.error('Failed to load observations:', err);
+        observationsContainer.innerHTML = `<div class="loading">Error loading observations: ${err.message}</div>`;
+      }
+    }
+    
+    function createObservationCard(obs) {
+      const card = document.createElement('article');
+      card.className = 'observation-card';
+      
+      const hasImage = obs.image_path;
+      let imagePath = null;
+      if (hasImage) {
+        if (obs.image_path.startsWith('/var/folders')) {
+          imagePath = obs.image_path.replace('/var/folders', '/frames-temp');
+        } else if (obs.image_path.includes('/.escribano')) {
+          imagePath = obs.image_path.replace(/\/Users\/[^/]+\/\.escribano/, '/frames');
+        }
+      }
+      const imageHtml = hasImage && imagePath
+        ? `<img class="observation-image" src="${imagePath}" alt="Frame at ${formatTimestamp(obs.timestamp)}" onclick="openModal('${imagePath}')">`
+        : `<div class="observation-image" style="display:flex;align-items:center;justify-content:center;color:#666;">No image</div>`;
+      
+      const apps = parseJson(obs.apps);
+      const topics = parseJson(obs.topics);
+      
+      let badgesHtml = '';
+      if (obs.activity_type) {
+        badgesHtml += `<span class="badge badge-activity">${obs.activity_type}</span>`;
+      }
+      apps?.forEach(app => {
+        badgesHtml += `<span class="badge badge-app">${app}</span>`;
+      });
+      topics?.forEach(topic => {
+        badgesHtml += `<span class="badge badge-topic">${topic}</span>`;
+      });
+      
+      const copyBtn = obs.image_path 
+        ? `<button class="copy-path-btn" onclick="copyPath('${obs.image_path}')" title="Copy path to clipboard">📋</button>`
+        : '';
+      
+      const imageName = obs.image_path ? obs.image_path.split('/').pop() : '';
+      
+      card.innerHTML = `
+        ${imageHtml}
+        <div class="observation-content">
+          ${copyBtn}
+          <div class="observation-timestamp">${formatTimestamp(obs.timestamp)} - ${imageName}</div>
+          <div class="observation-description">${obs.vlm_description || 'No description'}</div>
+          <div class="observation-badges">${badgesHtml}</div>
+        </div>
+      `;
+      
+      return card;
+    }
+    
+    function formatDuration(seconds) {
+      if (!seconds) return '0:00';
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      if (h > 0) {
+        return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      }
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+    
+    function formatTimestamp(ts) {
+      return formatDuration(ts);
+    }
+    
+    function parseJson(str) {
+      if (!str) return null;
+      try {
+        return JSON.parse(str);
+      } catch {
+        return null;
+      }
+    }
+    
+    function openModal(src) {
+      document.getElementById('modal-image').src = src;
+      document.getElementById('image-modal').classList.add('active');
+    }
+    
+    function closeModal() {
+      document.getElementById('image-modal').classList.remove('active');
+    }
+    
+    async function copyPath(path) {
+      try {
+        await navigator.clipboard.writeText(path);
+        showToast('Path copied to clipboard!');
+      } catch (err) {
+        console.error('Failed to copy:', err);
+        showToast('Failed to copy path');
+      }
+    }
+    
+    function showToast(message) {
+      const existing = document.querySelector('.toast');
+      if (existing) existing.remove();
+      
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = message;
+      toast.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #22c55e;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 4px;
+        z-index: 2000;
+        animation: fadeIn 0.2s;
+      `;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2000);
+    }
+    
+    document.getElementById('image-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'image-modal') closeModal();
+    });
+    
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+    
+    loadRecordings();
+  </script>
+</body>
+</html>

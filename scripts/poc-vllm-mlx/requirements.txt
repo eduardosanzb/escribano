@@ -1,0 +1,5 @@
+# vLLM-MLX POC Dependencies
+# Install with: uv pip install -r requirements.txt
+# Or: uv pip install openai
+
+openai>=1.0.0

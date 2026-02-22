@@ -90,13 +90,13 @@ describe('IntelligenceService', () => {
 
     const service = createOllamaIntelligenceService(mockConfig);
     const result = await service.describeImages([
-      { imagePath: '/path/to/cat.jpg', clusterId: 1, timestamp: 10 },
-      { imagePath: '/path/to/dog.jpg', clusterId: 2, timestamp: 20 },
+      { imagePath: '/path/to/cat.jpg', timestamp: 10 },
+      { imagePath: '/path/to/dog.jpg', timestamp: 20 },
     ]);
 
-    expect(result.descriptions).toHaveLength(2);
-    expect(result.descriptions[0].description).toBe('A cat sitting on a mat');
-    expect(result.descriptions[1].description).toBe('A dog chasing a ball');
+    expect(result).toHaveLength(2);
+    expect(result[0].description).toBe('A cat sitting on a mat');
+    expect(result[1].description).toBe('A dog chasing a ball');
   });
 
   it('should classify a debugging session', async () => {

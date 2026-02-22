@@ -1,5 +1,7 @@
 /**
  * Escribano - Debug Utilities
+ * @deprecated No longer needed - all data is stored in the database.
+ * Kept for backward compatibility only.
  *
  * Utilities for saving debug artifacts (VLM responses, frame copies) during processing.
  */
@@ -13,6 +15,7 @@ const DEBUG_DIR = path.join(homedir(), '.escribano', 'debug');
 
 /**
  * Initialize debug directory for a recording.
+ * @deprecated
  */
 export async function initDebugDir(recordingId: string): Promise<string> {
   if (!DEBUG_ENABLED) return '';
@@ -29,6 +32,7 @@ export async function initDebugDir(recordingId: string): Promise<string> {
 
 /**
  * Save a VLM response to disk.
+ * @deprecated
  */
 export async function saveVlmResponse(
   recordingId: string,
@@ -52,6 +56,7 @@ export async function saveVlmResponse(
 
 /**
  * Copy sampled frames to debug directory with batch naming.
+ * @deprecated
  */
 export async function copyFramesForDebug(
   recordingId: string,

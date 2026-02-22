@@ -380,19 +380,14 @@ export interface IntelligenceService {
     classification: Classification,
     visualLogs?: VisualLog[]
   ): Promise<TranscriptMetadata>;
-  /** @deprecated Legacy - uses minicpm-v model. Use describeImageBatch for V3 pipeline. */
-  describeImages(
-    images: Array<{ imagePath: string; clusterId: number; timestamp: number }>,
-    prompt?: string
-  ): Promise<VisualDescriptions>;
   /** Sequential VLM processing - one image per request for accurate image-description mapping. */
-  describeImageBatch(
+  describeImages(
     images: Array<{ imagePath: string; timestamp: number }>,
     config?: {
       model?: string;
       recordingId?: string;
-      onBatchComplete?: (
-        results: Array<{
+      onImageProcessed?: (
+        result: {
           index: number;
           timestamp: number;
           imagePath: string;
@@ -400,8 +395,8 @@ export interface IntelligenceService {
           description: string;
           apps: string[];
           topics: string[];
-        }>,
-        batchIndex: number
+        },
+        progress: { current: number; total: number }
       ) => void;
     }
   ): Promise<

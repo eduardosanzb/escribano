@@ -34,7 +34,7 @@ import {
   getSamplingStats,
   type InputFrame,
 } from '../services/frame-sampling.js';
-import { batchDescribeFrames } from '../services/vlm-service.js';
+import { describeFrames } from '../services/vlm-service.js';
 
 export interface ProcessRecordingV3Options {
   /** Force reprocessing even if already processed */
@@ -320,46 +320,39 @@ export async function processRecordingV3(
               log('info', `  ... and ${framesToProcess.length - 10} more`);
             }
 
-            // VLM batch inference with eager saving per batch
-            log('info', '[V3] Starting VLM batch inference...');
-            await batchDescribeFrames(framesToProcess, adapters.intelligence, {
+            // VLM sequential inference with immediate saving after each image
+            log('info', '[V3] Starting VLM inference...');
+            await describeFrames(framesToProcess, adapters.intelligence, {
               recordingId: recording.id,
-              onBatchComplete: (batchResults, batchIndex) => {
-                // Debug: Log results being processed
-                log('info', `[V3] Batch ${batchIndex} results before saving:`);
-                batchResults.slice(0, 3).forEach((desc, i) => {
+              onImageProcessed: (result, progress) => {
+                // Save immediately after each image
+                const observation: DbObservationInsert = {
+                  id: generateId(),
+                  recording_id: recording.id,
+                  type: 'visual' as const,
+                  timestamp: result.timestamp,
+                  end_timestamp: result.timestamp,
+                  image_path: result.imagePath,
+                  ocr_text: null,
+                  vlm_description: result.description,
+                  activity_type: result.activity,
+                  apps: JSON.stringify(result.apps),
+                  topics: JSON.stringify(result.topics),
+                  embedding: null,
+                  text: null,
+                  audio_source: null,
+                  audio_type: null,
+                };
+
+                repos.observations.save(observation);
+
+                // Log progress every 10 frames
+                if (progress.current % 10 === 0) {
                   log(
                     'info',
-                    `  [${i}] ${desc.imagePath.split('/').pop()} @ ${desc.timestamp}s - ${desc.description?.slice(0, 50)}...`
+                    `[V3] Processed ${progress.current}/${progress.total} frames`
                   );
-                });
-
-                // Eager save: persist each batch immediately
-                const observations: DbObservationInsert[] = batchResults.map(
-                  (desc) => ({
-                    id: generateId(),
-                    recording_id: recording.id,
-                    type: 'visual' as const,
-                    timestamp: desc.timestamp,
-                    end_timestamp: desc.timestamp,
-                    image_path: desc.imagePath, // ← FIXED: Use explicit path from result
-                    ocr_text: null,
-                    vlm_description: desc.description,
-                    activity_type: desc.activity,
-                    apps: JSON.stringify(desc.apps),
-                    topics: JSON.stringify(desc.topics),
-                    embedding: null,
-                    text: null,
-                    audio_source: null,
-                    audio_type: null,
-                  })
-                );
-
-                repos.observations.saveBatch(observations);
-                log(
-                  'info',
-                  `[V3] Batch ${batchIndex}: Eagerly saved ${observations.length} observations`
-                );
+                }
               },
             });
 

@@ -59,7 +59,7 @@ src/
 ├── adapters/                     # External system implementations
 ├── services/                     # Pure business logic
 │   ├── frame-sampling.ts         # Scene-aware frame reduction
-│   ├── vlm-batch.ts              # Multi-image VLM orchestration
+│   ├── vlm-service.ts            # Sequential single-image VLM orchestration
 │   ├── activity-segmentation.ts  # Group by activity continuity
 │   └── temporal-alignment.ts     # Audio attachment by timestamp
 ├── db/                          # SQLite persistence layer
@@ -136,7 +136,6 @@ Select `better-sqlite3` when prompted.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ESCRIBANO_VLM_MODEL` | VLM model | `qwen3-vl:4b` |
-| `ESCRIBANO_VLM_BATCH_SIZE` | Images per batch | `8` |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base sampling (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
@@ -152,9 +151,9 @@ Select `better-sqlite3` when prompted.
 - **M4**: VLM-First Pipeline — Frame Sampling → Scene Detection → VLM Batch → Activity Segmentation → LLM Summary
 
 ### Current Focus
-- Scene detection for smarter frame sampling (target ~100-150 frames vs ~450)
-- LLM-powered summary generation (qwen3:32b)
-- End-to-end validation with real recordings
+- OCR on keyframes at artifact generation time (adds actual code/commands/URLs)
+- Cross-recording Context queries ("show me all debugging this week")
+- VLM pool abstraction for MLX migration (true parallel continuous batching)
 
 ### Backlog (P2)
 - OCR on keyframes at artifact generation time (actual code/commands/URLs)

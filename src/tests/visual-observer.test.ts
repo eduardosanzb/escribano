@@ -10,7 +10,6 @@ import type {
   Transcript,
   TranscriptionService,
   VideoService,
-  VisualDescriptions,
   VisualIndex,
 } from '../0_types.js';
 import { processSession } from '../actions/process-session.js';
@@ -37,12 +36,13 @@ const mockRecording: Recording = {
   capturedAt: new Date(),
 };
 
-const mockTranscript: Transcript = {
-  fullText: 'Hello world',
-  segments: [{ id: '1', start: 0, end: 5, text: 'Hello world' }],
-  language: 'en',
-  duration: 60,
-};
+// Note: Transcript mock not used in current test setup
+// const _mockTranscript: Transcript = {
+//   fullText: 'Hello world',
+//   segments: [{ id: '1', start: 0, end: 5, text: 'Hello world' }],
+//   language: 'en',
+//   duration: 60,
+// };
 
 const mockVisualIndex: VisualIndex = {
   frames: [
@@ -69,12 +69,18 @@ const mockVisualIndex: VisualIndex = {
   processingTime: { ocrMs: 100, clipMs: 100, totalMs: 200 },
 };
 
-const mockVisualDescriptions: VisualDescriptions = {
-  descriptions: [
-    { clusterId: 0, timestamp: 0, description: 'User is writing python code' },
-  ],
-  processingTime: { vlmMs: 500, framesProcessed: 1 },
-};
+// Mock for describeImages() - returns array of parsed VLM results (not VisualDescriptions)
+const mockVlmResults = [
+  {
+    index: 0,
+    timestamp: 0,
+    imagePath: '/tmp/frame_0.jpg',
+    activity: 'coding',
+    description: 'User is writing python code',
+    apps: ['VSCode'],
+    topics: ['python', 'programming'],
+  },
+];
 
 const mockStorageService: StorageService = {
   saveSession: vi.fn().mockResolvedValue(undefined),
@@ -116,7 +122,7 @@ describe('Visual Observer Pipeline', () => {
       classifySegment: vi.fn(),
       extractMetadata: vi.fn(),
       generate: vi.fn(),
-      describeImages: vi.fn().mockResolvedValue(mockVisualDescriptions),
+      describeImages: vi.fn().mockResolvedValue(mockVlmResults),
       embedText: vi.fn(),
       extractTopics: vi.fn(),
       generateText: vi.fn().mockResolvedValue('Mock generated summary'),

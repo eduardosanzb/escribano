@@ -20,6 +20,10 @@ import {
 import { createSileroPreprocessor } from './adapters/audio.silero.adapter.js';
 import { createCapCaptureSource } from './adapters/capture.cap.adapter.js';
 import { createFilesystemCaptureSource } from './adapters/capture.filesystem.adapter.js';
+import {
+  cleanupMlxBridge,
+  createMlxIntelligenceService,
+} from './adapters/intelligence.mlx.adapter.js';
 import { createOllamaIntelligenceService } from './adapters/intelligence.ollama.adapter.js';
 import { createOutlinePublishingService } from './adapters/publishing.outline.adapter.js';
 import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
@@ -90,7 +94,14 @@ async function run(force: boolean, filePath: string | null): Promise<void> {
   console.log('');
 
   // Initialize adapters
-  const intelligence = createOllamaIntelligenceService();
+  // VLM for image processing (MLX-VLM, 4.7x faster than Ollama)
+  console.log('[VLM] Using MLX-VLM for image processing');
+  const vlm = createMlxIntelligenceService();
+
+  // LLM for text generation (Ollama)
+  console.log('[LLM] Using Ollama for text generation');
+  const llm = createOllamaIntelligenceService();
+
   const video = createFfmpegVideoService();
   const preprocessor = createSileroPreprocessor();
   const transcription = createWhisperTranscriptionService({
@@ -173,7 +184,7 @@ async function run(force: boolean, filePath: string | null): Promise<void> {
       await processRecordingV3(
         recording.id,
         repos,
-        { preprocessor, transcription, video, intelligence },
+        { preprocessor, transcription, video, intelligence: vlm },
         { force }
       );
     });
@@ -183,7 +194,7 @@ async function run(force: boolean, filePath: string | null): Promise<void> {
   console.log('Generating summary...');
 
   // Generate summary
-  const artifact = await generateSummaryV3(recording.id, repos, intelligence, {
+  const artifact = await generateSummaryV3(recording.id, repos, llm, {
     recordingId: recording.id,
   });
 
@@ -283,6 +294,9 @@ async function run(force: boolean, filePath: string | null): Promise<void> {
   console.log('');
   console.log('✓ Complete!');
   console.log(`Summary saved: ${artifact.filePath}`);
+
+  // Cleanup MLX bridge if used
+  cleanupMlxBridge();
 }
 
 /**

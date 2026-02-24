@@ -16,6 +16,3 @@ WHERE id NOT IN (
 -- (visual observations can have different data at same timestamp)
 CREATE UNIQUE INDEX idx_obs_audio_unique ON observations(recording_id, type, timestamp, audio_source)
 WHERE type = 'audio';
-
--- Step 3: Update schema version
-INSERT OR IGNORE INTO _schema_version (version) VALUES (4);

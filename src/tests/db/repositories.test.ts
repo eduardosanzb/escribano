@@ -273,6 +273,7 @@ function runContextRepositoryTests(
 // =============================================================================
 
 runRecordingRepositoryTests('SQLite', () => {
+  // Create fresh test repositories for each test
   const testRepos = createTestRepositories();
   return {
     repo: testRepos.recordings,
@@ -281,6 +282,7 @@ runRecordingRepositoryTests('SQLite', () => {
 });
 
 runContextRepositoryTests('SQLite', () => {
+  // Create fresh test repositories for each test
   const testRepos = createTestRepositories();
   return {
     contextRepo: testRepos.contexts,

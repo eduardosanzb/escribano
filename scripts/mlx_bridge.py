@@ -136,8 +136,8 @@ def parse_vlm_response(content: str) -> dict:
 
         result["description"] = match[1].strip()
         result["activity"] = match[2].strip()
-        result["apps"] = [s.strip() for s in apps_str.split(",") if s.strip()]
-        result["topics"] = [s.strip() for s in topics_str.split(",") if s.strip()]
+        result["apps"] = list(set(s.strip() for s in apps_str.split(",") if s.strip()))
+        result["topics"] = list(set(s.strip() for s in topics_str.split(",") if s.strip()))
     else:
         # Fallback: use content as description
         result["description"] = content.strip()

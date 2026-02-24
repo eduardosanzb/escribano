@@ -33,6 +33,9 @@ const mockConfig: IntelligenceConfig = {
     model: 'nomic-embed-text',
     similarityThreshold: 0.75,
   },
+  vlmBatchSize: 4,
+  vlmMaxTokens: 2000,
+  mlxSocketPath: '/tmp/escribano-mlx.sock',
 };
 
 const mockTranscript: Transcript = {

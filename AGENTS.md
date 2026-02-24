@@ -14,22 +14,42 @@
 - **Linting/Formatting**: Biome
 - **Database**: SQLite (better-sqlite3)
 - **Transcription**: whisper.cpp (whisper-cli)
-- **VLM**: Ollama (local, qwen3-vl:4b) - frame analysis (sequential single-image)
-- **Summary LLM**: Ollama (local, qwen3:32b) - artifact generation
+- **VLM**: MLX-VLM (local, Qwen3-VL-2B) - frame analysis (~1.7s/frame)
+- **LLM**: Ollama (local, qwen3:32b) - summary generation
 
 ## Development Environment
 
 - **Machine**: MacBook Pro M4 Max
 - **Unified Memory**: 128GB (Optimized for VLM inference)
-- **Primary VLM Model**: `qwen3-vl:4b` (3.3GB, ~8s per frame)
-- **Summary Model**: `qwen3:32b` (for high-quality narrative generation)
+- **VLM Model**: `Qwen3-VL-2B-Instruct-bf16` (~4GB, ~1.7s per frame) via MLX-VLM
+- **LLM Model**: `qwen3:32b` (for high-quality narrative generation) via Ollama
+
+### MLX-VLM Setup
+
+Install Python dependency:
+```bash
+# With uv (recommended)
+uv pip install mlx-vlm
+
+# Or with pip
+pip install mlx-vlm
+```
+
+The adapter auto-detects Python in this priority:
+1. `ESCRIBANO_PYTHON_PATH` environment variable
+2. Active virtual environment (`VIRTUAL_ENV`)
+3. `~/.venv/bin/python3` (common uv venv location)
+4. System `python3`
 
 ## Configuration
 
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
-| `ESCRIBANO_VLM_MODEL` | Ollama model for VLM frame analysis | `qwen3-vl:4b` |
-| `ESCRIBANO_VLM_NUM_PREDICT` | Token limit for VLM response (minimum enforced) | `30000` |
+| `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-bf16` |
+| `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `4` |
+| `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
+| `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
+| `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-detected (venv > system) |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
@@ -39,7 +59,8 @@
 | `OLLAMA_NUM_PARALLEL` | Ollama inference slots (sequential processing) | `1` |
 
 ### Deprecated
-- `ESCRIBANO_VLM_BATCH_SIZE` — Batch processing disabled (causes image confusion)
+- `ESCRIBANO_VLM_BACKEND` — VLM is always MLX, LLM is always Ollama (explicit in index.ts)
+- `ESCRIBANO_VLM_NUM_PREDICT` — Ollama VLM no longer used
 - `ESCRIBANO_EMBED_MODEL` — Embeddings disabled in V3
 - `ESCRIBANO_EMBED_BATCH_SIZE` — Embeddings disabled in V3
 - `ESCRIBANO_CLUSTER_TIME_WINDOW` — Clustering disabled in V3
@@ -63,10 +84,11 @@ src/
 │   ├── transcription.whisper.adapter.ts # Audio → Text (whisper-cli)
 │   ├── audio.silero.adapter.ts        # VAD preprocessing (Python)
 │   ├── video.ffmpeg.adapter.ts        # Frame extraction + scene detection
-│   └── intelligence.ollama.adapter.ts # VLM + LLM inference
+│   ├── intelligence.ollama.adapter.ts # LLM inference (Ollama, for summary generation)
+│   └── intelligence.mlx.adapter.ts    # VLM inference (MLX-VLM, for frame analysis)
 ├── services/                          # Pure business logic (no I/O)
 │   ├── frame-sampling.ts              # Adaptive frame reduction
-│   ├── vlm-service.ts                 # Sequential VLM orchestration (single-image)
+│   ├── vlm-service.ts                 # VLM orchestration (backend-agnostic)
 │   ├── activity-segmentation.ts       # Group by activity continuity
 │   └── temporal-alignment.ts          # Attach audio by timestamp
 ├── db/
@@ -210,10 +232,10 @@ The pipeline saves progress aggressively to enable crash recovery:
 
 **Existential: Validate the product works**
 - ☐ **Validate artifact quality** — Process 5 real sessions, identify bottleneck layer (VLM? Segmentation? Prompt?) — *Scorecard: Artifact quality is the product*
-- ☐ **MLX-VLM Migration** — Execute ADR-006. POC proven 4.7x speedup (25min → ~5min for 182 frames). Critical for "Processing < 10 min/hr" target.
-  - Token budget tuning (500 → ? for 4-frame batches)
-  - New adapter: `intelligence.mlx.adapter.ts`
-  - Config switch: `ESCRIBANO_VLM_BACKEND=mlx|ollama`
+- ✅ **MLX-VLM Migration** — ADR-006 complete. 4.7x speedup achieved (~7min for 182 frames vs ~25min).
+  - Token budget: 2000 per batch (4 frames)
+  - Adapter: `intelligence.mlx.adapter.ts` + `scripts/mlx_bridge.py`
+  - VLM/LLM separation: MLX for images, Ollama for text (explicit in `index.ts`)
 
 ### P1 — Launch Blockers (Pre-March)
 

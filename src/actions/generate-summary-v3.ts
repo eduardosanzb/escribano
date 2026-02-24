@@ -211,19 +211,10 @@ ${section.transcript ? `**Audio Transcript:**\n${section.transcript}` : '*No aud
     .replace('{{ACTIVITY_TIMELINE}}', activityTimeline);
 
   // Call LLM
-  try {
-    const result = await intelligence.generateText(prompt, {
-      expectJson: false,
-    });
-    return result;
-  } catch (error) {
-    log(
-      'error',
-      `[Summary V3] LLM generation failed: ${(error as Error).message}`
-    );
-    log('info', '[Summary V3] Falling back to template format');
-    return formatSummary(sections, recording.duration, recording.id);
-  }
+  const result = await intelligence.generateText(prompt, {
+    expectJson: false,
+  });
+  return result;
 }
 
 /**

@@ -498,6 +498,10 @@ export const intelligenceConfigSchema = z.object({
     model: 'nomic-embed-text',
     similarityThreshold: 0.75,
   }),
+  // MLX-VLM specific config
+  vlmBatchSize: z.number().default(4),
+  vlmMaxTokens: z.number().default(2000),
+  mlxSocketPath: z.string().default('/tmp/escribano-mlx.sock'),
 });
 export type IntelligenceConfig = z.infer<typeof intelligenceConfigSchema>;
 

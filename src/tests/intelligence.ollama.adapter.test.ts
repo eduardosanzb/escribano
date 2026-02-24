@@ -33,6 +33,9 @@ const mockConfig: IntelligenceConfig = {
     model: 'nomic-embed-text',
     similarityThreshold: 0.75,
   },
+  vlmBatchSize: 4,
+  vlmMaxTokens: 2000,
+  mlxSocketPath: '/tmp/escribano-mlx.sock',
 };
 
 const mockTranscript: Transcript = {
@@ -70,23 +73,33 @@ describe('IntelligenceService', () => {
   });
 
   it('should describe images', async () => {
-    const mockResponse = JSON.stringify({
-      message: {
-        content: JSON.stringify({
-          descriptions: [
-            { index: 0, summary: 'A cat sitting on a mat' },
-            { index: 1, summary: 'A dog chasing a ball' },
-          ],
+    // Mock response for single image VLM calls (sequential processing)
+    // The API returns a pipe-delimited format: description | activity | apps | topics
+    // Apps and topics are comma-separated lists (not JSON arrays)
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          message: {
+            content:
+              'description: A cat sitting on a mat | activity: observing | apps: Photos | topics: animals, pets',
+          },
+          done: true,
+          done_reason: 'stop',
         }),
-      },
-      done: true,
-      done_reason: 'stop',
-    });
-
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => JSON.parse(mockResponse),
-    } as unknown as typeof fetch);
+      } as unknown as typeof fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          message: {
+            content:
+              'description: A dog chasing a ball | activity: playing | apps: Camera | topics: animals, play',
+          },
+          done: true,
+          done_reason: 'stop',
+        }),
+      } as unknown as typeof fetch);
 
     const service = createOllamaIntelligenceService(mockConfig);
     const result = await service.describeImages([
@@ -96,7 +109,13 @@ describe('IntelligenceService', () => {
 
     expect(result).toHaveLength(2);
     expect(result[0].description).toBe('A cat sitting on a mat');
+    expect(result[0].activity).toBe('observing');
+    expect(result[0].apps).toContain('Photos');
+    expect(result[0].topics).toContain('animals');
     expect(result[1].description).toBe('A dog chasing a ball');
+    expect(result[1].activity).toBe('playing');
+    expect(result[1].apps).toContain('Camera');
+    expect(result[1].topics).toContain('play');
   });
 
   it('should classify a debugging session', async () => {

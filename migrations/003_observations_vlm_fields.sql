@@ -12,6 +12,3 @@ ALTER TABLE observations ADD COLUMN apps TEXT;
 
 -- Add topics column (JSON array of topic/project names)
 ALTER TABLE observations ADD COLUMN topics TEXT;
-
--- Update schema version (use INSERT OR IGNORE to handle re-runs)
-INSERT OR IGNORE INTO _schema_version (version) VALUES (3);

@@ -389,6 +389,7 @@ export function createFfmpegVideoService(): VideoService & ResourceTrackable {
       // Build FFmpeg command with progress output
       const ffmpegParts = [
         'ffmpeg',
+        '-skip_frame nokey', // Only decode I-frames (keyframes) for massive speedup
         '-hwaccel videotoolbox', // M4 hardware acceleration
         '-progress pipe:2', // Structured progress output to stderr
         `-i "${videoPath}"`, // Input file

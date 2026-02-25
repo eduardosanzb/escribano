@@ -90,9 +90,6 @@ async function run(
   console.log(`Database ready: ${getDbPath()}`);
   console.log('');
 
-  // Setup stats observer
-  setupStatsObserver(repos.stats);
-
   // SIGINT handler for graceful cancellation
   const sigintHandler = () => {
     console.log('\n⚠️  Run cancelled.');

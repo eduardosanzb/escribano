@@ -48,6 +48,7 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-bf16` |
 | `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `16` |
 | `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `4000` |
+| `ESCRIBANO_VLM_REPETITION_PENALTY` | Repetition penalty for generation (1.0=disabled) | `1.15` |
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
 | `ESCRIBANO_MLX_STARTUP_TIMEOUT` | MLX bridge model loading timeout (ms) | `60000` |
 | `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-detected (venv > system) |
@@ -58,6 +59,10 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_DEBUG_OLLAMA` | Debug Ollama request/response logging | `false` |
 | `ESCRIBANO_SKIP_LLM` | Skip LLM summary, use template fallback | `false` |
 | `OLLAMA_NUM_PARALLEL` | Ollama inference slots (sequential processing) | `1` |
+
+### Performance Notes
+- **Scene Detection**: Uses `-skip_frame nokey` FFmpeg optimization by default for 20x speedup (57 min → 2.8 min for 3-hour videos)
+- **VLM Inference**: Interleaved batching with 16-frame batches for optimal M4 Max throughput
 
 ### Deprecated
 - `ESCRIBANO_VLM_BACKEND` — VLM is always MLX, LLM is always Ollama (explicit in index.ts)

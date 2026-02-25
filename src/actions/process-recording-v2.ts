@@ -229,11 +229,12 @@ export async function processRecordingV2(
               end_timestamp: frame.timestamp,
               image_path: frame.imagePath,
               ocr_text: cleanedOcr,
-              vlm_description: null, // Phase 3D.5 TODO
+              vlm_description: null,
+              vlm_raw_response: null,
               activity_type: null,
               apps: null,
               topics: null,
-              embedding: null, // Updated in next step
+              embedding: null,
               text: null,
               audio_source: null,
               audio_type: null,
@@ -724,6 +725,7 @@ async function processAudioPipeline(
               image_path: null,
               ocr_text: null,
               vlm_description: null,
+              vlm_raw_response: null,
               activity_type: null,
               apps: null,
               topics: null,

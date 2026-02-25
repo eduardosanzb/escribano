@@ -16,15 +16,20 @@ pnpm approve-builds
 # Install prerequisites
 brew install whisper-cpp ffmpeg sqlite3 ollama
 
-# Pull Ollama models
-ollama pull qwen3-vl:4b    # Vision model for frame analysis
-ollama pull qwen3:32b      # Summary generation
+# Pull Ollama model (for summary generation)
+ollama pull qwen3:32b
+
+# Install MLX-VLM for frame analysis (Python)
+pip install mlx-vlm
 
 # Initialize database
 pnpm db:reset
 
-# Process latest recording
+# Process latest Cap recording
 pnpm escribano
+
+# Process a specific video file
+pnpm escribano --file "~/Desktop/Screen Recording.mov"
 
 # Reprocess from scratch
 pnpm escribano --force
@@ -33,14 +38,23 @@ pnpm escribano --force
 ## Usage
 
 ```bash
-# Start Ollama (optimized for VLM)
+# Start Ollama (for LLM summary generation)
 pnpm ollama
 
-# Process latest recording and generate summary
+# Process latest Cap recording
 pnpm escribano
+
+# Process a specific video file
+pnpm escribano --file "/path/to/video.mp4"
+
+# Process only (skip summary generation)
+pnpm escribano --skip-summary
 
 # Force reprocessing from scratch
 pnpm escribano --force
+
+# Show help
+pnpm escribano --help
 ```
 
 Output: Markdown summary saved to `~/.escribano/artifacts/`
@@ -57,9 +71,14 @@ src/
 │   ├── process-recording-v3.ts   # V3 pipeline orchestrator
 │   └── generate-summary-v3.ts    # LLM summary generation
 ├── adapters/                     # External system implementations
+│   ├── intelligence.mlx.adapter.ts   # VLM inference (MLX-VLM)
+│   ├── intelligence.ollama.adapter.ts # LLM inference (Ollama)
+│   ├── capture.cap.adapter.ts        # Cap recording discovery
+│   ├── capture.filesystem.adapter.ts # Direct file input
+│   └── ...
 ├── services/                     # Pure business logic
 │   ├── frame-sampling.ts         # Scene-aware frame reduction
-│   ├── vlm-service.ts            # Sequential single-image VLM orchestration
+│   ├── vlm-service.ts            # VLM orchestration
 │   ├── activity-segmentation.ts  # Group by activity continuity
 │   └── temporal-alignment.ts     # Audio attachment by timestamp
 ├── db/                          # SQLite persistence layer
@@ -92,11 +111,11 @@ Audio Pipeline (parallel) ──────────────────
     │                                            │
 Silero VAD → Whisper → Audio Observations        │
     │                                            │
-VLM Batch Inference (qwen3-vl:4b) → Visual Observations
+VLM Batch Inference (MLX-VLM, Qwen3-VL-2B) → Visual Observations
     ↓
 Activity Segmentation → Temporal Audio Alignment
     ↓
-TopicBlocks → LLM Summary (qwen3:32b) → Markdown Artifact
+TopicBlocks → LLM Summary (Ollama, qwen3:32b) → Markdown Artifact
 ```
 
 ## Prerequisites
@@ -106,7 +125,8 @@ TopicBlocks → LLM Summary (qwen3:32b) → Markdown Artifact
 - **whisper-cpp**: `brew install whisper-cpp`
 - **ffmpeg**: `brew install ffmpeg` (scene detection, frame extraction)
 - **sqlite3**: `brew install sqlite3`
-- **ollama**: `brew install ollama` (VLM + LLM services)
+- **ollama**: `brew install ollama` (LLM summary generation)
+- **Python 3**: For MLX-VLM frame analysis
 
 ### Native Modules
 
@@ -121,21 +141,37 @@ Select `better-sqlite3` when prompted.
 ### Ollama Setup
 
 1. **Install**: `brew install ollama`
-2. **Pull Models**:
-   - `ollama pull qwen3-vl:4b` (Vision, frame analysis)
-   - `ollama pull qwen3:32b` (Summary generation)
-
-3. **Start Ollama** (use recommended settings):
+2. **Pull Model**: `ollama pull qwen3:32b` (Summary generation)
+3. **Start Ollama**:
    ```bash
    pnpm ollama
-   # Equivalent to: OLLAMA_NUM_PARALLEL=1 OLLAMA_FLASH_ATTENTION=1 ... ollama serve
    ```
+
+### MLX-VLM Setup (VLM Frame Analysis)
+
+```bash
+# With uv (recommended)
+uv pip install mlx-vlm
+
+# Or with pip
+pip install mlx-vlm
+```
+
+The adapter auto-detects Python in this priority:
+1. `ESCRIBANO_PYTHON_PATH` environment variable
+2. Active virtual environment (`VIRTUAL_ENV`)
+3. `~/.venv/bin/python3` (common uv venv location)
+4. System `python3`
 
 ## Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ESCRIBANO_VLM_MODEL` | VLM model | `qwen3-vl:4b` |
+| `ESCRIBANO_VLM_MODEL` | MLX-VLM model for frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-bf16` |
+| `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `4` |
+| `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
+| `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket for MLX bridge | `/tmp/escribano-mlx.sock` |
+| `ESCRIBANO_PYTHON_PATH` | Python executable for MLX | Auto-detected |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base sampling (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
@@ -149,17 +185,16 @@ Select `better-sqlite3` when prompted.
 - **M2**: Intelligence — Multi-label Classification
 - **M3**: Artifacts — Generation + Outline Sync
 - **M4**: VLM-First Pipeline — Frame Sampling → Scene Detection → VLM Batch → Activity Segmentation → LLM Summary
+- **MLX Migration**: 4.7x faster VLM inference via MLX-VLM (ADR-006)
 
 ### Current Focus
-- OCR on keyframes at artifact generation time (adds actual code/commands/URLs)
-- Cross-recording Context queries ("show me all debugging this week")
-- VLM pool abstraction for MLX migration (true parallel continuous batching)
+- Validate artifact quality with real sessions
+- Auto-process watcher for new recordings
 
 ### Backlog (P2)
 - OCR on keyframes at artifact generation time (actual code/commands/URLs)
-- VLM pool abstraction for MLX migration (true parallel continuous batching)
-- Outline publishing wired to V3 TopicBlocks
 - Cross-recording Context queries ("show me all debugging this week")
+- MCP server for AI assistant integration
 
 ### Cleanup (P3)
 - Remove deprecated V2 code (OCR-based clustering)
@@ -188,7 +223,8 @@ SQLite database located at `~/.escribano/escribano.db`
 ## Learnings
 
 See [docs/learnings.md](docs/learnings.md) for detailed technical findings:
-- VLM benchmark results (qwen3-vl:4b selected as optimal)
+- MLX-VLM migration and benchmark results (ADR-006)
+- VLM benchmark results (qwen3-vl series)
 - Frame sampling strategies
 - Audio preprocessing (Silero VAD + Whisper thresholds)
 

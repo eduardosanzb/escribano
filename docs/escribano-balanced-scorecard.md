@@ -127,7 +127,7 @@ The competitive analysis says "developers" 47 times but never defines who. This 
 | **Job to be done** | "Help me remember and articulate what I did during my coding session" |
 | **Artifact format needed** | Standup summary, personal work log |
 | **Willingness to pay** | Medium ($10-20/mo) — it's a nice-to-have unless they feel accountability pressure |
-| **Adoption friction** | Must install Cap + Ollama + Escribano. Three dependencies. |
+| **Adoption friction** | QuickTime (built-in) + Ollama + Escribano. Two dependencies. Cap support exists but QuickTime is primary workflow. |
 | **Success metric** | "I saved 15 minutes writing my standup and it was more accurate" |
 
 #### Persona B: "The Tech Lead Documenter" (Near-Term)
@@ -304,10 +304,11 @@ From competitive analysis §8.1 ("Steal These"):
 
 | Innovation | Source | Process It Improves | When |
 |------------|--------|--------------------|----- |
+| Auto-process watcher | UX need | Removes manual CLI step | Pre-March (2-3h) |
 | MCP server | Screenpipe | Distribution + integration | Post-launch (month 1-2) |
 | MP4 storage (keep original) | Screenpipe | Storage efficiency | Post-launch |
 | Apple Vision OCR | Screenpipe | Artifact specificity (OCR at artifact time) | Post-launch |
-| Own capture (ScreenCaptureKit) | Architecture need | Onboarding (remove Cap dependency) | Month 3-6 |
+| Real-time capture pipeline | Architecture | Onboarding (always-on recording) | Month 3-6 | See `screen_capture_pipeline.md` |
 | Compare pages | Screenpipe marketing | SEO / acquisition | Month 2-3 |
 
 ---
@@ -349,11 +350,12 @@ This is the most important section in this entire scorecard.
 MUST SHIP (this week)               NICE TO HAVE (post-launch)        DO NOT TOUCH (3+ months)
 ──────────────────────               ──────────────────────────        ────────────────────────
 ✅ CLI works (pnpm escribano)        MCP server                        Cloud inference
-✅ VLM pipeline produces artifacts   Own capture (ScreenCaptureKit)    Team features
-⬜ Validate artifact quality (5 runs) Multiple artifact formats         Cross-device context
-⬜ README with before/after           Compare pages                     Plugin system
-⬜ GitHub repo public + ADRs visible  Screenpipe pipe                   Enterprise features
-⬜ Landing page (1-pager)             Blog post series
+✅ MLX-VLM migration complete        Auto-process watcher              Team features
+✅ VLM/LLM separation                Compare pages (SEO)               Cross-device context
+⬜ Validate artifact quality (5 runs) Screenpipe pipe                   Plugin system
+⬜ README with before/after           Real-time capture pipeline        Enterprise features
+⬜ GitHub repo public + ADRs visible  Blog post series
+⬜ Landing page (1-pager)
 ⬜ 2-min Loom demo
 ```
 

@@ -169,10 +169,10 @@ erDiagram
 │         │                                                                   │
 │         ▼                                                                   │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                      VLM SEQUENTIAL INFERENCE                            ││
-    │  1. Sequential single-image processing (one image per request)          ││
-    │  2. VLM (qwen3-vl:4b) identifies activity & context                     ││
-│  │  3. Store results in Observation entity                                 ││
+│  │                      VLM BATCH INFERENCE                                 ││
+│  │  1. Interleaved batch processing (4 frames/batch)                       ││
+│  │  2. MLX-VLM (Qwen3-VL-2B) identifies activity & context                 ││
+│  │  3. Store results in Observation entity                                  ││
 │  └──────────────────────────────────────────────────────────────────────────┘│
 │         │                                                                   │
 │         ▼                                                                   │
@@ -290,10 +290,12 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 | Port | Adapter | Purpose |
 |------|---------|---------|
 | `CaptureSource` | `capture.cap.adapter.ts` | Watch for Cap recordings |
+| `CaptureSource` | `capture.filesystem.adapter.ts` | Direct file input |
 | `TranscriptionService` | `transcription.whisper.adapter.ts` | Audio → Text (whisper.cpp) |
 | `VideoService` | `video.ffmpeg.adapter.ts` | Frame extraction, visual indexing |
 | `AudioPreprocessor` | `audio.silero.adapter.ts` | VAD segmentation & cleanup |
-| `IntelligenceService` | `intelligence.ollama.adapter.ts` | VLM classification & generation |
+| `IntelligenceService` | `intelligence.mlx.adapter.ts` | VLM inference (MLX-VLM, frame analysis) |
+| `IntelligenceService` | `intelligence.ollama.adapter.ts` | LLM inference (summary generation) |
 | `EmbeddingService` | `embedding.ollama.adapter.ts` | **(deprecated in V3, kept for future)** |
 | `StorageService` | `storage.fs.adapter.ts` | **(deprecated in V3, V1 only)** |
 | `PublishingService` | `publishing.outline.adapter.ts` | **(deprecated in V3, V1 only)** |

@@ -10,6 +10,7 @@ import os from 'node:os';
 import { dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
 import type { Repositories } from '../0_types.js';
+import { createStatsRepository } from '../stats/repository.js';
 import { runMigrations } from './migrate.js';
 import {
   createSqliteArtifactRepository,
@@ -70,6 +71,7 @@ export function getRepositories(): Repositories {
     topicBlocks: createSqliteTopicBlockRepository(dbInstance),
     artifacts: createSqliteArtifactRepository(dbInstance),
     clusters: createSqliteClusterRepository(dbInstance),
+    stats: createStatsRepository(dbInstance),
   };
 
   return repositories;
@@ -92,6 +94,7 @@ export function createTestRepositories(): Repositories & {
     topicBlocks: createSqliteTopicBlockRepository(testDb),
     artifacts: createSqliteArtifactRepository(testDb),
     clusters: createSqliteClusterRepository(testDb),
+    stats: createStatsRepository(testDb),
     cleanup: () => testDb.close(),
   };
 }

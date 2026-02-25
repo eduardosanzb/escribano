@@ -18,10 +18,33 @@
       padding-bottom: 1rem;
       border-bottom: 1px solid var(--pico-muted-border-color);
     }
-    
+
     .header h1 {
       margin: 0;
       font-size: 1.5rem;
+    }
+
+    .nav-links {
+      margin-left: auto;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .nav-links a {
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: background 0.2s;
+    }
+
+    .nav-links a:hover {
+      background: var(--pico-muted-background-color);
+    }
+
+    .nav-links a.active {
+      background: var(--pico-primary-background);
+      color: var(--pico-primary-inverse);
     }
     
     .controls {
@@ -191,12 +214,50 @@
       background: none;
       border: none;
     }
+    
+    .parse-failed {
+      border: 2px solid #ef4444;
+      border-radius: 8px;
+    }
+    
+    .parse-failed .observation-description {
+      color: #ef4444;
+      font-weight: 500;
+    }
+    
+    .raw-response {
+      margin-top: 0.5rem;
+      padding: 0.5rem;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 150px;
+      overflow-y: auto;
+      color: #991b1b;
+    }
+    
+    .raw-response-toggle {
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+      color: #ef4444;
+      cursor: pointer;
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
   <main class="container">
     <div class="header">
       <h1>🔍 Escribano Debug Dashboard</h1>
+      <nav class="nav-links">
+        <a href="/overview.html">Overview</a>
+        <a href="/debug.html" class="active">Debug</a>
+        <a href="/stats.html">Stats</a>
+      </nav>
     </div>
     
     <div class="controls">
@@ -316,6 +377,11 @@
       const card = document.createElement('article');
       card.className = 'observation-card';
       
+      const hasParseFailure = obs.vlm_description?.startsWith('Failed to parse');
+      if (hasParseFailure) {
+        card.classList.add('parse-failed');
+      }
+      
       const hasImage = obs.image_path;
       let imagePath = null;
       if (hasImage) {
@@ -349,12 +415,24 @@
       
       const imageName = obs.image_path ? obs.image_path.split('/').pop() : '';
       
+      let rawResponseHtml = '';
+      if (obs.vlm_raw_response) {
+        const escaped = obs.vlm_raw_response.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        rawResponseHtml = `
+          <div class="raw-response-toggle" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
+            Show raw VLM response
+          </div>
+          <div class="raw-response" style="display: none;">${escaped}</div>
+        `;
+      }
+      
       card.innerHTML = `
         ${imageHtml}
         <div class="observation-content">
           ${copyBtn}
           <div class="observation-timestamp">${formatTimestamp(obs.timestamp)} - ${imageName}</div>
           <div class="observation-description">${obs.vlm_description || 'No description'}</div>
+          ${rawResponseHtml}
           <div class="observation-badges">${badgesHtml}</div>
         </div>
       `;
@@ -435,8 +513,20 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeModal();
     });
+
+    // Check for URL params and pre-select recording
+    async function init() {
+      await loadRecordings();
+      
+      const params = new URLSearchParams(window.location.search);
+      const recordingId = params.get('recording');
+      if (recordingId) {
+        recordingSelect.value = recordingId;
+        await loadObservations(recordingId);
+      }
+    }
     
-    loadRecordings();
+    init();
   </script>
 </body>
 </html>

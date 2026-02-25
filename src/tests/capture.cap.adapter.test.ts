@@ -10,6 +10,7 @@ import { createCapCaptureSource } from '../adapters/capture.cap.adapter.js';
 const mockVideoService: VideoService = {
   extractFramesAtInterval: vi.fn(),
   extractFramesAtTimestamps: vi.fn(),
+  extractFramesAtTimestampsBatch: vi.fn(),
   getMetadata: vi
     .fn()
     .mockResolvedValue({ duration: 300, width: 1920, height: 1080, fps: 30 }),

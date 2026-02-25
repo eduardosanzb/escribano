@@ -6,7 +6,7 @@
  */
 
 import type { IntelligenceService } from '../0_types.js';
-import type { SampledFrame } from './frame-sampling.js';
+import type { InputFrame } from './frame-sampling.js';
 
 export interface VLMConfig {
   /** Vision model to use (default: qwen3-vl:4b) */
@@ -21,20 +21,14 @@ export interface VLMConfig {
 }
 
 export interface FrameDescription {
-  /** Global index in the sampled frames array */
   index: number;
-  /** Timestamp in seconds from recording start */
   timestamp: number;
-  /** VLM-suggested activity label (flexible, not constrained) */
   activity: string;
-  /** Brief description of what's shown */
   description: string;
-  /** Detected applications */
   apps: string[];
-  /** Detected topics/projects */
   topics: string[];
-  /** Path to the source image */
   imagePath: string;
+  raw_response?: string;
 }
 
 const DEFAULT_CONFIG: VLMConfig = {
@@ -50,7 +44,7 @@ const DEFAULT_CONFIG: VLMConfig = {
  * @returns Array of frame descriptions with VLM analysis
  */
 export async function describeFrames(
-  frames: SampledFrame[],
+  frames: InputFrame[],
   intelligence: IntelligenceService,
   config: Partial<VLMConfig> = {}
 ): Promise<FrameDescription[]> {

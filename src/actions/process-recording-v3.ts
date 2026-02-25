@@ -7,6 +7,7 @@
  * See ADR-005 for architectural rationale.
  */
 
+import { readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type {
@@ -28,9 +29,7 @@ import {
 } from '../domain/recording.js';
 import { log, step } from '../pipeline/context.js';
 import {
-  adaptiveSample,
-  adaptiveSampleWithScenes,
-  calculateAdaptiveBaseInterval,
+  calculateRequiredTimestamps,
   getSamplingStats,
   type InputFrame,
 } from '../services/frame-sampling.js';
@@ -147,13 +146,18 @@ export async function processRecordingV3(
       const audioObservations = await processAudioPipeline(recording, adapters);
 
       if (audioObservations.length > 0) {
-        await step('save-audio-observations', async () => {
-          repos.observations.saveBatch(audioObservations);
-          log(
-            'info',
-            `[V3] Saved ${audioObservations.length} audio observations`
-          );
-        });
+        await step(
+          'save-audio-observations',
+          async () => {
+            repos.observations.saveBatch(audioObservations);
+            log(
+              'info',
+              `[V3] Saved ${audioObservations.length} audio observations`
+            );
+            return { itemsProcessed: audioObservations.length };
+          },
+          { itemsTotal: audioObservations.length }
+        );
       }
 
       recording = advanceStep(recording, 'transcription');
@@ -163,56 +167,17 @@ export async function processRecordingV3(
     }
 
     // ============================================
-    // VISUAL PIPELINE (V3: VLM-First)
+    // VISUAL PIPELINE (V3: Smart Extraction)
     // ============================================
     if (recording.videoPath) {
-      // Step: Frame Extraction
-      let extractedFrames: InputFrame[] = [];
+      // Step 1: Get video metadata
+      const metadata = await adapters.video.getMetadata(recording.videoPath!);
+      log(
+        'info',
+        `[V3] Video: ${Math.round(metadata.duration)}s, ${metadata.width}x${metadata.height}`
+      );
 
-      if (!shouldSkipStep(recording.processingStep, 'frame_extraction')) {
-        extractedFrames = await step('frame-extraction-v3', async () => {
-          const framesDir = path.join(
-            os.tmpdir(),
-            'escribano',
-            recording.id,
-            'frames'
-          );
-
-          // Extract frames at 2-second intervals (as before)
-          const frames = await adapters.video.extractFramesAtInterval(
-            recording.videoPath!,
-            0.3,
-            framesDir
-          );
-
-          log('info', `[V3] Extracted ${frames.length} frames`);
-
-          // Only advance step after successful extraction
-          recording = advanceStep(recording, 'frame_extraction');
-          updateRecordingInDb(repos, recording);
-
-          return frames;
-        });
-      } else {
-        log('info', '[V3] Skipping frame extraction (already completed)');
-
-        // TODO: i dont think we need this next lines of codea; the one i commented
-
-        // // Reload frame list from disk if possible, but for Sprint 1 we focus on the flow
-        // const framesDir = path.join(
-        //   os.tmpdir(),
-        //   'escribano',
-        //   recording.id,
-        //   'frames'
-        // );
-        // extractedFrames = await adapters.video.extractFramesAtInterval(
-        //   recording.videoPath!,
-        //   0.3,
-        //   framesDir
-        // );
-      }
-
-      // Step: Scene Detection (for smarter sampling)
+      // Step 2: Scene Detection FIRST (no frame extraction needed)
       let sceneChanges: number[] = [];
       const dbRecording = repos.recordings.findById(recording.id);
       const sourceMetadata = dbRecording?.source_metadata
@@ -220,13 +185,9 @@ export async function processRecordingV3(
         : {};
 
       if (sourceMetadata.scene_changes) {
-        // Load from DB for resume
         sceneChanges = sourceMetadata.scene_changes;
         log('info', `[V3] Loaded ${sceneChanges.length} scene changes from DB`);
-      } else if (
-        !shouldSkipStep(recording.processingStep, 'frame_extraction')
-      ) {
-        // Run scene detection only once (during initial processing)
+      } else {
         sceneChanges = await step('scene-detection', async () => {
           const changes = await adapters.video.detectSceneChanges(
             recording.videoPath!
@@ -244,134 +205,179 @@ export async function processRecordingV3(
               JSON.stringify(updatedMetadata)
             );
           }
-
           return changes;
         });
       }
 
-      // Step: VLM Batch Inference (replaces OCR + Embedding + Clustering)
-      if (!shouldSkipStep(recording.processingStep, 'vlm_enrichment')) {
-        await step('vlm-batch-inference', async () => {
-          // Adaptive sampling with scene awareness
-          log('info', '[V3] Applying adaptive sampling...');
-          const sampledFrames =
-            sceneChanges.length > 0
-              ? adaptiveSampleWithScenes(extractedFrames, sceneChanges)
-              : adaptiveSample(extractedFrames);
-          const stats = getSamplingStats(extractedFrames, sampledFrames);
+      // Step 3: Calculate required timestamps (pure math, no I/O)
+      log('info', '[V3] Calculating required frame timestamps...');
+      const requiredTimestamps = calculateRequiredTimestamps(
+        metadata.duration,
+        sceneChanges
+      );
+      log(
+        'info',
+        `[V3] Need ${requiredTimestamps.length} frames (from ${Math.round(metadata.duration)}s video with ${sceneChanges.length} scenes)`
+      );
 
-          // Log adaptive interval for visibility
-          if (sceneChanges.length > 0) {
-            const adaptiveInterval = calculateAdaptiveBaseInterval(
-              sceneChanges.length,
-              Number(process.env.ESCRIBANO_SAMPLE_INTERVAL) || 10
-            );
-            log(
-              'info',
-              `[V3] Adaptive base interval: ${adaptiveInterval}s (${sceneChanges.length} scenes detected)`
-            );
-          }
+      // Step 4: Extract ONLY the needed frames
+      let extractedFrames: InputFrame[] = [];
 
+      if (!shouldSkipStep(recording.processingStep, 'frame_extraction')) {
+        extractedFrames = await step('frame-extraction-batch', async () => {
+          const framesDir = path.join(
+            os.tmpdir(),
+            'escribano',
+            recording.id,
+            'frames'
+          );
+
+          const frames = await adapters.video.extractFramesAtTimestampsBatch(
+            recording.videoPath!,
+            requiredTimestamps,
+            framesDir
+          );
+
+          log('info', `[V3] Extracted ${frames.length} frames`);
+
+          recording = advanceStep(recording, 'frame_extraction');
+          updateRecordingInDb(repos, recording);
+
+          return frames;
+        });
+      } else {
+        log('info', '[V3] Skipping frame extraction (already completed)');
+
+        // Reload frames from disk if resuming
+        const framesDir = path.join(
+          os.tmpdir(),
+          'escribano',
+          recording.id,
+          'frames'
+        );
+        try {
+          const files = await readdir(framesDir);
+          extractedFrames = files
+            .filter((f) => f.endsWith('.jpg'))
+            .map((f, i) => ({
+              imagePath: path.join(framesDir, f),
+              timestamp: requiredTimestamps[i] || i * 10,
+            }))
+            .sort((a, b) => a.timestamp - b.timestamp);
           log(
             'info',
-            `[V3] Sampled ${stats.sampledCount} frames (${stats.reductionPercent}% reduction): ` +
-              `${stats.baseCount} base + ${stats.gapFillCount} gap fill + ${stats.sceneChangeCount} scene`
+            `[V3] Reloaded ${extractedFrames.length} frames from disk`
+          );
+        } catch {
+          log('warn', '[V3] Could not reload frames from disk');
+        }
+      }
+
+      // Step 5: VLM Batch Inference
+      if (!shouldSkipStep(recording.processingStep, 'vlm_enrichment')) {
+        // Check for already-processed frames (resume safety)
+        const existingObs = repos.observations
+          .findByRecording(recording.id)
+          .filter((o) => o.type === 'visual' && o.vlm_description)
+          .filter(
+            (o) =>
+              !o.vlm_description?.startsWith('No description') &&
+              !o.vlm_description?.startsWith('Parse error')
           );
 
-          // Check for already-processed frames (crash-safe resumption)
-          // IMPORTANT: Exclude fallback descriptions ("No description", "Parse error")
-          const existingObs = repos.observations
-            .findByRecording(recording.id)
-            .filter((o) => o.type === 'visual' && o.vlm_description)
-            .filter(
-              (o) =>
-                !o.vlm_description?.startsWith('No description') &&
-                !o.vlm_description?.startsWith('Parse error')
-            );
+        const processedTimestamps = new Set(
+          existingObs.map((o) => o.timestamp)
+        );
+        const framesToProcess = extractedFrames.filter(
+          (f) => !processedTimestamps.has(f.timestamp)
+        );
 
-          const processedTimestamps = new Set(
-            existingObs.map((o) => o.timestamp)
+        if (framesToProcess.length < extractedFrames.length) {
+          log(
+            'info',
+            `[V3] Found ${existingObs.length} already-processed frames, ${framesToProcess.length} remaining`
           );
-          const framesToProcess = sampledFrames.filter(
-            (f) => !processedTimestamps.has(f.timestamp)
-          );
+        }
 
-          if (framesToProcess.length < sampledFrames.length) {
-            log(
-              'info',
-              `[V3] Found ${existingObs.length} already-processed frames, ${framesToProcess.length} remaining`
-            );
-          }
+        const vlmItemsTotal = framesToProcess.length;
 
-          if (framesToProcess.length === 0) {
-            log(
-              'info',
-              '[V3] All frames already processed, skipping VLM inference'
-            );
-          } else {
-            // Debug: Log frames being processed
-            log('info', `[V3] Frames to process (${framesToProcess.length}):`);
-            framesToProcess.slice(0, 10).forEach((f, i) => {
+        await step(
+          'vlm-batch-inference',
+          async () => {
+            let framesProcessed = 0;
+
+            if (framesToProcess.length === 0) {
               log(
                 'info',
-                `  [${i}] ${f.imagePath.split('/').pop()} @ ${f.timestamp}s`
+                '[V3] All frames already processed, skipping VLM inference'
               );
-            });
-            if (framesToProcess.length > 10) {
-              log('info', `  ... and ${framesToProcess.length - 10} more`);
+            } else {
+              log(
+                'info',
+                `[V3] Frames to process (${framesToProcess.length}):`
+              );
+              framesToProcess.slice(0, 10).forEach((f, i) => {
+                log(
+                  'info',
+                  `  [${i}] ${f.imagePath.split('/').pop()} @ ${f.timestamp}s`
+                );
+              });
+              if (framesToProcess.length > 10) {
+                log('info', `  ... and ${framesToProcess.length - 10} more`);
+              }
+
+              log('info', '[V3] Starting VLM inference...');
+              await describeFrames(framesToProcess, adapters.intelligence, {
+                recordingId: recording.id,
+                onImageProcessed: (result, progress) => {
+                  const observation: DbObservationInsert = {
+                    id: generateId(),
+                    recording_id: recording.id,
+                    type: 'visual' as const,
+                    timestamp: result.timestamp,
+                    end_timestamp: result.timestamp,
+                    image_path: result.imagePath,
+                    ocr_text: null,
+                    vlm_description: result.description,
+                    vlm_raw_response: result.raw_response ?? null,
+                    activity_type: result.activity,
+                    apps: JSON.stringify(result.apps),
+                    topics: JSON.stringify(result.topics),
+                    embedding: null,
+                    text: null,
+                    audio_source: null,
+                    audio_type: null,
+                  };
+
+                  repos.observations.save(observation);
+                  framesProcessed = progress.current;
+
+                  if (progress.current % 10 === 0) {
+                    log(
+                      'info',
+                      `[V3] Processed ${progress.current}/${progress.total} frames`
+                    );
+                  }
+                },
+              });
+
+              const allVisualObs = repos.observations
+                .findByRecording(recording.id)
+                .filter((o) => o.type === 'visual' && o.vlm_description);
+
+              log(
+                'info',
+                `[V3] VLM complete: ${allVisualObs.length} total visual observations`
+              );
             }
 
-            // VLM sequential inference with immediate saving after each image
-            log('info', '[V3] Starting VLM inference...');
-            await describeFrames(framesToProcess, adapters.intelligence, {
-              recordingId: recording.id,
-              onImageProcessed: (result, progress) => {
-                // Save immediately after each image
-                const observation: DbObservationInsert = {
-                  id: generateId(),
-                  recording_id: recording.id,
-                  type: 'visual' as const,
-                  timestamp: result.timestamp,
-                  end_timestamp: result.timestamp,
-                  image_path: result.imagePath,
-                  ocr_text: null,
-                  vlm_description: result.description,
-                  activity_type: result.activity,
-                  apps: JSON.stringify(result.apps),
-                  topics: JSON.stringify(result.topics),
-                  embedding: null,
-                  text: null,
-                  audio_source: null,
-                  audio_type: null,
-                };
+            recording = advanceStep(recording, 'vlm_enrichment');
+            updateRecordingInDb(repos, recording);
 
-                repos.observations.save(observation);
-
-                // Log progress every 10 frames
-                if (progress.current % 10 === 0) {
-                  log(
-                    'info',
-                    `[V3] Processed ${progress.current}/${progress.total} frames`
-                  );
-                }
-              },
-            });
-
-            // Log final stats
-            const allVisualObs = repos.observations
-              .findByRecording(recording.id)
-              .filter((o) => o.type === 'visual' && o.vlm_description);
-
-            log(
-              'info',
-              `[V3] VLM complete: ${allVisualObs.length} total visual observations`
-            );
-          }
-
-          // Only advance step after all VLM processing is complete
-          recording = advanceStep(recording, 'vlm_enrichment');
-          updateRecordingInDb(repos, recording);
-        });
+            return { itemsProcessed: framesProcessed || existingObs.length };
+          },
+          { itemsTotal: vlmItemsTotal || extractedFrames.length }
+        );
       } else {
         log('info', '[V3] Skipping VLM inference (already completed)');
       }
@@ -495,12 +501,13 @@ export async function processRecordingV3(
 
           log('info', `[V3] Created ${blockCount} TopicBlocks`);
 
-          // Only advance steps after all processing is complete
           recording = advanceStep(recording, 'context_creation');
           updateRecordingInDb(repos, recording);
 
           recording = advanceStep(recording, 'block_formation');
           updateRecordingInDb(repos, recording);
+
+          return { itemsProcessed: blockCount };
         });
       } else {
         log(
@@ -539,7 +546,10 @@ async function processAudioPipeline(
     audioPath: string | null,
     source: 'mic' | 'system'
   ) => {
-    if (!audioPath) return;
+    if (!audioPath) {
+      log('info', `[V3] No ${source} audio path, skipping...`);
+      return;
+    }
 
     log('info', `[V3] Processing ${source} audio: ${audioPath}`);
 
@@ -560,46 +570,52 @@ async function processAudioPipeline(
     log('info', `[V3] Found ${segments.length} segments in ${source} audio`);
 
     // Transcription
-    await step(`transcription-${source}`, async () => {
-      let successCount = 0;
-      for (const segment of segments) {
-        try {
-          const text = await adapters.transcription.transcribeSegment(
-            segment.audioPath
-          );
+    await step(
+      `transcription-${source}`,
+      async () => {
+        let successCount = 0;
+        for (const segment of segments) {
+          try {
+            const text = await adapters.transcription.transcribeSegment(
+              segment.audioPath
+            );
 
-          if (text.length > 0) {
-            successCount++;
-            observations.push({
-              id: generateId(),
-              recording_id: recording.id,
-              type: 'audio',
-              timestamp: segment.start,
-              end_timestamp: segment.end,
-              text,
-              audio_source: source,
-              audio_type: 'speech',
-              image_path: null,
-              ocr_text: null,
-              vlm_description: null,
-              activity_type: null,
-              apps: null,
-              topics: null,
-              embedding: null,
-            });
+            if (text.length > 0) {
+              successCount++;
+              observations.push({
+                id: generateId(),
+                recording_id: recording.id,
+                type: 'audio',
+                timestamp: segment.start,
+                end_timestamp: segment.end,
+                text,
+                audio_source: source,
+                audio_type: 'speech',
+                image_path: null,
+                ocr_text: null,
+                vlm_description: null,
+                vlm_raw_response: null,
+                activity_type: null,
+                apps: null,
+                topics: null,
+                embedding: null,
+              });
+            }
+          } catch (error) {
+            log(
+              'warn',
+              `[V3] Failed to transcribe segment at ${segment.start}s: ${(error as Error).message}`
+            );
           }
-        } catch (error) {
-          log(
-            'warn',
-            `[V3] Failed to transcribe segment at ${segment.start}s: ${(error as Error).message}`
-          );
         }
-      }
-      log(
-        'info',
-        `[V3] Transcribed ${successCount}/${segments.length} segments for ${source}`
-      );
-    });
+        log(
+          'info',
+          `[V3] Transcribed ${successCount}/${segments.length} segments for ${source}`
+        );
+        return { itemsProcessed: successCount };
+      },
+      { itemsTotal: segments.length }
+    );
 
     // Cleanup
     await step(`cleanup-${source}`, async () => {

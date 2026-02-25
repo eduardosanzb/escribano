@@ -339,3 +339,84 @@ export function getSamplingStats(
     sceneChangeCount,
   };
 }
+
+/**
+ * Calculate required frame timestamps WITHOUT extracting frames.
+ * Used by the smart extraction pipeline to extract only needed frames.
+ *
+ * This is the inverse of adaptiveSampleWithScenes - instead of selecting
+ * from existing frames, we calculate which timestamps we need.
+ *
+ * @param durationSeconds - Total video duration in seconds
+ * @param sceneChanges - Timestamps of detected scene changes
+ * @param config - Sampling configuration
+ * @returns Sorted array of timestamps that need frames
+ *
+ * @example
+ * // For a 60s video with 3 scene changes at 10s, 25s, 45s
+ * // Default config: 10s base interval, 15s gap threshold, 3s gap fill
+ * const timestamps = calculateRequiredTimestamps(60, [10, 25, 45]);
+ * // Returns: [0, 10, 20, 25, 30, 40, 45, 50, 60] (9 frames)
+ * // Instead of extracting 30 frames (every 2s), we only extract 9
+ *
+ * @example
+ * // For a 132min (7920s) video with 50 scene changes
+ * // Default config produces ~200-400 frames instead of ~3960
+ * const timestamps = calculateRequiredTimestamps(7920, sceneChanges);
+ */
+export function calculateRequiredTimestamps(
+  durationSeconds: number,
+  sceneChanges: number[] = [],
+  config: Partial<SamplingConfig> = {}
+): number[] {
+  const cfg: SamplingConfig = { ...DEFAULT_CONFIG, ...config };
+
+  if (durationSeconds <= 0) return [];
+
+  // Adjust for scene density (same logic as adaptiveSampleWithScenes)
+  cfg.baseIntervalSeconds = calculateAdaptiveBaseInterval(
+    sceneChanges.length,
+    cfg.baseIntervalSeconds
+  );
+
+  // Adjust gap thresholds for high scene density
+  if (sceneChanges.length > 50) {
+    cfg.gapThresholdSeconds = Math.max(cfg.gapThresholdSeconds, 60);
+    cfg.gapFillIntervalSeconds = Math.max(cfg.gapFillIntervalSeconds, 10);
+  } else if (sceneChanges.length > 20) {
+    cfg.gapThresholdSeconds = Math.max(cfg.gapThresholdSeconds, 40);
+    cfg.gapFillIntervalSeconds = Math.max(cfg.gapFillIntervalSeconds, 5);
+  }
+
+  const timestamps = new Set<number>();
+
+  // Step 1: Add scene change timestamps (rounded to nearest second)
+  for (const t of sceneChanges) {
+    const rounded = Math.round(t);
+    if (rounded >= 0 && rounded <= durationSeconds) {
+      timestamps.add(rounded);
+    }
+  }
+
+  // Step 2: Add base interval samples throughout video
+  for (let t = 0; t <= durationSeconds; t += cfg.baseIntervalSeconds) {
+    timestamps.add(Math.round(t));
+  }
+
+  // Step 3: Fill large gaps between samples
+  const sorted = [...timestamps].sort((a, b) => a - b);
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const gap = sorted[i + 1] - sorted[i];
+    if (gap > cfg.gapThresholdSeconds) {
+      for (
+        let t = sorted[i] + cfg.gapFillIntervalSeconds;
+        t < sorted[i + 1];
+        t += cfg.gapFillIntervalSeconds
+      ) {
+        timestamps.add(Math.round(t));
+      }
+    }
+  }
+
+  return [...timestamps].sort((a, b) => a - b);
+}

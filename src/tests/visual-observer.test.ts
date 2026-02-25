@@ -110,6 +110,9 @@ describe('Visual Observer Pipeline', () => {
       extractFramesAtInterval: vi
         .fn()
         .mockResolvedValue([{ imagePath: '/tmp/frame_0.jpg', timestamp: 0 }]),
+      extractFramesAtTimestampsBatch: vi
+        .fn()
+        .mockResolvedValue([{ imagePath: '/tmp/frame_0.jpg', timestamp: 0 }]),
       getMetadata: vi
         .fn()
         .mockResolvedValue({ duration: 60, width: 1920, height: 1080 }),

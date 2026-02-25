@@ -408,6 +408,7 @@ export interface IntelligenceService {
       apps: string[];
       topics: string[];
       imagePath: string;
+      raw_response?: string;
     }>
   >;
   generate(
@@ -448,6 +449,12 @@ export interface VideoService {
     videoPath: string,
     threshold: number,
     outputDir: string
+  ): Promise<Array<{ imagePath: string; timestamp: number }>>;
+  extractFramesAtTimestampsBatch(
+    videoPath: string,
+    timestamps: number[],
+    outputDir: string,
+    concurrency?: number
   ): Promise<Array<{ imagePath: string; timestamp: number }>>;
   getMetadata(videoPath: string): Promise<{
     duration: number;
@@ -669,6 +676,10 @@ export interface ArtifactRepository {
   delete(id: string): void;
 }
 
+import type { StatsRepository } from './stats/types.js';
+
+export type { StatsRepository };
+
 export interface Repositories {
   recordings: RecordingRepository;
   observations: ObservationRepository;
@@ -676,4 +687,5 @@ export interface Repositories {
   topicBlocks: TopicBlockRepository;
   artifacts: ArtifactRepository;
   clusters: ClusterRepository;
+  stats: StatsRepository;
 }

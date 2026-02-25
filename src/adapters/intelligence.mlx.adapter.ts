@@ -25,6 +25,7 @@ import type {
   TranscriptMetadata,
   VisualLog,
 } from '../0_types.js';
+import type { ResourceTrackable } from '../stats/types.js';
 
 const DEBUG_MLX = process.env.ESCRIBANO_VERBOSE === 'true';
 
@@ -57,9 +58,14 @@ interface FrameDescription {
   apps: string[];
   topics: string[];
   imagePath: string;
+  raw_response?: string;
 }
 
-const DEFAULT_CONFIG: MlxConfig = {
+interface MlxConfigWithTimeout extends MlxConfig {
+  startupTimeout: number;
+}
+
+const DEFAULT_CONFIG: MlxConfigWithTimeout = {
   model:
     process.env.ESCRIBANO_VLM_MODEL ??
     'mlx-community/Qwen3-VL-2B-Instruct-bf16',
@@ -68,6 +74,7 @@ const DEFAULT_CONFIG: MlxConfig = {
   socketPath:
     process.env.ESCRIBANO_MLX_SOCKET_PATH ?? '/tmp/escribano-mlx.sock',
   bridgeScript: resolve(process.cwd(), 'scripts/mlx_bridge.py'),
+  startupTimeout: Number(process.env.ESCRIBANO_MLX_STARTUP_TIMEOUT) || 60000,
 };
 
 /**
@@ -115,7 +122,7 @@ export function cleanupMlxBridge(): void {
  */
 export function createMlxIntelligenceService(
   _config: Partial<IntelligenceConfig> = {}
-): IntelligenceService {
+): IntelligenceService & ResourceTrackable {
   const mlxConfig = { ...DEFAULT_CONFIG };
   const bridge: BridgeState = {
     process: null,
@@ -242,9 +249,13 @@ export function createMlxIntelligenceService(
       // Timeout for ready signal
       setTimeout(() => {
         if (!readyReceived) {
-          reject(new Error('Bridge startup timeout (30s)'));
+          reject(
+            new Error(
+              `Bridge startup timeout (${mlxConfig.startupTimeout / 1000}s)`
+            )
+          );
         }
-      }, 30000);
+      }, mlxConfig.startupTimeout);
     });
   };
 
@@ -550,6 +561,14 @@ export function createMlxIntelligenceService(
       throw new Error(
         'MLX adapter does not support generateText(). Use Ollama backend for this operation.'
       );
+    },
+
+    getResourceName(): string {
+      return 'mlx-python';
+    },
+
+    getPid(): number | null {
+      return bridge.process?.pid ?? null;
     },
   };
 }

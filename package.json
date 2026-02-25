@@ -14,8 +14,10 @@
     "format": "biome format --write .",
     "check": "biome ci .",
     "escribano": "tsx --env-file=.env src/index.ts",
+    "quality-test": "tsx --env-file=.env scripts/quality-test.ts",
+    "quality-test:fast": "tsx --env-file=.env scripts/quality-test.ts --skip-summary",
     "dashboard": "node tools/dashboard/server.js",
-    "db:reset": "rm -f ~/.escribano/escribano.db",
+    "db:reset": "rm -f ~/.escribano/escribano.db*",
     "ollama": "OLLAMA_NUM_PARALLEL=4 OLLAMA_MAX_LOADED_MODELS=3 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=262144 ollama serve",
     "ollama-2": "OLLAMA_NUM_PARALLEL=1 OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=262144 ollama serve",
     "index:rebuild": "tsx --env-file=.env src/scripts/rebuild-index.ts"
@@ -27,6 +29,7 @@
   "dependencies": {
     "better-sqlite3": "^12.6.2",
     "express": "^5.0.0",
+    "pidusage": "^4.0.1",
     "uuidv7": "1.1.0",
     "zod": "^4.3.5"
   },
@@ -34,6 +37,7 @@
     "@biomejs/biome": "^2.3.11",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.0.3",
+    "@types/pidusage": "^2.0.5",
     "@vitest/coverage-v8": "^4.0.17",
     "@vitest/ui": "^4.0.17",
     "tsx": "^4.21.0",

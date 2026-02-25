@@ -78,13 +78,18 @@ def signal_handler(signum: int, frame: Any) -> None:
 def load_model() -> tuple[Any, Any, Any]:
     """Load MLX-VLM model."""
     log(f"Loading model: {MODEL_NAME}")
+    log("This may take 30-60 seconds on first run or after memory clear...")
     start = time.time()
 
     try:
+        log("Importing mlx_vlm...", "debug")
         from mlx_vlm import load
         from mlx_vlm.utils import load_config
 
+        log("Loading model weights into memory (this takes the longest)...", "debug")
         model_obj, processor_obj = load(MODEL_NAME)
+        
+        log("Loading model config...", "debug")
         config_obj = load_config(MODEL_NAME)
 
         duration = time.time() - start
@@ -236,7 +241,6 @@ def parse_interleaved_output(text: str, batch: list[dict]) -> list[dict]:
                 "topics": [s.strip() for s in topics_str.split(",") if s.strip()],
             })
         else:
-            # Fallback for unparseable frame
             results.append({
                 "index": frame.get("index", frame_num - 1),
                 "timestamp": frame["timestamp"],
@@ -245,6 +249,7 @@ def parse_interleaved_output(text: str, batch: list[dict]) -> list[dict]:
                 "activity": "unknown",
                 "apps": [],
                 "topics": [],
+                "raw_response": text,
             })
 
     return results

@@ -26,6 +26,7 @@ describe('segmentByActivity', () => {
     image_path: type === 'visual' ? `/path/${id}.png` : null,
     ocr_text: null,
     vlm_description: vlmDescription,
+    vlm_raw_response: null,
     activity_type: null,
     apps: null,
     topics: null,

@@ -3,6 +3,8 @@
 ## Status
 Accepted
 
+> **Note**: VLM inference now uses MLX-VLM (see ADR-006 for implementation details). This ADR describes the architectural shift from OCR-based to VLM-first processing, which remains valid. The inference engine changed from Ollama to MLX-VLM for 4.7x better throughput.
+
 ## Implementation Status
 - Phase 1 (Core Pipeline): Implemented ✓
 - Phase 2 (Audio Alignment): Implemented ✓

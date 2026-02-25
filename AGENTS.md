@@ -77,6 +77,7 @@ This project follows **Clean Architecture** principles with a simplified flat st
 src/
 ├── 0_types.ts                         # Core types, interfaces, Zod schemas
 ├── index.ts                           # CLI entry point (single command)
+├── batch-context.ts                   # Shared init/processing for batch runs
 ├── actions/
 │   ├── process-recording-v3.ts        # V3 Pipeline: Recording → VLM → Segments → TopicBlocks
 │   └── generate-summary-v3.ts         # V3 Summary: TopicBlocks → LLM → Markdown
@@ -193,9 +194,32 @@ pnpm escribano
 
 # Reprocess from scratch
 pnpm escribano --force
+
+# Process only (skip summary generation)
+pnpm escribano --skip-summary
+
+# Batch quality testing
+pnpm quality-test          # Process all 7 videos with summary
+pnpm quality-test:fast     # Process without summary generation
+
+# Dashboard for reviewing results
+pnpm dashboard             # Start at http://localhost:3456
 ```
 
 Output: Markdown summary saved to `~/.escribano/artifacts/`
+
+## Dashboard
+
+Web UI for reviewing processing results:
+
+```bash
+pnpm dashboard
+```
+
+Opens at `http://localhost:3456` with:
+- **Overview** (`/overview.html`) — Aggregate stats, recordings table, summary viewer
+- **Debug** (`/debug.html`) — Frame-by-frame inspection with VLM descriptions
+- **Stats** (`/stats.html`) — Processing run history and phase breakdowns
 
 ## Resume Safety
 
@@ -236,7 +260,7 @@ The pipeline saves progress aggressively to enable crash recovery:
   - Test with QuickTime recordings (primary workflow)
   - Rate VLM descriptions, segmentation, summary quality
 - ✅ **MLX-VLM Migration** — ADR-006 complete. 3.5x speedup achieved.
-  - Token budget: 2000 per batch (4 frames)
+  - Token budget: 4000 per batch (16 frames)
   - Adapter: `intelligence.mlx.adapter.ts` + `scripts/mlx_bridge.py`
   - VLM/LLM separation: MLX for images, Ollama for text (explicit in `index.ts`)
 

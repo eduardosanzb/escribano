@@ -2,34 +2,22 @@
  * Escribano CLI Entry Point
  *
  * Single command: process latest recording and generate summary
+ * Refactored to use batch-context for shared initialization logic
  */
 
 import { homedir } from 'node:os';
 import path from 'node:path';
-import type { CaptureSource, OutlineConfig } from './0_types.js';
-import { generateSummaryV3 } from './actions/generate-summary-v3.js';
-import { updateGlobalIndex } from './actions/outline-index.js';
-import { processRecordingV3 } from './actions/process-recording-v3.js';
-import {
-  getOutlineMetadata,
-  hasContentChanged,
-  type OutlineMetadata,
-  publishSummaryV3,
-  updateRecordingOutlineMetadata,
-} from './actions/publish-summary-v3.js';
-import { createSileroPreprocessor } from './adapters/audio.silero.adapter.js';
+import type { CaptureSource } from './0_types.js';
 import { createCapCaptureSource } from './adapters/capture.cap.adapter.js';
 import { createFilesystemCaptureSource } from './adapters/capture.filesystem.adapter.js';
 import {
   cleanupMlxBridge,
-  createMlxIntelligenceService,
-} from './adapters/intelligence.mlx.adapter.js';
-import { createOllamaIntelligenceService } from './adapters/intelligence.ollama.adapter.js';
-import { createOutlinePublishingService } from './adapters/publishing.outline.adapter.js';
-import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
-import { createFfmpegVideoService } from './adapters/video.ffmpeg.adapter.js';
-import { getDbPath, getRepositories } from './db/index.js';
-import { log, withPipeline } from './pipeline/context.js';
+  initializeSystem,
+  type ProcessVideoResult,
+  processVideo,
+} from './batch-context.js';
+import { getDbPath } from './db/index.js';
+import { setupStatsObserver } from './stats/index.js';
 
 const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
@@ -39,6 +27,7 @@ interface ParsedArgs {
   force: boolean;
   help: boolean;
   file: string | null;
+  skipSummary: boolean;
 }
 
 function main(): void {
@@ -49,7 +38,7 @@ function main(): void {
     process.exit(0);
   }
 
-  run(args.force, args.file).catch((error) => {
+  run(args.force, args.file, args.skipSummary).catch((error) => {
     console.error('Error:', (error as Error).message);
     console.error((error as Error).stack);
     process.exit(1);
@@ -64,6 +53,7 @@ function parseArgs(argsArray: string[]): ParsedArgs {
     force: argsArray.includes('--force'),
     help: argsArray.includes('--help') || argsArray.includes('-h'),
     file: filePath,
+    skipSummary: argsArray.includes('--skip-summary'),
   };
 }
 
@@ -76,6 +66,7 @@ Usage:
   pnpm escribano --file <path>             Process video from filesystem
   pnpm escribano --force                   Reprocess from scratch
   pnpm escribano --file <path> --force     Reprocess specific file
+  pnpm escribano --skip-summary            Process only (no summary generation)
   pnpm escribano --help                    Show this help
 
 Examples:
@@ -86,30 +77,26 @@ Output: Markdown summary saved to ~/.escribano/artifacts/
 `);
 }
 
-async function run(force: boolean, filePath: string | null): Promise<void> {
-  // Initialize database (runs migrations automatically)
+async function run(
+  force: boolean,
+  filePath: string | null,
+  skipSummary: boolean
+): Promise<void> {
+  // Initialize system (reuses batch-context for consistency)
   console.log('Initializing database...');
-  const repos = getRepositories();
+  const ctx = await initializeSystem();
+  const { repos } = ctx;
+
   console.log(`Database ready: ${getDbPath()}`);
   console.log('');
 
-  // Initialize adapters
-  // VLM for image processing (MLX-VLM, 4.7x faster than Ollama)
-  console.log('[VLM] Using MLX-VLM for image processing');
-  const vlm = createMlxIntelligenceService();
-
-  // LLM for text generation (Ollama)
-  console.log('[LLM] Using Ollama for text generation');
-  const llm = createOllamaIntelligenceService();
-
-  const video = createFfmpegVideoService();
-  const preprocessor = createSileroPreprocessor();
-  const transcription = createWhisperTranscriptionService({
-    binaryPath: 'whisper-cli',
-    model: MODEL_PATH,
-    cwd: MODELS_DIR,
-    outputFormat: 'json',
-  });
+  // SIGINT handler for graceful cancellation
+  const sigintHandler = () => {
+    console.log('\n⚠️  Run cancelled.');
+    cleanupMlxBridge();
+    process.exit(130);
+  };
+  process.on('SIGINT', sigintHandler);
 
   // Create appropriate capture source
   let captureSource: CaptureSource;
@@ -117,11 +104,11 @@ async function run(force: boolean, filePath: string | null): Promise<void> {
     console.log(`Using filesystem source: ${filePath}`);
     captureSource = createFilesystemCaptureSource(
       { videoPath: filePath },
-      video
+      ctx.adapters.video
     );
   } else {
     console.log('Using Cap recordings source');
-    captureSource = createCapCaptureSource({}, video);
+    captureSource = createCapCaptureSource({}, ctx.adapters.video);
   }
 
   // Get recording
@@ -132,190 +119,39 @@ async function run(force: boolean, filePath: string | null): Promise<void> {
     } else {
       console.log('No Cap recordings found.');
     }
+    cleanupMlxBridge();
     return;
   }
 
-  console.log(`Processing recording: ${recording.id}`);
+  console.log(`Processing: ${recording.id}`);
   console.log(`Duration: ${Math.round(recording.duration / 60)} minutes`);
   console.log('');
 
-  // Ensure DB recording exists
-  const dbRec = repos.recordings.findById(recording.id);
-  if (!dbRec) {
-    repos.recordings.save({
-      id: recording.id,
-      video_path: recording.videoPath,
-      audio_mic_path: recording.audioMicPath,
-      audio_system_path: recording.audioSystemPath,
-      duration: recording.duration,
-      captured_at: recording.capturedAt.toISOString(),
-      status: 'raw',
-      processing_step: null,
-      source_type: recording.source.type,
-      source_metadata: JSON.stringify(recording.source),
-      error_message: null,
-    });
-    console.log('Created database entry');
-  } else if (force) {
-    console.log('Force flag set: clearing existing data');
-    repos.observations.deleteByRecording(recording.id);
-    repos.topicBlocks.deleteByRecording(recording.id);
-    repos.recordings.updateStatus(recording.id, 'raw', null, null);
-  } else if (dbRec.status === 'published') {
-    // Check if already published with same content
-    console.log('Recording already published to Outline.');
-    const outlineMeta = getOutlineMetadata(dbRec);
-    if (outlineMeta) {
-      console.log(`Published document: ${outlineMeta.url}`);
-    }
-    console.log('Use --force to reprocess.');
-    console.log('');
-    return;
-  } else if (dbRec.status === 'processed') {
-    // Already processed, skip to summary generation + publishing
-    console.log('Recording already processed. Publishing to Outline...');
-    console.log('');
+  // Use shared processVideo function
+  if (!recording.videoPath) {
+    console.error('Recording has no video path');
+    cleanupMlxBridge();
+    process.exit(1);
   }
+  const result: ProcessVideoResult = await processVideo(
+    recording.videoPath,
+    ctx,
+    { force, skipSummary }
+  );
 
-  // Process recording (skip if already processed)
-  const skipProcessing = dbRec && dbRec.status === 'processed' && !force;
-  if (!skipProcessing) {
-    await withPipeline(recording.id, async () => {
-      await processRecordingV3(
-        recording.id,
-        repos,
-        { preprocessor, transcription, video, intelligence: vlm },
-        { force }
-      );
-    });
-  }
-
-  console.log('');
-  console.log('Generating summary...');
-
-  // Generate summary
-  const artifact = await generateSummaryV3(recording.id, repos, llm, {
-    recordingId: recording.id,
-  });
-
-  console.log('');
-
-  // Publish to Outline if configured
-  const outlineConfig = getOutlineConfig();
-  if (outlineConfig) {
-    console.log('Publishing to Outline...');
-    try {
-      const publishing = createOutlinePublishingService(outlineConfig);
-      const topicBlocks = repos.topicBlocks.findByRecording(recording.id);
-
-      // Check if already published with same content
-      const dbRecording = repos.recordings.findById(recording.id);
-      if (dbRecording && !hasContentChanged(dbRecording, artifact.content)) {
-        console.log('Content unchanged, skipping publish.');
-      } else {
-        // Publish the summary
-        const published = await publishSummaryV3(
-          recording.id,
-          artifact.content,
-          topicBlocks,
-          repos,
-          publishing,
-          { collectionName: outlineConfig.collectionName }
-        );
-
-        // Update recording metadata with outline info
-        const outlineInfo: OutlineMetadata = {
-          url: published.url,
-          documentId: published.documentId,
-          collectionId: published.collectionId,
-          publishedAt: new Date().toISOString(),
-          contentHash: published.contentHash,
-        };
-        updateRecordingOutlineMetadata(recording.id, outlineInfo, repos);
-
-        console.log(`Published to Outline: ${published.url}`);
-
-        // Update global index
-        const indexResult = await updateGlobalIndex(repos, publishing, {
-          collectionName: outlineConfig.collectionName,
-        });
-        console.log(`Updated index: ${indexResult.url}`);
-      }
-
-      // Update status to 'published' (whether we just published or skipped due to no changes)
-      repos.recordings.updateStatus(recording.id, 'published', null, null);
-      log(
-        'info',
-        `[Outline] Recording ${recording.id} status updated to 'published'`
-      );
-    } catch (error) {
-      // Keep 'processed' status but store error in metadata
-      const errorMessage = (error as Error).message;
-      console.warn(`Warning: Failed to publish to Outline: ${errorMessage}`);
-      log('warn', `[Outline] Publishing failed: ${errorMessage}`);
-
-      // Store error in metadata
-      try {
-        const dbRecording = repos.recordings.findById(recording.id);
-        const currentMetadata = dbRecording?.source_metadata
-          ? JSON.parse(dbRecording.source_metadata)
-          : {};
-        const existingOutline = currentMetadata.outline || {};
-        const updatedMetadata = {
-          ...currentMetadata,
-          outline: {
-            ...existingOutline,
-            error: errorMessage,
-            failedAt: new Date().toISOString(),
-          },
-        };
-        repos.recordings.updateMetadata(
-          recording.id,
-          JSON.stringify(updatedMetadata)
-        );
-        log('info', `[Outline] Error stored in metadata for ${recording.id}`);
-      } catch (metaError) {
-        log(
-          'error',
-          `[Outline] Failed to store error metadata: ${(metaError as Error).message}`
-        );
-      }
-    }
-  } else {
-    // No Outline config, but processing is complete - mark as published locally
-    console.log('No Outline configuration found. Marking as complete locally.');
-    repos.recordings.updateStatus(recording.id, 'published', null, null);
-    log(
-      'info',
-      `[Outline] Recording ${recording.id} marked as 'published' (no Outline config)`
-    );
-  }
-
-  console.log('');
-  console.log('✓ Complete!');
-  console.log(`Summary saved: ${artifact.filePath}`);
-
-  // Cleanup MLX bridge if used
+  // Cleanup
   cleanupMlxBridge();
-}
 
-/**
- * Get Outline configuration from environment if available.
- */
-function getOutlineConfig(): OutlineConfig | null {
-  const url = process.env.ESCRIBANO_OUTLINE_URL;
-  const token = process.env.ESCRIBANO_OUTLINE_TOKEN;
-
-  if (!url || !token) {
-    return null;
+  // Exit with appropriate code
+  if (!result.success) {
+    console.error(`\nProcessing failed: ${result.error}`);
+    process.exit(1);
   }
 
-  return {
-    url,
-    token,
-    collectionName:
-      process.env.ESCRIBANO_OUTLINE_COLLECTION ?? 'Escribano Sessions',
-  };
+  console.log('\n✓ All done!');
+  if (result.outlineUrl) {
+    console.log(`Outline: ${result.outlineUrl}`);
+  }
 }
 
 main();

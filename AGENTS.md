@@ -46,9 +46,11 @@ The adapter auto-detects Python in this priority:
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
 | `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-bf16` |
-| `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `4` |
-| `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
+| `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `16` |
+| `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `4000` |
+| `ESCRIBANO_VLM_REPETITION_PENALTY` | Repetition penalty for generation (1.0=disabled) | `1.15` |
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
+| `ESCRIBANO_MLX_STARTUP_TIMEOUT` | MLX bridge model loading timeout (ms) | `60000` |
 | `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-detected (venv > system) |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
@@ -57,6 +59,10 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_DEBUG_OLLAMA` | Debug Ollama request/response logging | `false` |
 | `ESCRIBANO_SKIP_LLM` | Skip LLM summary, use template fallback | `false` |
 | `OLLAMA_NUM_PARALLEL` | Ollama inference slots (sequential processing) | `1` |
+
+### Performance Notes
+- **Scene Detection**: Uses `-skip_frame nokey` FFmpeg optimization by default for 20x speedup (57 min → 2.8 min for 3-hour videos)
+- **VLM Inference**: Interleaved batching with 16-frame batches for optimal M4 Max throughput
 
 ### Deprecated
 - `ESCRIBANO_VLM_BACKEND` — VLM is always MLX, LLM is always Ollama (explicit in index.ts)
@@ -76,6 +82,7 @@ This project follows **Clean Architecture** principles with a simplified flat st
 src/
 ├── 0_types.ts                         # Core types, interfaces, Zod schemas
 ├── index.ts                           # CLI entry point (single command)
+├── batch-context.ts                   # Shared init/processing for batch runs
 ├── actions/
 │   ├── process-recording-v3.ts        # V3 Pipeline: Recording → VLM → Segments → TopicBlocks
 │   └── generate-summary-v3.ts         # V3 Summary: TopicBlocks → LLM → Markdown
@@ -192,9 +199,32 @@ pnpm escribano
 
 # Reprocess from scratch
 pnpm escribano --force
+
+# Process only (skip summary generation)
+pnpm escribano --skip-summary
+
+# Batch quality testing
+pnpm quality-test          # Process all 7 videos with summary
+pnpm quality-test:fast     # Process without summary generation
+
+# Dashboard for reviewing results
+pnpm dashboard             # Start at http://localhost:3456
 ```
 
 Output: Markdown summary saved to `~/.escribano/artifacts/`
+
+## Dashboard
+
+Web UI for reviewing processing results:
+
+```bash
+pnpm dashboard
+```
+
+Opens at `http://localhost:3456` with:
+- **Overview** (`/overview.html`) — Aggregate stats, recordings table, summary viewer
+- **Debug** (`/debug.html`) — Frame-by-frame inspection with VLM descriptions
+- **Stats** (`/stats.html`) — Processing run history and phase breakdowns
 
 ## Resume Safety
 
@@ -231,29 +261,38 @@ The pipeline saves progress aggressively to enable crash recovery:
 ### P0 — Critical Path (Pre-March Sprint)
 
 **Existential: Validate the product works**
-- ☐ **Validate artifact quality** — Process 5 real sessions, identify bottleneck layer (VLM? Segmentation? Prompt?) — *Scorecard: Artifact quality is the product*
-- ✅ **MLX-VLM Migration** — ADR-006 complete. 4.7x speedup achieved (~7min for 182 frames vs ~25min).
-  - Token budget: 2000 per batch (4 frames)
+- ☐ **Validate artifact quality** — Process 5 real sessions, identify bottleneck layer — *2-3h, do this NOW*
+  - Test with QuickTime recordings (primary workflow)
+  - Rate VLM descriptions, segmentation, summary quality
+- ✅ **MLX-VLM Migration** — ADR-006 complete. 3.5x speedup achieved.
+  - Token budget: 4000 per batch (16 frames)
   - Adapter: `intelligence.mlx.adapter.ts` + `scripts/mlx_bridge.py`
   - VLM/LLM separation: MLX for images, Ollama for text (explicit in `index.ts`)
+
+**Quick UX Win**
+- ☐ **Auto-process watcher** — Watch recordings folder, auto-run Escribano on new files — *2-3h*
+  - Removes manual `pnpm escribano` step
+  - Works with Cap or QuickTime recordings
 
 ### P1 — Launch Blockers (Pre-March)
 
 **Must have for public launch**
-- ☐ **README with before/after** — First impression for every GitHub visitor
-- ☐ **Make repo public** — Unlocks all distribution channels
-- ☐ **Landing page** — Single page for HN/Twitter links
-- ☐ **2-min Loom demo** — Shows the product, not describes it
-- ☐ **ADR-005 blog post** — "Why OCR-based screen intelligence fails" — best marketing asset
+- ☐ **README with before/after** — First impression for every GitHub visitor — *1-2h*
+- ☐ **Make repo public** — Unlocks all distribution channels — *15min*
+- ☐ **Landing page** — Single page for HN/Twitter links — *3-4h*
+- ☐ **2-min Loom demo** — Shows the product, not describes it — *1h*
+- ☐ **ADR-005 blog post** — "Why OCR-based screen intelligence fails" — best marketing asset — *2-3h*
 
 ### P2 — Next Iteration (Post-March)
 
 **When bandwidth drops to 10-15 hrs/week**
-- ☐ OCR on keyframes at artifact generation time (adds actual code/commands/URLs to summary)
-- ✅ **Outline publishing wired to V3 TopicBlocks** — Auto-publishes summaries to Outline with global index
-- ☐ Cross-recording Context queries ("show me all debugging sessions this week")
-- ☐ MCP server integration — Screenpipe pipe for distribution
-- ☐ Compare pages (SEO) — "Escribano vs Screenpipe", "Escribano vs Granola"
+- ☐ **Real-time capture pipeline** — Rust-based always-on capture — *20+ h* — See `docs/screen_capture_pipeline.md`
+  - Removes Cap/QuickTime dependency
+  - Enables automatic session recording (no forgetting to start)
+- ☐ **MCP server** — Expose TopicBlocks via MCP for AI assistant integration — *8-12h*
+- ☐ **Cross-recording Context queries** — "show me all debugging sessions this week" — *4-6h*
+- ☐ **Compare pages (SEO)** — "Escribano vs Screenpipe", "Escribano vs Granola" — *4-6h*
+- ☐ OCR on keyframes at artifact generation time — *6-8h*
 
 ### P3 — Cleanup (Post-Launch)
 
@@ -266,7 +305,6 @@ The pipeline saves progress aggressively to enable crash recovery:
 ### Deferred (6+ months)
 
 - ☐ Cloud inference tier — $15-25/mo SaaS option
-- ☐ Own capture (ScreenCaptureKit) — Remove Cap dependency
 - ☐ Team/Enterprise features — Per-seat pricing
 
 ## Code Conventions

@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Escribano Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    :root {
+      --pico-font-size: 14px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--pico-muted-border-color);
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
+
+    .nav-links {
+      margin-left: auto;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .nav-links a {
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: background 0.2s;
+    }
+
+    .nav-links a:hover {
+      background: var(--pico-muted-background-color);
+    }
+
+    .nav-links a.active {
+      background: var(--pico-primary-background);
+      color: var(--pico-primary-inverse);
+    }
+
+    /* Aggregate Stats Section */
+    .aggregate-stats {
+      background: var(--pico-card-background-color);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .aggregate-stats h2 {
+      margin: 0 0 1rem 0;
+      font-size: 1rem;
+      color: var(--pico-muted-color);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 1rem;
+    }
+
+    .stat-box {
+      text-align: center;
+      padding: 1rem;
+      background: var(--pico-background-color);
+      border-radius: 6px;
+    }
+
+    .stat-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--pico-primary);
+      line-height: 1.2;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--pico-muted-color);
+      text-transform: uppercase;
+      margin-top: 0.25rem;
+    }
+
+    .stat-sublabel {
+      font-size: 0.7rem;
+      color: var(--pico-muted-color);
+      opacity: 0.7;
+    }
+
+    /* Phase Breakdown */
+    .phase-breakdown {
+      background: var(--pico-card-background-color);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .phase-breakdown h2 {
+      margin: 0 0 1rem 0;
+      font-size: 1rem;
+      color: var(--pico-muted-color);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .phase-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+
+    .phase-table th,
+    .phase-table td {
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--pico-muted-border-color);
+    }
+
+    .phase-table th {
+      color: var(--pico-muted-color);
+      font-weight: 500;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    .phase-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .phase-bar {
+      height: 8px;
+      background: var(--pico-muted-background-color);
+      border-radius: 4px;
+      overflow: hidden;
+      min-width: 100px;
+    }
+
+    .phase-bar-fill {
+      height: 100%;
+      background: var(--pico-primary);
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+
+    /* Recordings Table */
+    .recordings-section {
+      background: var(--pico-card-background-color);
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+
+    .recordings-section h2 {
+      margin: 0 0 1rem 0;
+      font-size: 1rem;
+      color: var(--pico-muted-color);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .recordings-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+
+    .recordings-table th,
+    .recordings-table td {
+      padding: 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--pico-muted-border-color);
+    }
+
+    .recordings-table th {
+      color: var(--pico-muted-color);
+      font-weight: 500;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    .recordings-table tbody tr {
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .recordings-table tbody tr:hover {
+      background: var(--pico-muted-background-color);
+    }
+
+    .recordings-table tbody tr.expanded {
+      background: var(--pico-muted-background-color);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .status-published {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .status-processing {
+      background: #e0e7ff;
+      color: #3730a3;
+    }
+
+    .status-raw {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .status-error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .recording-name {
+      font-weight: 500;
+      max-width: 250px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .link-icon {
+      font-size: 1rem;
+      text-decoration: none;
+      color: var(--pico-primary);
+    }
+
+    .link-icon:hover {
+      opacity: 0.7;
+    }
+
+    .actions-cell {
+      white-space: nowrap;
+    }
+
+    .actions-cell .link-icon {
+      margin-right: 0.5rem;
+    }
+
+    .actions-cell .link-icon:last-child {
+      margin-right: 0;
+    }
+
+    .actions-cell {
+      white-space: nowrap;
+    }
+
+    .actions-cell .link-icon {
+      margin-right: 0.5rem;
+    }
+
+    .actions-cell .link-icon:last-child {
+      margin-right: 0;
+    }
+
+    /* Detail View */
+    .detail-row td {
+      padding: 0;
+      border-bottom: 1px solid var(--pico-muted-border-color);
+    }
+
+    .detail-content {
+      padding: 1.5rem;
+      background: var(--pico-background-color);
+    }
+
+    .detail-section {
+      margin-bottom: 1.5rem;
+    }
+
+    .detail-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .detail-section h3 {
+      margin: 0 0 0.75rem 0;
+      font-size: 0.875rem;
+      color: var(--pico-muted-color);
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .detail-section h3 a {
+      margin-left: auto;
+      font-size: 0.75rem;
+      font-weight: normal;
+    }
+
+    /* Summary Display */
+    .summary-content {
+      background: var(--pico-card-background-color);
+      border-radius: 6px;
+      padding: 1rem;
+      max-height: 400px;
+      overflow-y: auto;
+      font-size: 0.875rem;
+      line-height: 1.6;
+    }
+
+    .summary-content h1 { font-size: 1.25rem; }
+    .summary-content h2 { font-size: 1.1rem; }
+    .summary-content h3 { font-size: 1rem; }
+    .summary-content ul, .summary-content ol {
+      padding-left: 1.5rem;
+    }
+
+    /* Stats Table in Detail */
+    .detail-stats-table {
+      width: 100%;
+      font-size: 0.8rem;
+    }
+
+    .detail-stats-table th,
+    .detail-stats-table td {
+      padding: 0.4rem 0.5rem;
+      text-align: left;
+    }
+
+    .detail-stats-table th {
+      color: var(--pico-muted-color);
+      font-weight: 500;
+    }
+
+    /* Frames Grid */
+    .frames-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .frame-card {
+      background: var(--pico-card-background-color);
+      border-radius: 6px;
+      overflow: hidden;
+      font-size: 0.75rem;
+    }
+
+    .frame-card img {
+      width: 100%;
+      height: 90px;
+      object-fit: cover;
+      background: var(--pico-muted-background-color);
+    }
+
+    .frame-card-info {
+      padding: 0.5rem;
+    }
+
+    .frame-timestamp {
+      font-weight: 600;
+      color: var(--pico-primary);
+    }
+
+    .frame-activity {
+      color: var(--pico-muted-color);
+      margin-top: 0.25rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .frame-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+      z-index: 1000;
+      padding: 2rem;
+      overflow: auto;
+    }
+
+    .frame-modal.active {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+    }
+
+    .frame-modal-content {
+      background: var(--pico-card-background-color);
+      border-radius: 8px;
+      max-width: 900px;
+      width: 100%;
+    }
+
+    .frame-modal-image {
+      width: 100%;
+      max-height: 50vh;
+      object-fit: contain;
+      background: var(--pico-muted-background-color);
+    }
+
+    .frame-modal-info {
+      padding: 1rem;
+    }
+
+    .frame-modal-close {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background: white;
+      border: none;
+      font-size: 1.5rem;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    /* Loading State */
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: var(--pico-muted-color);
+    }
+
+    .error {
+      color: #991b1b;
+      background: #fee2e2;
+      padding: 1rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+
+    /* Refresh Button */
+    .refresh-btn {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      margin-left: 0.5rem;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: var(--pico-muted-color);
+    }
+
+    .empty-state-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📋 Escribano</h1>
+      <div class="nav-links">
+        <a href="overview.html" class="active">Overview</a>
+        <a href="debug.html">Debug</a>
+        <a href="stats.html">Stats</a>
+      </div>
+    </div>
+
+    <!-- Aggregate Stats -->
+    <div class="aggregate-stats">
+      <h2>
+        📊 Aggregate Stats
+        <button class="refresh-btn" onclick="loadAggregateStats()">↻ Refresh</button>
+      </h2>
+      <div id="aggregate-stats" class="stats-grid">
+        <div class="loading">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Phase Breakdown -->
+    <div class="phase-breakdown">
+      <h2>📈 Performance by Phase</h2>
+      <div id="phase-breakdown">
+        <div class="loading">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Recordings -->
+    <div class="recordings-section">
+      <h2>
+        🎬 Recordings
+        <button class="refresh-btn" onclick="loadRecordings()">↻ Refresh</button>
+      </h2>
+      <div id="recordings-list">
+        <div class="loading">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Frame Modal -->
+  <div id="frame-modal" class="frame-modal" onclick="closeFrameModal(event)">
+    <button class="frame-modal-close" onclick="closeFrameModal()">&times;</button>
+    <div class="frame-modal-content" onclick="event.stopPropagation()">
+      <img id="modal-image" class="frame-modal-image" src="" alt="Frame">
+      <div class="frame-modal-info">
+        <div id="modal-timestamp" style="font-weight: 600; margin-bottom: 0.5rem;"></div>
+        <div id="modal-activity" style="color: var(--pico-muted-color); margin-bottom: 0.5rem;"></div>
+        <div id="modal-description"></div>
+        <div id="modal-meta" style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--pico-muted-color);"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Simple markdown renderer
+    function renderMarkdown(text) {
+      if (!text) return '';
+      return text
+        .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+        .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+        .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/^- (.*$)/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+        .replace(/^\d+\. (.*$)/gm, '<li>$1</li>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/^([^<].*)$/gm, '<p>$1</p>')
+        .replace(/<p><\/p>/g, '')
+        .replace(/<p>(<[hul])/g, '$1')
+        .replace(/(<\/[hul][^>]*>)<\/p>/g, '$1');
+    }
+
+    // Format duration
+    function formatDuration(seconds) {
+      if (!seconds) return '--';
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      if (mins >= 60) {
+        const hrs = Math.floor(mins / 60);
+        const remainMins = mins % 60;
+        return `${hrs}h ${remainMins}m`;
+      }
+      return `${mins}m ${secs}s`;
+    }
+
+    // Format timestamp
+    function formatTimestamp(isoString) {
+      if (!isoString) return '--';
+      const date = new Date(isoString);
+      return date.toLocaleString();
+    }
+
+    // Format recording ID to display name
+    function formatRecordingName(id) {
+      // Extract date/time from ID like "screen-recording-2026-02-21-at-10-03-16"
+      const match = id.match(/(\d{4})-(\d{2})-(\d{2}).*?(\d{2})[:-]?(\d{2})/i);
+      if (match) {
+        return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}`;
+      }
+      return id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    // Convert image path to URL for display
+    function getImageUrl(imagePath) {
+      if (!imagePath) return '';
+      // Images in /var/folders are served via /frames-temp
+      if (imagePath.startsWith('/var/folders/')) {
+        return '/frames-temp' + imagePath.substring('/var/folders'.length);
+      }
+      // Images in ~/.escribano are served via /frames
+      // Use last 3 path components for shorter URL
+      const parts = imagePath.split('/');
+      return '/frames/' + parts.slice(-3).join('/');
+    }
+
+    // Load aggregate stats
+    async function loadAggregateStats() {
+      const container = document.getElementById('aggregate-stats');
+      container.innerHTML = '<div class="loading">Loading...</div>';
+
+      try {
+        const res = await fetch('/api/stats/aggregate');
+        const data = await res.json();
+
+        container.innerHTML = `
+          <div class="stat-box">
+            <div class="stat-value">${data.recordings.processed}</div>
+            <div class="stat-label">Processed</div>
+            <div class="stat-sublabel">of ${data.recordings.total} total</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${formatDuration(data.processing.total_time_sec)}</div>
+            <div class="stat-label">Total Time</div>
+            <div class="stat-sublabel">${data.processing.run_count} runs</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${data.frames.total}</div>
+            <div class="stat-label">Frames</div>
+            <div class="stat-sublabel">${data.frames.avg_per_recording}/rec avg</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${data.vlm.avg_fps}</div>
+            <div class="stat-label">VLM Speed</div>
+            <div class="stat-sublabel">frames/sec avg</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${data.vlm.speedup_vs_ollama}x</div>
+            <div class="stat-label">Speedup</div>
+            <div class="stat-sublabel">vs Ollama</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${(data.vlm.peak_memory_mb / 1024).toFixed(1)}GB</div>
+            <div class="stat-label">VLM Peak</div>
+            <div class="stat-sublabel">memory</div>
+          </div>
+        `;
+      } catch (err) {
+        container.innerHTML = `<div class="error">Failed to load stats: ${err.message}</div>`;
+      }
+    }
+
+    // Load phase breakdown
+    async function loadPhaseBreakdown() {
+      const container = document.getElementById('phase-breakdown');
+      container.innerHTML = '<div class="loading">Loading...</div>';
+
+      try {
+        const res = await fetch('/api/stats/aggregate');
+        const data = await res.json();
+
+        if (!data.phases || data.phases.length === 0) {
+          container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📊</div>No phase data yet</div>';
+          return;
+        }
+
+        // Phase name mapping
+        const phaseNames = {
+          'vlm-batch-inference': 'VLM Inference',
+          'frame-extraction-v3': 'Frame Extraction',
+          'scene-detection': 'Scene Detection',
+          'activity-segmentation-and-alignment': 'Segmentation',
+          'audio-vad': 'Audio VAD',
+          'audio-transcription': 'Transcription',
+          'summary': 'Summary Generation'
+        };
+
+        const rows = data.phases.map(p => `
+          <tr>
+            <td>${phaseNames[p.phase] || p.phase}</td>
+            <td>${formatDuration(p.avg_duration_sec)}</td>
+            <td>${p.pct_total}%</td>
+            <td>
+              <div class="phase-bar">
+                <div class="phase-bar-fill" style="width: ${p.pct_total}%"></div>
+              </div>
+            </td>
+            <td>${p.avg_items || '--'}</td>
+          </tr>
+        `).join('');
+
+        container.innerHTML = `
+          <table class="phase-table">
+            <thead>
+              <tr>
+                <th>Phase</th>
+                <th>Avg Time</th>
+                <th>% Total</th>
+                <th></th>
+                <th>Avg Items</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+        `;
+      } catch (err) {
+        container.innerHTML = `<div class="error">Failed to load phases: ${err.message}</div>`;
+      }
+    }
+
+    // Load recordings
+    async function loadRecordings() {
+      const container = document.getElementById('recordings-list');
+      container.innerHTML = '<div class="loading">Loading...</div>';
+
+      try {
+        const res = await fetch('/api/recordings/overview');
+        const recordings = await res.json();
+
+        if (recordings.length === 0) {
+          container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎬</div>No recordings yet</div>';
+          return;
+        }
+
+        const rows = recordings.map(rec => `
+          <tr class="recording-row" data-id="${rec.id}" onclick="toggleRecordingDetail('${rec.id}')">
+            <td>
+              <span class="status-badge status-${rec.status}">
+                ${getStatusIcon(rec.status)} ${rec.status}
+              </span>
+            </td>
+            <td class="recording-name">${formatRecordingName(rec.id)}</td>
+            <td>${formatDuration(rec.duration)}</td>
+            <td>${rec.stats.frames || '--'}</td>
+            <td>${rec.stats.vlm_fps ? rec.stats.vlm_fps + ' fps' : '--'}</td>
+            <td>${formatDuration(rec.stats.processing_time_sec)}</td>
+            <td class="actions-cell">
+<button class="link-icon" onclick="event.stopPropagation(); navigator.clipboard.writeText('${rec.id}'); alert('Recording ID copied to clipboard');" title="Copy ID">📋</button>
+              <a href="debug.html?recording=${rec.id}" class="link-icon" onclick="event.stopPropagation()" title="View frames">🖼️</a>
+              <a href="stats.html?recording=${rec.id}" class="link-icon" onclick="event.stopPropagation()" title="View stats">📊</a>
+              ${rec.summary.outline_url
+                ? `<a href="${rec.summary.outline_url}" target="_blank" class="link-icon" onclick="event.stopPropagation()" title="View in Outline">📄</a>`
+                : ''}
+            </td>
+          </tr>
+          <tr class="detail-row" id="detail-${rec.id}" style="display: none;">
+            <td colspan="7">
+              <div class="detail-content" id="detail-content-${rec.id}">
+                <div class="loading">Loading details...</div>
+              </div>
+            </td>
+          </tr>
+        `).join('');
+
+        container.innerHTML = `
+          <table class="recordings-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Recording</th>
+                <th>Duration</th>
+                <th>Frames</th>
+                <th>VLM</th>
+                <th>Time</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+        `;
+      } catch (err) {
+        container.innerHTML = `<div class="error">Failed to load recordings: ${err.message}</div>`;
+      }
+    }
+
+    function getStatusIcon(status) {
+      switch (status) {
+        case 'published': return '✅';
+        case 'processing': return '🔄';
+        case 'raw': return '⏳';
+        case 'error': return '❌';
+        default: return '❓';
+      }
+    }
+
+    // Toggle recording detail
+    async function toggleRecordingDetail(recordingId) {
+      const detailRow = document.getElementById(`detail-${recordingId}`);
+      const mainRow = document.querySelector(`tr[data-id="${recordingId}"]`);
+
+      if (detailRow.style.display === 'table-row') {
+        detailRow.style.display = 'none';
+        mainRow.classList.remove('expanded');
+        return;
+      }
+
+      // Show detail row
+      detailRow.style.display = 'table-row';
+      mainRow.classList.add('expanded');
+
+      // Load detail content
+      const contentContainer = document.getElementById(`detail-content-${recordingId}`);
+      contentContainer.innerHTML = '<div class="loading">Loading details...</div>';
+
+      try {
+        const res = await fetch(`/api/recording/${recordingId}/detail`);
+        const data = await res.json();
+
+        // Build detail view
+        let html = '';
+
+
+        // Summary section
+        if (data.summary.content) {
+          html += `
+            <div class="detail-section">
+              <h3>
+                📝 Summary
+                ${data.summary.outline_url
+                  ? `<a href="${data.summary.outline_url}" target="_blank">View in Outline →</a>`
+                  : ''}
+              </h3>
+              <div class="summary-content">
+                ${renderMarkdown(data.summary.content)}
+              </div>
+            </div>
+          `;
+        }
+
+        // Stats section
+        if (data.stats.phases && data.stats.phases.length > 0) {
+          html += `
+            <div class="detail-section">
+              <h3>📊 Processing Stats</h3>
+              <table class="detail-stats-table">
+                <thead>
+                  <tr>
+                    <th>Phase</th>
+                    <th>Duration</th>
+                    <th>Items</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${data.stats.phases.map(p => `
+                    <tr>
+                      <td>${p.phase}</td>
+                      <td>${formatDuration(p.duration_sec)}</td>
+                      <td>${p.items_processed || '--'}</td>
+                      <td>${p.status === 'success' ? '✅' : p.status}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+
+        // Frames section
+        if (data.frames && data.frames.length > 0) {
+          html += `
+            <div class="detail-section">
+              <h3>🖼️ Frames (${data.frames.length})</h3>
+              <div class="frames-grid">
+                ${data.frames.slice(0, 20).map(f => `
+                  <div class="frame-card" onclick="openFrameModal('${f.image_path}', ${f.timestamp}, '${escapeHtml(f.activity_type)}', '${escapeHtml(f.vlm_description)}', ${JSON.stringify(f.apps).replace(/'/g, "\\'")})">
+                    <img src="${getImageUrl(f.image_path)}"
+                         alt="Frame at ${f.timestamp}s"
+                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 60%22><rect fill=%22%23ddd%22 width=%22100%22 height=%2260%22/><text x=%2250%22 y=%2235%22 text-anchor=%22middle%22 fill=%22%23999%22>No Image</text></svg>'">
+                    <div class="frame-card-info">
+                      <div class="frame-timestamp">${Math.floor(f.timestamp / 60)}:${String(Math.floor(f.timestamp % 60)).padStart(2, '0')}</div>
+                      <div class="frame-activity">${f.activity_type || 'unknown'}</div>
+                    </div>
+                  </div>
+                `).join('')}
+                ${data.frames.length > 20 ? `<div class="frame-card" style="display: flex; align-items: center; justify-content: center; background: var(--pico-muted-background-color);">+${data.frames.length - 20} more</div>` : ''}
+              </div>
+            </div>
+          `;
+        }
+
+        if (!html) {
+          html = '<div class="empty-state">No details available yet</div>';
+        }
+
+        contentContainer.innerHTML = html;
+      } catch (err) {
+        contentContainer.innerHTML = `<div class="error">Failed to load details: ${err.message}</div>`;
+      }
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return text.replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, ' ');
+    }
+
+    // Frame modal
+    function openFrameModal(imagePath, timestamp, activity, description, apps) {
+      const modal = document.getElementById('frame-modal');
+      const img = document.getElementById('modal-image');
+      const ts = document.getElementById('modal-timestamp');
+      const act = document.getElementById('modal-activity');
+      const desc = document.getElementById('modal-description');
+      const meta = document.getElementById('modal-meta');
+
+      img.src = getImageUrl(imagePath);
+      ts.textContent = `Frame at ${Math.floor(timestamp / 60)}:${String(Math.floor(timestamp % 60)).padStart(2, '0')}`;
+      act.textContent = activity || 'Unknown activity';
+      desc.textContent = description || '';
+      meta.textContent = apps && apps.length > 0 ? `Apps: ${apps.join(', ')}` : '';
+
+      modal.classList.add('active');
+    }
+
+    function closeFrameModal(event) {
+      if (event && event.target !== document.getElementById('frame-modal')) return;
+      document.getElementById('frame-modal').classList.remove('active');
+    }
+
+    // Keyboard shortcut to close modal
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeFrameModal();
+      }
+    });
+
+    // Auto-refresh every 30 seconds
+    let refreshInterval;
+
+    function startAutoRefresh() {
+      refreshInterval = setInterval(() => {
+        loadAggregateStats();
+        loadRecordings();
+      }, 30000);
+    }
+
+    // Initial load
+    document.addEventListener('DOMContentLoaded', () => {
+      loadAggregateStats();
+      loadPhaseBreakdown();
+      loadRecordings();
+      startAutoRefresh();
+    });
+  </script>
+</body>
+</html>

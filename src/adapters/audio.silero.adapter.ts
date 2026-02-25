@@ -1,8 +1,9 @@
-import { exec } from 'node:child_process';
+import { type ChildProcess, exec, spawn } from 'node:child_process';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import type { ResourceTrackable } from '../stats/types.js';
 
 const execAsync = promisify(exec);
 
@@ -12,7 +13,7 @@ export interface SpeechSegment {
   audioPath: string;
 }
 
-export interface AudioPreprocessor {
+export interface AudioPreprocessor extends ResourceTrackable {
   extractSpeechSegments(
     audioPath: string,
     recordingId: string
@@ -21,6 +22,8 @@ export interface AudioPreprocessor {
 }
 
 export function createSileroPreprocessor(): AudioPreprocessor {
+  let currentProcess: ChildProcess | null = null;
+
   return {
     extractSpeechSegments: async (audioPath: string, recordingId: string) => {
       const tempDir = path.join(
@@ -33,7 +36,6 @@ export function createSileroPreprocessor(): AudioPreprocessor {
 
       await mkdir(tempDir, { recursive: true });
 
-      // Pre-convert to WAV 16kHz mono to sidestep Python audio loading issues
       const inputWavPath = path.join(tempDir, 'input_16k.wav');
       try {
         console.log(`Converting ${audioPath} to 16kHz mono WAV...`);
@@ -56,13 +58,30 @@ export function createSileroPreprocessor(): AudioPreprocessor {
 
       try {
         console.log(`Running Silero VAD on ${inputWavPath}...`);
-        await execAsync(command);
+
+        currentProcess = spawn('sh', ['-c', command]);
+
+        await new Promise<void>((resolve, reject) => {
+          currentProcess?.on('close', (code) => {
+            currentProcess = null;
+            if (code === 0) {
+              resolve();
+            } else {
+              reject(new Error(`Silero VAD failed with code ${code}`));
+            }
+          });
+          currentProcess?.on('error', (err) => {
+            currentProcess = null;
+            reject(err);
+          });
+        });
 
         const manifestContent = await readFile(manifestPath, 'utf-8');
         const segments: SpeechSegment[] = JSON.parse(manifestContent);
 
         return { segments, tempDir };
       } catch (error) {
+        currentProcess = null;
         console.error(`Silero VAD failed: ${(error as Error).message}`);
         throw new Error(
           `Failed to extract speech segments: ${(error as Error).message}`
@@ -73,7 +92,6 @@ export function createSileroPreprocessor(): AudioPreprocessor {
     cleanup: async (tempDir: string) => {
       try {
         await rm(tempDir, { recursive: true, force: true });
-        // Also try to remove the parent recording dir if empty
         const recordingDir = path.dirname(tempDir);
         await rm(recordingDir).catch(() => {});
       } catch (error) {
@@ -81,6 +99,14 @@ export function createSileroPreprocessor(): AudioPreprocessor {
           `Failed to cleanup temp segments: ${(error as Error).message}`
         );
       }
+    },
+
+    getResourceName(): string {
+      return 'silero-python';
+    },
+
+    getPid(): number | null {
+      return currentProcess?.pid ?? null;
     },
   };
 }

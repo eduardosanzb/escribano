@@ -35,6 +35,7 @@ describe('clusterObservations', () => {
     image_path: null,
     ocr_text: `text ${typeVal}`,
     vlm_description: null,
+    vlm_raw_response: null,
     activity_type: null,
     apps: null,
     topics: null,

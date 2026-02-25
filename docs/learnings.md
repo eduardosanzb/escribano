@@ -153,3 +153,47 @@ POC validated interleaved multi-image processing with mlx-vlm:
 
 **Full findings:** [MLX-VLM POC Learnings](./MLX-VLM-POC-LEARNINGS.md)  
 **ADR:** [ADR-006: MLX-VLM Adapter](./adr/006-mlx-vlm-adapter.md)
+
+## FFmpeg Scene Detection Optimization (Feb 2026)
+
+### Problem
+Scene detection with `select='gt(scene,0.4)'` was taking 57 minutes for a 3-hour 
+video (65% of total processing time). FFmpeg was decoding all 648,000 frames at 
+60fps to compare consecutive frames for scene changes.
+
+### Solution
+Added `-skip_frame nokey` flag to only decode I-frames (keyframes):
+
+```bash
+ffmpeg -skip_frame nokey -hwaccel videotoolbox -i "video.mp4" -vf "select='gt(scene,0.4)',showinfo" -vsync vfr -f null -
+```
+
+### Why It Works
+Screen recording codecs insert I-frames at major visual transitions (app switches, 
+window changes). By only decoding keyframes, we catch important scene changes while 
+skipping ~95% of frames. Screen recordings typically have I-frames every 1-3 seconds.
+
+### Results (180-min video comparison)
+
+| Metric | Before | After | Speedup |
+|--------|--------|-------|---------|
+| Scene detection | 57.1 min | 2.8 min | **20.6x** |
+| Frame extraction | 1.4 min | 1.4 min | ~same |
+| VLM inference | 43.5 min | 48.2 min | ~same |
+| **Total pipeline** | **102 min** | **52 min** | **1.9x** |
+| Scenes detected | 99 | 93 | ~same coverage |
+| Frames extracted | 457 | 452 | ~same |
+| Segments created | 13 | 17 | **Better granularity** |
+
+### Quality Impact
+
+Summary quality **improved** with the optimized approach:
+- More granular activity segmentation (17 vs 13 segments)
+- Better temporal boundaries for activities
+- No missed major transitions observed
+- Both summaries captured same technical details and outcomes
+
+### Tradeoffs
+- May miss very brief transitions (<1 I-frame interval)
+- In practice: no quality degradation observed on screen recordings
+- **Recommendation:** Keep as default for all screen recordings

@@ -168,8 +168,8 @@ The adapter auto-detects Python in this priority:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ESCRIBANO_VLM_MODEL` | MLX-VLM model for frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-bf16` |
-| `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `4` |
-| `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
+| `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `16` |
+| `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `4000` |
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket for MLX bridge | `/tmp/escribano-mlx.sock` |
 | `ESCRIBANO_PYTHON_PATH` | Python executable for MLX | Auto-detected |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base sampling (seconds) | `10` |
@@ -213,6 +213,27 @@ npx vitest run src/tests/db/repositories.test.ts
 ```
 
 Focus on unit tests for core business logic (services/). Integration tests deferred until core pipeline is stable.
+
+## Quality Testing
+
+Process multiple recordings and review results:
+
+```bash
+# Run all test videos through full pipeline
+pnpm quality-test
+
+# Skip summary generation (faster)
+pnpm quality-test:fast
+
+# Review results in dashboard
+pnpm dashboard
+```
+
+Dashboard available at http://localhost:3456 with:
+- Aggregate stats (frames, VLM speed, memory usage)
+- Per-recording summaries with markdown rendering
+- Frame grid with VLM descriptions
+- Processing phase breakdowns
 
 ## Database
 

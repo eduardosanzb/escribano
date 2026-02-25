@@ -154,6 +154,7 @@ Parsed into:
   apps: string[];
   topics: string[];
   imagePath: string;
+  raw_response?: string;  // Only present when parsing fails
 }
 ```
 
@@ -175,6 +176,7 @@ Parsed into:
 | Connection refused | Throw error |
 | Bridge crash | Throw error |
 | Image load failure | Error response, continue batch |
+| Parse failure | Store raw VLM response in `vlm_raw_response`, continue batch |
 | Invalid response | Throw error |
 | Socket timeout | Throw error |
 

@@ -174,3 +174,8 @@ scripts/poc-vllm-mlx/docs/
 # Legacy scripts
 src/scripts/__pycache__/
 src/scripts/.venv/
+
+# Runtime artifacts
+temp.db
+batch-run.log
+.opencode/

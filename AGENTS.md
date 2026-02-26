@@ -311,7 +311,7 @@ The pipeline saves progress aggressively to enable crash recovery:
   - Enables automatic session recording (no forgetting to start)
 - ☐ **MCP server** — Expose TopicBlocks via MCP for AI assistant integration — *8-12h*
 - ☐ **Cross-recording Context queries** — "show me all debugging sessions this week" — *4-6h*
-- ☐ **Compare pages (SEO)** — "Escribano vs Screenpipe", "Escribano vs Granola" — *4-6h*
+- ☐ **Compare pages (SEO)** — competitive comparison pages — *4-6h*
 - ☐ OCR on keyframes at artifact generation time — *6-8h*
 
 ### P3 — Cleanup (Post-Launch)
@@ -324,8 +324,8 @@ The pipeline saves progress aggressively to enable crash recovery:
 
 ### Deferred (6+ months)
 
-- ☐ Cloud inference tier — $15-25/mo SaaS option
-- ☐ Team/Enterprise features — Per-seat pricing
+- ☐ Cloud inference tier — hosted option for users without local hardware
+- ☐ Team/Enterprise features
 
 ## Code Conventions
 

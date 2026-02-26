@@ -243,3 +243,73 @@ Summary quality **maintained or improved**:
 - 4bit may lose some nuance on complex visual scenes
 - In practice: quality acceptable for developer session summarization
 - **Recommendation:** Use 4bit as default; bf16 available if quality issues arise
+
+## Coolify + Cloudflare DNS-01 SSL (Feb 2026)
+
+### Problem
+When deploying behind Cloudflare's orange-cloud proxy, Traefik's default HTTP-01 
+challenge fails because Cloudflare intercepts the validation request. Let's Encrypt 
+can't reach `/.well-known/acme-challenge/<token>` on your origin server.
+
+### Symptoms
+```
+ERR Cannot retrieve the ACME challenge for example.com
+```
+
+Daily retry failures for weeks with no certificate issuance.
+
+### Solution
+Switch Traefik to **DNS-01 challenge** with Cloudflare API:
+
+1. **Create Cloudflare API token** with `Zone:DNS:Edit` permission for all zones
+2. **Add token to Traefik via `.env` file** (Coolify UI doesn't persist environment vars)
+3. **Add propagation delay** to handle DNS propagation timing
+
+### Traefik Configuration Changes
+
+In `/data/coolify/proxy/docker-compose.yml`:
+
+```yaml
+# Replace httpchallenge with dnschallenge
+command:
+  - '--certificatesresolvers.letsencrypt.acme.dnschallenge=true'
+  - '--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare'
+  - '--certificatesresolvers.letsencrypt.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53'
+  - '--certificatesresolvers.letsencrypt.acme.dnschallenge.delaybeforecheck=30'
+```
+
+Create `/data/coolify/proxy/.env`:
+```
+CF_DNS_API_TOKEN=your_cloudflare_api_token
+```
+
+### Key Learnings
+
+1. **Coolify overwrites compose file** — use `.env` file in same directory for secrets
+2. **`delaybeforecheck=30` is critical** — without it, Let's Encrypt's secondary validator 
+   may read stale DNS values and fail with `403 unauthorized`
+3. **Delete `acme.json`** after config changes to force fresh cert requests
+4. **Test token before deploying:**
+   ```bash
+   curl -X GET "https://api.cloudflare.com/client/v4/zones" \
+     -H "Authorization: Bearer YOUR_TOKEN" | python3 -m json.tool | grep '"name"'
+   ```
+
+### Common Issues
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `zone could not be found` | Token lacks zone access | Use "All zones" in token scope |
+| `403 unauthorized` | DNS propagation race | Add `delaybeforecheck=30` |
+| `missing token` | Env var not passed | Use `.env` file, not compose env block |
+
+### Container Port Mismatch
+
+Coolify defaults to port 3000 for new apps, but static nginx containers listen on port 80.
+If Traefik returns 502, check container labels:
+
+```bash
+docker inspect <container> | grep loadbalancer.server.port
+```
+
+Fix in Coolify UI: Configuration → Port → change from 3000 to 80

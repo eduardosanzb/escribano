@@ -1,270 +1,157 @@
 # Escribano
 
-> *The scribe who transforms recordings into living knowledge*
+**AI-powered session intelligence for developers.**
 
-AI-powered session intelligence tool that automatically captures, transcribes, classifies, and generates narrative summaries from your work sessions.
+Escribano watches you work, understands what you're doing, and writes about it. Feed it a screen recording and get a structured summary of your coding session — what you worked on, when, and what you accomplished.
+
+## What You Get
+
+**Before**: A 49-minute screen recording. Hours of debugging, research, coding. No notes.
+
+**After** (auto-generated):
+
+```markdown
+# Session Summary: 2/21/2026
+
+## Overview  
+Spent 49 minutes debugging and refining a Visual Language Model (VLM) pipeline, 
+switching between terminal logs, code updates, and external resources.
+
+---
+
+## Debugging VLM Pipeline Issues: 4:48 - 14:20  
+Debugging deprecated VLM pipeline code in the OpenCode terminal. The logs show 
+warnings about outdated VLM implementations. Repeatedly inspecting error messages 
+for the `open-code.json` file, particularly an LSP error related to the language 
+server protocol. Switching between macOS terminal windows and the Ghostty terminal 
+emulator to test different configurations.
+
+---
+
+## Refactoring VLM Pipeline Code: 20:12 - 37:38  
+Deeply engaged in refactoring the VLM pipeline in OpenCode. Editing the 
+`src/adapters/intelligence/ollama.adapter.ts` file to define a `describeImageSequential()` 
+function, replacing batch processing with sequential logic. The focus shifts to 
+Phase 4: Future Considerations, including "firecrawl-mcp" and "MLX migration."
+
+---
+
+## Key Outcomes  
+- **Completed:**
+  - Refactored `describeImageSequential()` to handle single-image processing
+  - Updated deprecated VLM code with function renaming and prompt simplification
+- **Remaining Tasks:**
+  - Resolve the LSP error in `open-code.json`
+  - Debug the Qwen3-Coder Next model in LM Studio
+```
+
+## Why Escribano?
+
+- **Understands activities**: Classifies debugging, coding, research, meetings, terminal work — not just OCR text
+- **Segments your work**: Breaks sessions into coherent topic blocks with timestamps
+- **Local-first**: All processing happens on your machine. Your screen data never leaves.
+- **VLM-powered**: Uses vision-language models to understand screenshots directly (proven better than OCR clustering)
 
 ## Quick Start
 
+### Prerequisites
+
 ```bash
-# Install dependencies
-pnpm install
+# macOS (via Homebrew)
+brew install ollama whisper-cpp ffmpeg
 
-# Approve native module builds (required once for better-sqlite3)
-pnpm approve-builds
-
-# Install prerequisites
-brew install whisper-cpp ffmpeg sqlite3 ollama
-
-# Pull Ollama model (for summary generation)
+# Pull the LLM model for summary generation
 ollama pull qwen3:32b
 
 # Install MLX-VLM for frame analysis (Python)
 pip install mlx-vlm
-
-# Initialize database
-pnpm db:reset
-
-# Process latest Cap recording
-pnpm escribano
-
-# Process a specific video file (QuickTime, etc.)
-pnpm escribano --file "~/Desktop/Screen Recording.mov"
-
-# Process video with external audio
-pnpm escribano --file video.mov --mic-audio mic.wav
-
-# Reprocess from scratch
-pnpm escribano --force
 ```
 
-## Usage
+### Run
 
 ```bash
-# Start Ollama (for LLM summary generation)
-pnpm ollama
+# Process a screen recording
+npx github:eduardosanzb/escribano --file "/path/to/recording.mov"
 
-# Process latest Cap recording
-pnpm escribano
-
-# Process a specific video file (QuickTime, downloaded, etc.)
-pnpm escribano --file "/path/to/video.mp4"
-
-# Process video with external audio files
-pnpm escribano --file video.mov --mic-audio mic.wav
-pnpm escribano --file video.mov --system-audio system.wav
-
-# Process only (skip summary generation)
-pnpm escribano --skip-summary
-
-# Force reprocessing from scratch
-pnpm escribano --force
-
-# Show help
-pnpm escribano --help
+# Or clone and run locally
+git clone https://github.com/eduardosanzb/escribano.git
+cd escribano
+pnpm install
+pnpm escribano --file "~/Desktop/Screen Recording.mov"
 ```
-
-### Audio Handling
-
-| Source | Video | Mic Audio | System Audio |
-|--------|-------|-----------|--------------|
-| Cap recording | Separate `.mp4` | `.ogg` file | `.ogg` file |
-| Video file (`--file`) | Single `.mov`/`.mp4` | Auto-extracted or `--mic-audio` | `--system-audio` only |
-
-For video files (QuickTime recordings, etc.):
-- **Auto-extraction**: If no `--mic-audio` flag, audio is automatically detected and extracted
-- **Override**: Use `--mic-audio` to provide a separate audio file (skips auto-extraction)
-- **System audio**: Use `--system-audio` if you have a separate system audio recording
 
 Output: Markdown summary saved to `~/.escribano/artifacts/`
 
-## Architecture (V3 — VLM-First)
-
-Escribano uses a **VLM-first visual pipeline** that directly analyzes screenshots with a Vision-Language Model, rather than extracting and clustering OCR text.
-
-```
-src/
-├── 0_types.ts                    # Core types and interfaces
-├── index.ts                      # CLI entry point
-├── actions/
-│   ├── process-recording-v3.ts   # V3 pipeline orchestrator
-│   └── generate-summary-v3.ts    # LLM summary generation
-├── adapters/                     # External system implementations
-│   ├── intelligence.mlx.adapter.ts   # VLM inference (MLX-VLM)
-│   ├── intelligence.ollama.adapter.ts # LLM inference (Ollama)
-│   ├── capture.cap.adapter.ts        # Cap recording discovery
-│   ├── capture.filesystem.adapter.ts # Direct file input with auto audio extraction
-│   └── ...
-├── services/                     # Pure business logic
-│   ├── frame-sampling.ts         # Scene-aware frame reduction
-│   ├── vlm-service.ts            # VLM orchestration
-│   ├── activity-segmentation.ts  # Group by activity continuity
-│   └── temporal-alignment.ts     # Audio attachment by timestamp
-├── db/                          # SQLite persistence layer
-└── domain/                      # Entity state machines
-```
-
-### Key Entities
-
-- **Recording**: Raw capture from Cap (video/audio paths, metadata)
-- **Observation**: Timestamped evidence — visual frame with VLM description, or audio transcript
-- **TopicBlock**: Coherent work segment with activity type, VLM descriptions, and aligned audio
-- **Context**: Cross-recording semantic label (app, topic) — created for future cross-recording queries
-- **Artifact**: Generated Markdown summary
-
-## Design Principles
-
-- **VLM-First**: Screenshots are analyzed directly by vision model, not OCR + clustering
-- **Scene Detection**: ffmpeg scene filter identifies visual changes for smarter sampling
-- **Activity Segmentation**: Groups consecutive frames by detected activity (debugging, coding, meeting, etc.)
-- **Temporal Alignment**: Audio attaches by timestamp overlap, not semantic similarity
-- **Crash-Safe Resume**: Pipeline saves progress after each batch, resumes from last completed step
-- **Clean Architecture**: Dependencies point inward; domain knows nothing of adapters
-
-## Processing Pipeline
+## How It Works
 
 ```
 Recording → Frame Extraction → Scene Detection → Adaptive Sampling (~100-150 frames)
     ↓
-Audio Pipeline (parallel) ───────────────────────┐
-    │                                            │
-Silero VAD → Whisper → Audio Observations        │
-    │                                            │
-VLM Batch Inference (MLX-VLM, Qwen3-VL-2B) → Visual Observations
+VLM Batch Inference (MLX-VLM, Qwen3-VL-2B) → "Debugging in terminal", "Reading docs in Chrome"
     ↓
-Activity Segmentation → Temporal Audio Alignment
+Audio Pipeline (parallel): Silero VAD → Whisper → Transcripts
     ↓
-TopicBlocks → LLM Summary (Ollama, qwen3:32b) → Markdown Artifact
+Activity Segmentation → Temporal Audio Alignment → TopicBlocks
+    ↓
+LLM Summary (Ollama, qwen3:32b) → Markdown Artifact
 ```
 
-## Prerequisites
+**Key insight**: Escribano uses VLM-first visual understanding instead of OCR + text clustering. OCR fails for developer work because all code screens produce similar tokens (`const`, `function`, `import`). VLMs understand the *activity*, not just the text.
 
-### System Dependencies
+## Supported Inputs
 
-- **whisper-cpp**: `brew install whisper-cpp`
-- **ffmpeg**: `brew install ffmpeg` (scene detection, frame extraction)
-- **sqlite3**: `brew install sqlite3`
-- **ollama**: `brew install ollama` (LLM summary generation)
-- **Python 3**: For MLX-VLM frame analysis
+| Source | Command |
+|--------|---------|
+| QuickTime recording | `--file video.mov` |
+| Cap recording | Auto-detected in `~/Movies/Cap/` |
+| Any MP4/MOV | `--file /path/to/video.mp4` |
+| External audio | `--mic-audio mic.wav --system-audio system.wav` |
 
-### Native Modules
-
-This project uses `better-sqlite3`, which requires native compilation. pnpm 10+ requires explicit approval:
+## CLI Options
 
 ```bash
-pnpm approve-builds
+escribano --file recording.mov     # Process specific file
+escribano --force                  # Reprocess from scratch
+escribano --skip-summary           # Process only, skip LLM summary
+escribano --help                   # Show all options
 ```
 
-Select `better-sqlite3` when prompted.
+## Architecture
 
-### Ollama Setup
+Built with Clean Architecture principles:
 
-1. **Install**: `brew install ollama`
-2. **Pull Model**: `ollama pull qwen3:32b` (Summary generation)
-3. **Start Ollama**:
-   ```bash
-   pnpm ollama
-   ```
+- **Domain**: Core entities (Recording, Observation, TopicBlock, Context, Artifact)
+- **Services**: Pure business logic (frame sampling, activity segmentation, temporal alignment)
+- **Adapters**: External systems (MLX-VLM, Ollama, Whisper, FFmpeg, SQLite)
 
-### MLX-VLM Setup (VLM Frame Analysis)
+See [docs/architecture.md](docs/architecture.md) for full details.
 
-```bash
-# With uv (recommended)
-uv pip install mlx-vlm
+## Technical Deep Dives
 
-# Or with pip
-pip install mlx-vlm
-```
+- [ADR-005: Why OCR-based screen intelligence fails for developers](docs/adr/005-vlm-first-visual-pipeline.md)
+- [ADR-006: MLX-VLM migration for 4x faster inference](docs/adr/006-mlx-vlm-adapter.md)
+- [Learnings: VLM benchmarks, frame sampling, audio preprocessing](docs/learnings.md)
 
-The adapter auto-detects Python in this priority:
-1. `ESCRIBANO_PYTHON_PATH` environment variable
-2. Active virtual environment (`VIRTUAL_ENV`)
-3. `~/.venv/bin/python3` (common uv venv location)
-4. System `python3`
+## Requirements
 
-## Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ESCRIBANO_VLM_MODEL` | MLX-VLM model for frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-bf16` |
-| `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `16` |
-| `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `4000` |
-| `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket for MLX bridge | `/tmp/escribano-mlx.sock` |
-| `ESCRIBANO_PYTHON_PATH` | Python executable for MLX | Auto-detected |
-| `ESCRIBANO_SAMPLE_INTERVAL` | Base sampling (seconds) | `10` |
-| `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection (seconds) | `15` |
-| `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
-| `ESCRIBANO_VERBOSE` | Verbose logging | `false` |
-| `ESCRIBANO_SKIP_LLM` | Use template instead of LLM | `false` |
+- **macOS** (Apple Silicon recommended for MLX-VLM)
+- **Node.js 20+**
+- **16GB+ RAM** (32GB+ recommended for larger models)
+- **~10GB disk** for models (qwen3:32b is ~20GB, qwen3-vl-2b is ~4GB)
 
 ## Roadmap
 
-### Completed ✅
-- **M1**: Core Pipeline — Cap → Whisper → Transcript
-- **M2**: Intelligence — Multi-label Classification
-- **M3**: Artifacts — Generation + Outline Sync
-- **M4**: VLM-First Pipeline — Frame Sampling → Scene Detection → VLM Batch → Activity Segmentation → LLM Summary
-- **MLX Migration**: 4.7x faster VLM inference via MLX-VLM (ADR-006)
+- [x] VLM-first visual pipeline
+- [x] MLX-VLM migration (4x speedup)
+- [x] Activity segmentation
+- [ ] OCR on keyframes (concrete code/URLs in summaries)
+- [ ] MCP server for AI assistant integration
+- [ ] Cross-recording context queries
 
-### Current Focus
-- Validate artifact quality with real sessions
-- Auto-process watcher for new recordings
+## License
 
-### Backlog (P2)
-- OCR on keyframes at artifact generation time (actual code/commands/URLs)
-- Cross-recording Context queries ("show me all debugging this week")
-- MCP server for AI assistant integration
+MIT
 
-### Cleanup (P3)
-- Remove deprecated V2 code (OCR-based clustering)
-- Remove deprecated V1 code (file-based sessions)
-- Schema migration: `clusters` → `segments`
-- Split `0_types.ts` into focused modules
+---
 
-## Testing
-
-```bash
-# Run all tests
-pnpm test
-
-# Run specific test file
-npx vitest run src/tests/db/repositories.test.ts
-```
-
-Focus on unit tests for core business logic (services/). Integration tests deferred until core pipeline is stable.
-
-## Quality Testing
-
-Process multiple recordings and review results:
-
-```bash
-# Run all test videos through full pipeline
-pnpm quality-test
-
-# Skip summary generation (faster)
-pnpm quality-test:fast
-
-# Review results in dashboard
-pnpm dashboard
-```
-
-Dashboard available at http://localhost:3456 with:
-- Aggregate stats (frames, VLM speed, memory usage)
-- Per-recording summaries with markdown rendering
-- Frame grid with VLM descriptions
-- Processing phase breakdowns
-
-## Database
-
-SQLite database located at `~/.escribano/escribano.db`
-
-**Reset**: `pnpm db:reset` (deletes all data, useful for testing)
-
-## Learnings
-
-See [docs/learnings.md](docs/learnings.md) for detailed technical findings:
-- MLX-VLM migration and benchmark results (ADR-006)
-- VLM benchmark results (qwen3-vl series)
-- Frame sampling strategies
-- Audio preprocessing (Silero VAD + Whisper thresholds)
-
+*Escribano = "The Scribe" — because your coding sessions deserve documentation too.*

@@ -1,0 +1,19 @@
+name: Landing Page Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/landing/**'
+      - '.github/workflows/landing-deploy.yml'
+
+jobs:
+  deploy:
+    name: Trigger Coolify Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Coolify Webhook
+        run: |
+          curl -X POST "${{ secrets.COOLIFY_ESCRIBANO_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d '{"force": true}'

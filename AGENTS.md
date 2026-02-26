@@ -89,6 +89,7 @@ src/
 │   └── generate-summary-v3.ts         # V3 Summary: TopicBlocks → LLM → Markdown
 ├── adapters/
 │   ├── capture.cap.adapter.ts         # Cap recording discovery
+│   ├── capture.filesystem.adapter.ts  # Video files with auto audio extraction
 │   ├── transcription.whisper.adapter.ts # Audio → Text (whisper-cli)
 │   ├── audio.silero.adapter.ts        # VAD preprocessing (Python)
 │   ├── video.ffmpeg.adapter.ts        # Frame extraction + scene detection
@@ -135,7 +136,7 @@ src/
 External systems are accessed through **port interfaces** defined in `0_types.ts`. We use a descriptive naming convention for adapters: `[port].[implementation].adapter.ts`.
 
 - **TranscriptionService**: `transcription.whisper.adapter.ts`
-- **CaptureSource**: `capture.cap.adapter.ts`
+- **CaptureSource**: `capture.cap.adapter.ts` (Cap recordings) or `capture.filesystem.adapter.ts` (video files with auto audio extraction)
 - **IntelligenceService**: `intelligence.ollama.adapter.ts`
 - **VideoService**: `video.ffmpeg.adapter.ts`
 - **AudioPreprocessor**: `audio.silero.adapter.ts`
@@ -195,8 +196,16 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
 ## CLI
 
 ```bash
-# Process latest recording and generate summary
+# Process latest Cap recording and generate summary
 pnpm escribano
+
+# Process a video file (QuickTime, downloaded, etc.)
+pnpm escribano --file "/path/to/video.mov"
+
+# Process video with external audio files
+pnpm escribano --file video.mov --mic-audio mic.wav
+pnpm escribano --file video.mov --system-audio system.wav
+pnpm escribano --file video.mov --mic-audio mic.wav --system-audio system.wav
 
 # Reprocess from scratch
 pnpm escribano --force
@@ -211,6 +220,18 @@ pnpm quality-test:fast     # Process without summary generation
 # Dashboard for reviewing results
 pnpm dashboard             # Start at http://localhost:3456
 ```
+
+### Audio Handling
+
+| Source | Video | Mic Audio | System Audio |
+|--------|-------|-----------|--------------|
+| Cap recording | Separate `.mp4` | `.ogg` file | `.ogg` file |
+| Video file (`--file`) | Single `.mov`/`.mp4` | Auto-extracted or `--mic-audio` | `--system-audio` only |
+
+For video files (QuickTime recordings, etc.):
+- **Auto-extraction**: If no `--mic-audio` flag, audio is automatically detected and extracted to `/tmp/escribano/{id}/audio.wav`
+- **Override**: Use `--mic-audio` to provide a separate audio file (skips extraction)
+- **System audio**: QuickTime doesn't capture system audio; use `--system-audio` if you have a separate recording
 
 Output: Markdown summary saved to `~/.escribano/artifacts/`
 

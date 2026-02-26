@@ -28,8 +28,11 @@ pnpm db:reset
 # Process latest Cap recording
 pnpm escribano
 
-# Process a specific video file
+# Process a specific video file (QuickTime, etc.)
 pnpm escribano --file "~/Desktop/Screen Recording.mov"
+
+# Process video with external audio
+pnpm escribano --file video.mov --mic-audio mic.wav
 
 # Reprocess from scratch
 pnpm escribano --force
@@ -44,8 +47,12 @@ pnpm ollama
 # Process latest Cap recording
 pnpm escribano
 
-# Process a specific video file
+# Process a specific video file (QuickTime, downloaded, etc.)
 pnpm escribano --file "/path/to/video.mp4"
+
+# Process video with external audio files
+pnpm escribano --file video.mov --mic-audio mic.wav
+pnpm escribano --file video.mov --system-audio system.wav
 
 # Process only (skip summary generation)
 pnpm escribano --skip-summary
@@ -56,6 +63,18 @@ pnpm escribano --force
 # Show help
 pnpm escribano --help
 ```
+
+### Audio Handling
+
+| Source | Video | Mic Audio | System Audio |
+|--------|-------|-----------|--------------|
+| Cap recording | Separate `.mp4` | `.ogg` file | `.ogg` file |
+| Video file (`--file`) | Single `.mov`/`.mp4` | Auto-extracted or `--mic-audio` | `--system-audio` only |
+
+For video files (QuickTime recordings, etc.):
+- **Auto-extraction**: If no `--mic-audio` flag, audio is automatically detected and extracted
+- **Override**: Use `--mic-audio` to provide a separate audio file (skips auto-extraction)
+- **System audio**: Use `--system-audio` if you have a separate system audio recording
 
 Output: Markdown summary saved to `~/.escribano/artifacts/`
 
@@ -74,7 +93,7 @@ src/
 │   ├── intelligence.mlx.adapter.ts   # VLM inference (MLX-VLM)
 │   ├── intelligence.ollama.adapter.ts # LLM inference (Ollama)
 │   ├── capture.cap.adapter.ts        # Cap recording discovery
-│   ├── capture.filesystem.adapter.ts # Direct file input
+│   ├── capture.filesystem.adapter.ts # Direct file input with auto audio extraction
 │   └── ...
 ├── services/                     # Pure business logic
 │   ├── frame-sampling.ts         # Scene-aware frame reduction

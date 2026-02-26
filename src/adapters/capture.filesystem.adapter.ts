@@ -5,13 +5,22 @@
  * Useful for QuickTime screen recordings, downloaded videos, etc.
  */
 
-import { stat } from 'node:fs/promises';
+import { exec } from 'node:child_process';
+import { mkdir, stat } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import type { CaptureSource, Recording, VideoService } from '../0_types.js';
+
+const execAsync = promisify(exec);
 
 interface FilesystemConfig {
   /** Path to the video file */
   videoPath: string;
+  /** Override mic audio path (skips auto-extraction) */
+  micAudioPath?: string;
+  /** Override system audio path */
+  systemAudioPath?: string;
 }
 
 function expandPath(inputPath: string): string {
@@ -34,9 +43,25 @@ function sanitizeFilenameToId(filename: string): string {
     .substring(0, 100);
 }
 
+async function checkHasAudio(videoPath: string): Promise<boolean> {
+  const command = `ffprobe -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 "${videoPath}"`;
+  const { stdout } = await execAsync(command);
+  return stdout.trim().length > 0;
+}
+
+async function extractAudio(
+  videoPath: string,
+  outputPath: string
+): Promise<void> {
+  await mkdir(path.dirname(outputPath), { recursive: true });
+  const command = `ffmpeg -i "${videoPath}" -vn -acodec pcm_s16le -ar 16000 "${outputPath}" -y`;
+  await execAsync(command);
+}
+
 async function parseFilesystemRecording(
   videoPath: string,
-  videoService: VideoService
+  videoService: VideoService,
+  audioOverrides?: { micAudioPath?: string; systemAudioPath?: string }
 ): Promise<Recording> {
   try {
     const stats = await stat(videoPath);
@@ -48,6 +73,30 @@ async function parseFilesystemRecording(
     // Generate recording ID from filename
     const fileName = path.basename(videoPath);
     const recordingId = sanitizeFilenameToId(fileName);
+
+    // Audio handling - check for overrides first
+    let audioMicPath: string | null = null;
+    let audioSystemPath: string | null = null;
+
+    if (audioOverrides?.micAudioPath) {
+      audioMicPath = expandPath(audioOverrides.micAudioPath);
+    } else {
+      const hasAudio = await checkHasAudio(videoPath);
+      if (hasAudio) {
+        const tempAudioPath = path.join(
+          os.tmpdir(),
+          'escribano',
+          recordingId,
+          'audio.wav'
+        );
+        await extractAudio(videoPath, tempAudioPath);
+        audioMicPath = tempAudioPath;
+      }
+    }
+
+    if (audioOverrides?.systemAudioPath) {
+      audioSystemPath = expandPath(audioOverrides.systemAudioPath);
+    }
 
     return {
       id: recordingId,
@@ -63,8 +112,8 @@ async function parseFilesystemRecording(
         },
       },
       videoPath: videoPath,
-      audioMicPath: null,
-      audioSystemPath: null,
+      audioMicPath: audioMicPath,
+      audioSystemPath: audioSystemPath,
       duration: metadata.duration,
       capturedAt,
     };
@@ -96,7 +145,11 @@ export function createFilesystemCaptureSource(
       try {
         const recording = await parseFilesystemRecording(
           resolvedPath,
-          videoService
+          videoService,
+          {
+            micAudioPath: config.micAudioPath,
+            systemAudioPath: config.systemAudioPath,
+          }
         );
         return recording;
       } catch (error) {
@@ -107,7 +160,11 @@ export function createFilesystemCaptureSource(
     listRecordings: async (_limit = 1): Promise<Recording[]> => {
       const recording = await parseFilesystemRecording(
         resolvedPath,
-        videoService
+        videoService,
+        {
+          micAudioPath: config.micAudioPath,
+          systemAudioPath: config.systemAudioPath,
+        }
       );
       return recording ? [recording] : [];
     },

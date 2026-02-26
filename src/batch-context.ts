@@ -71,6 +71,8 @@ export interface SystemContext {
 export interface ProcessVideoOptions {
   force?: boolean;
   skipSummary?: boolean;
+  micAudioPath?: string;
+  systemAudioPath?: string;
 }
 
 export interface ProcessVideoResult {
@@ -154,7 +156,12 @@ export async function processVideo(
   options: ProcessVideoOptions = {}
 ): Promise<ProcessVideoResult> {
   const startTime = Date.now();
-  const { force = false, skipSummary = false } = options;
+  const {
+    force = false,
+    skipSummary = false,
+    micAudioPath,
+    systemAudioPath,
+  } = options;
   const { repos, adapters, outlineConfig } = ctx;
   const { vlm, llm, video, preprocessor, transcription } = adapters;
 
@@ -162,7 +169,7 @@ export async function processVideo(
     // Create capture source for this specific file
     // Note: Hardcoded to filesystem source, not Cap recordings
     const captureSource: CaptureSource = createFilesystemCaptureSource(
-      { videoPath },
+      { videoPath, micAudioPath, systemAudioPath },
       video
     );
 

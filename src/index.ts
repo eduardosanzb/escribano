@@ -28,6 +28,8 @@ interface ParsedArgs {
   help: boolean;
   file: string | null;
   skipSummary: boolean;
+  micAudio: string | null;
+  systemAudio: string | null;
 }
 
 function main(): void {
@@ -38,7 +40,7 @@ function main(): void {
     process.exit(0);
   }
 
-  run(args.force, args.file, args.skipSummary).catch((error) => {
+  run(args).catch((error) => {
     console.error('Error:', (error as Error).message);
     console.error((error as Error).stack);
     process.exit(1);
@@ -48,12 +50,18 @@ function main(): void {
 function parseArgs(argsArray: string[]): ParsedArgs {
   const fileIndex = argsArray.indexOf('--file');
   const filePath = fileIndex !== -1 ? argsArray[fileIndex + 1] || null : null;
+  const micIndex = argsArray.indexOf('--mic-audio');
+  const micAudio = micIndex !== -1 ? argsArray[micIndex + 1] || null : null;
+  const sysIndex = argsArray.indexOf('--system-audio');
+  const systemAudio = sysIndex !== -1 ? argsArray[sysIndex + 1] || null : null;
 
   return {
     force: argsArray.includes('--force'),
     help: argsArray.includes('--help') || argsArray.includes('-h'),
     file: filePath,
     skipSummary: argsArray.includes('--skip-summary'),
+    micAudio,
+    systemAudio,
   };
 }
 
@@ -64,24 +72,24 @@ Escribano - Session Intelligence Tool
 Usage:
   pnpm escribano                           Process latest Cap recording
   pnpm escribano --file <path>             Process video from filesystem
+  pnpm escribano --file <path> --mic-audio <wav>   Use external mic audio
+  pnpm escribano --file <path> --system-audio <wav>  Provide system audio
   pnpm escribano --force                   Reprocess from scratch
-  pnpm escribano --file <path> --force     Reprocess specific file
   pnpm escribano --skip-summary            Process only (no summary generation)
   pnpm escribano --help                    Show this help
 
 Examples:
   pnpm escribano --file "~/Desktop/Screen Recording.mov"
-  pnpm escribano --file "/path/to/video.mp4"
+  pnpm escribano --file "/path/to/video.mp4" --mic-audio "/path/to/mic.wav"
+  pnpm escribano --file "/path/to/video.mp4" --system-audio "/path/to/system.wav"
 
 Output: Markdown summary saved to ~/.escribano/artifacts/
 `);
 }
 
-async function run(
-  force: boolean,
-  filePath: string | null,
-  skipSummary: boolean
-): Promise<void> {
+async function run(args: ParsedArgs): Promise<void> {
+  const { force, file: filePath, skipSummary, micAudio, systemAudio } = args;
+
   // Initialize system (reuses batch-context for consistency)
   console.log('Initializing database...');
   const ctx = await initializeSystem();
@@ -102,8 +110,14 @@ async function run(
   let captureSource: CaptureSource;
   if (filePath) {
     console.log(`Using filesystem source: ${filePath}`);
+    if (micAudio) console.log(`  Mic audio: ${micAudio}`);
+    if (systemAudio) console.log(`  System audio: ${systemAudio}`);
     captureSource = createFilesystemCaptureSource(
-      { videoPath: filePath },
+      {
+        videoPath: filePath,
+        micAudioPath: micAudio ?? undefined,
+        systemAudioPath: systemAudio ?? undefined,
+      },
       ctx.adapters.video
     );
   } else {
@@ -136,7 +150,12 @@ async function run(
   const result: ProcessVideoResult = await processVideo(
     recording.videoPath,
     ctx,
-    { force, skipSummary }
+    {
+      force,
+      skipSummary,
+      micAudioPath: micAudio ?? undefined,
+      systemAudioPath: systemAudio ?? undefined,
+    }
   );
 
   // Cleanup

@@ -373,10 +373,17 @@ function mergeShortSegments(
       continue;
     }
 
-    // Choose longer neighbor
-    const prevDuration = prev ? prev.endTime - prev.startTime : 0;
-    const nextDuration = next ? next.endTime - next.startTime : 0;
-    const targetIndex = prevDuration >= nextDuration ? i - 1 : i + 1;
+    // Choose longer neighbor (never choose null)
+    let targetIndex: number;
+    if (!prev) {
+      targetIndex = i + 1;
+    } else if (!next) {
+      targetIndex = i - 1;
+    } else {
+      const prevDuration = prev.endTime - prev.startTime;
+      const nextDuration = next.endTime - next.startTime;
+      targetIndex = prevDuration >= nextDuration ? i - 1 : i + 1;
+    }
     const target = result[targetIndex];
 
     // Merge into target

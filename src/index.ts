@@ -17,6 +17,11 @@ import {
   processVideo,
 } from './batch-context.js';
 import { getDbPath } from './db/index.js';
+import {
+  checkPrerequisites,
+  hasMissingPrerequisites,
+  printDoctorResults,
+} from './prerequisites.js';
 import { setupStatsObserver } from './stats/index.js';
 
 const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
@@ -26,6 +31,7 @@ const MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
 interface ParsedArgs {
   force: boolean;
   help: boolean;
+  doctor: boolean;
   file: string | null;
   skipSummary: boolean;
   micAudio: string | null;
@@ -40,11 +46,28 @@ function main(): void {
     process.exit(0);
   }
 
+  if (args.doctor) {
+    runDoctor().catch((error) => {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    });
+    return;
+  }
+
   run(args).catch((error) => {
     console.error('Error:', (error as Error).message);
     console.error((error as Error).stack);
     process.exit(1);
   });
+}
+
+async function runDoctor(): Promise<void> {
+  const results = checkPrerequisites();
+  printDoctorResults(results);
+
+  if (hasMissingPrerequisites(results)) {
+    process.exit(1);
+  }
 }
 
 function parseArgs(argsArray: string[]): ParsedArgs {
@@ -58,6 +81,7 @@ function parseArgs(argsArray: string[]): ParsedArgs {
   return {
     force: argsArray.includes('--force'),
     help: argsArray.includes('--help') || argsArray.includes('-h'),
+    doctor: argsArray[0] === 'doctor',
     file: filePath,
     skipSummary: argsArray.includes('--skip-summary'),
     micAudio,
@@ -71,6 +95,7 @@ Escribano - Session Intelligence Tool
 
 Usage:
   pnpm escribano                           Process latest Cap recording
+  pnpm escribano doctor                    Check prerequisites
   pnpm escribano --file <path>             Process video from filesystem
   pnpm escribano --file <path> --mic-audio <wav>   Use external mic audio
   pnpm escribano --file <path> --system-audio <wav>  Provide system audio

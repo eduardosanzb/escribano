@@ -4,6 +4,14 @@
   "description": "AI-powered session intelligence tool",
   "main": "dist/index.js",
   "type": "module",
+  "bin": {
+    "escribano": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "prompts"
+  ],
   "scripts": {
     "test": "vitest run",
     "test:ui": "vitest --ui",

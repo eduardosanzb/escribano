@@ -186,6 +186,65 @@ function extractContext(vlmDescription: string | null): {
   return { apps: [...new Set(apps)], topics: [...new Set(topics)] };
 }
 
+const NOISY_APP_PATTERNS = [
+  /^and\s/i,
+  /^a\s/i,
+  /^the\s/i,
+  /\.\.\.$/,
+  /^\s*$/,
+  /^file manager$/i,
+  /^personal website$/i,
+];
+
+function cleanAppName(app: string): string | null {
+  const cleaned = app.trim();
+  if (cleaned.length < 2 || cleaned.length > 50) return null;
+  for (const pattern of NOISY_APP_PATTERNS) {
+    if (pattern.test(cleaned)) return null;
+  }
+  return cleaned;
+}
+
+function aggregateContextFromObservations(observations: DbObservation[]): {
+  apps: string[];
+  topics: string[];
+} {
+  const appsSet = new Set<string>();
+  const topicsSet = new Set<string>();
+
+  for (const obs of observations) {
+    if (obs.apps) {
+      try {
+        const appsArr = JSON.parse(obs.apps) as string[];
+        for (const app of appsArr) {
+          const cleaned = cleanAppName(app);
+          if (cleaned) appsSet.add(cleaned);
+        }
+      } catch {
+        // Invalid JSON, skip
+      }
+    }
+    if (obs.topics) {
+      try {
+        const topicsArr = JSON.parse(obs.topics) as string[];
+        for (const topic of topicsArr) {
+          const cleaned = topic.trim();
+          if (cleaned && cleaned.length >= 2 && cleaned.length <= 50) {
+            topicsSet.add(cleaned);
+          }
+        }
+      } catch {
+        // Invalid JSON, skip
+      }
+    }
+  }
+
+  return {
+    apps: [...appsSet].sort(),
+    topics: [...topicsSet].sort(),
+  };
+}
+
 /**
  * Group consecutive observations by activity type.
  *
@@ -252,8 +311,8 @@ export function segmentByActivity(
 
   // Convert to final Segment format
   return mergedSegments.map((seg, index) => {
-    const context = extractContext(
-      seg.observations[0]?.vlm_description || null
+    const aggregatedContext = aggregateContextFromObservations(
+      seg.observations
     );
     return {
       id: `seg-${index}`,
@@ -264,8 +323,8 @@ export function segmentByActivity(
       duration: seg.endTime - seg.startTime,
       observationIds: seg.observations.map((o) => o.id),
       keyDescription: seg.observations[0]?.vlm_description || '',
-      apps: context.apps,
-      topics: context.topics,
+      apps: aggregatedContext.apps,
+      topics: aggregatedContext.topics,
     };
   });
 }

@@ -168,6 +168,42 @@ async function generateLlmSummary(
     promptTemplate = `Generate a summary of this work session.\n\nSession Duration: {{SESSION_DURATION}} minutes\nActivities: {{ACTIVITY_COUNT}}\n\n{{ACTIVITY_TIMELINE}}`;
   }
 
+  // Extract unique apps from all sections
+  const allApps = new Set<string>();
+  for (const section of sections) {
+    for (const app of section.apps) {
+      allApps.add(app);
+    }
+  }
+  const appsList = [...allApps].sort().join(', ') || 'None detected';
+
+  // Extract URLs from all descriptions
+  const urlPattern = /https?:\/\/[^\s<>"{}|\\^`[\]]+/gi;
+  const allUrls = new Set<string>();
+  for (const section of sections) {
+    const matches = section.description.match(urlPattern);
+    if (matches) {
+      for (const url of matches) {
+        // Clean up trailing punctuation
+        const cleanUrl = url.replace(/[.,;:!?)\]]+$/, '');
+        allUrls.add(cleanUrl);
+      }
+    }
+    // Also check transcripts for URLs
+    const transcriptMatches = section.transcript.match(urlPattern);
+    if (transcriptMatches) {
+      for (const url of transcriptMatches) {
+        const cleanUrl = url.replace(/[.,;:!?)\]]+$/, '');
+        allUrls.add(cleanUrl);
+      }
+    }
+  }
+  const urlsList =
+    [...allUrls]
+      .sort()
+      .map((url) => `- ${url}`)
+      .join('\n') || 'None detected';
+
   // Build activity timeline
   const activityTimeline = sections
     .map((section, i) => {
@@ -208,7 +244,9 @@ ${section.transcript ? `**Audio Transcript:**\n${section.transcript}` : '*No aud
       new Date(recording.captured_at).toLocaleDateString()
     )
     .replace('{{ACTIVITY_COUNT}}', String(sections.length))
-    .replace('{{ACTIVITY_TIMELINE}}', activityTimeline);
+    .replace('{{ACTIVITY_TIMELINE}}', activityTimeline)
+    .replace('{{APPS_LIST}}', appsList)
+    .replace('{{URLS_LIST}}', urlsList);
 
   // Call LLM
   const result = await intelligence.generateText(prompt, {
@@ -237,6 +275,40 @@ function formatSummary(
   const durationMinutes = Math.round(totalDuration / 60);
   const now = new Date().toLocaleString();
 
+  // Extract unique apps from all sections
+  const allApps = new Set<string>();
+  for (const section of sections) {
+    for (const app of section.apps) {
+      allApps.add(app);
+    }
+  }
+  const appsList = [...allApps].sort().join(', ') || 'None detected';
+
+  // Extract URLs from all descriptions
+  const urlPattern = /https?:\/\/[^\s<>"{}|\\^`[\]]+/gi;
+  const allUrls = new Set<string>();
+  for (const section of sections) {
+    const matches = section.description.match(urlPattern);
+    if (matches) {
+      for (const url of matches) {
+        const cleanUrl = url.replace(/[.,;:!?)\]]+$/, '');
+        allUrls.add(cleanUrl);
+      }
+    }
+    const transcriptMatches = section.transcript.match(urlPattern);
+    if (transcriptMatches) {
+      for (const url of transcriptMatches) {
+        const cleanUrl = url.replace(/[.,;:!?)\]]+$/, '');
+        allUrls.add(cleanUrl);
+      }
+    }
+  }
+  const urlsList =
+    [...allUrls]
+      .sort()
+      .map((url) => `- ${url}`)
+      .join('\n') || 'None detected';
+
   let summary = `# Work Session Summary
 
 **Generated:** ${now}  
@@ -247,6 +319,14 @@ function formatSummary(
 ## Overview
 
 This work session consisted of ${sections.length} distinct activities over ${durationMinutes} minutes.
+
+## Apps & Pages Used
+
+### Applications
+${appsList}
+
+### Websites Visited
+${urlsList}
 
 `;
 

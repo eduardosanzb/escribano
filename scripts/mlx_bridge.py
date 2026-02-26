@@ -152,14 +152,18 @@ def parse_vlm_response(content: str) -> dict:
 
 def process_interleaved_batch(
     model_obj: Any, processor_obj: Any, config_obj: Any, batch: list[dict]
-) -> list[dict]:
+) -> tuple[list[dict], dict]:
     """
     Process a batch of frames using interleaved multi-image prompts.
 
-    Returns list of frame results with parsed descriptions.
+    Returns tuple of (results, stats) where:
+    - results: list of frame results with parsed descriptions
+    - stats: dict with timing and token metrics
     """
     from mlx_vlm import generate
     from mlx_vlm.prompt_utils import get_chat_template
+
+    t_batch_start = time.time()
 
     # Build interleaved message structure
     content = []
@@ -193,6 +197,8 @@ Frame 2: description: ... | activity: ... | apps: [...] | topics: [...]
     # Apply chat template
     prompt = get_chat_template(processor_obj, messages, add_generation_prompt=True)
 
+    t_generate_start = time.time()
+    
     # Generate with multiple images
     output = generate(
         model_obj,
@@ -201,8 +207,11 @@ Frame 2: description: ... | activity: ... | apps: [...] | topics: [...]
         image=[f["imagePath"] for f in batch],
         temperature=TEMPERATURE,
         max_tokens=MAX_TOKENS,
-        verbose=False,
+        verbose=VERBOSE,
     )
+
+    t_generate_end = time.time()
+    generate_time = t_generate_end - t_generate_start
 
     # Extract text from output
     if hasattr(output, "text"):
@@ -213,7 +222,36 @@ Frame 2: description: ... | activity: ... | apps: [...] | topics: [...]
         content_text = str(output)
 
     # Parse results for each frame
-    return parse_interleaved_output(content_text, batch)
+    results = parse_interleaved_output(content_text, batch)
+    
+    t_parse_end = time.time()
+    parse_time = t_parse_end - t_generate_end
+    total_time = t_parse_end - t_batch_start
+
+    # Build stats dict from GenerationResult
+    stats = {
+        "prompt_tokens": getattr(output, "prompt_tokens", 0),
+        "generation_tokens": getattr(output, "generation_tokens", 0),
+        "total_tokens": getattr(output, "total_tokens", 0),
+        "prompt_tps": getattr(output, "prompt_tps", 0.0),
+        "generation_tps": getattr(output, "generation_tps", 0.0),
+        "peak_memory_gb": getattr(output, "peak_memory", 0.0),
+        "generate_time_s": generate_time,
+        "parse_time_s": parse_time,
+        "total_time_s": total_time,
+    }
+
+    # Log detailed stats if verbose
+    if VERBOSE:
+        log(f"  Prompt: {stats['prompt_tokens']} tokens @ {stats['prompt_tps']:.1f} tok/s", "debug")
+        log(f"  Gen: {stats['generation_tokens']} tokens @ {stats['generation_tps']:.1f} tok/s", "debug")
+        prefill_s = stats['prompt_tokens'] / stats['prompt_tps'] if stats['prompt_tps'] > 0 else 0
+        gen_s = stats['generation_tokens'] / stats['generation_tps'] if stats['generation_tps'] > 0 else 0
+        log(f"  Time: {generate_time:.2f}s (prefill: {prefill_s:.2f}s, gen: {gen_s:.2f}s)", "debug")
+        log(f"  Peak memory: {stats['peak_memory_gb']:.2f} GB", "debug")
+        log(f"  Batch total: {total_time:.2f}s", "debug")
+
+    return results, stats
 
 
 def parse_interleaved_output(text: str, batch: list[dict]) -> list[dict]:
@@ -269,6 +307,11 @@ def handle_describe_images(
 
     log(f"Processing {total} images in batches of {batch_size}")
 
+    # Accumulate stats across all batches
+    total_prompt_tokens = 0
+    total_gen_tokens = 0
+    total_generate_time = 0.0
+
     # Process in batches
     for batch_idx in range(0, total, batch_size):
         batch = images[batch_idx : batch_idx + batch_size]
@@ -277,7 +320,12 @@ def handle_describe_images(
         try:
             log(f"Processing batch {batch_num}: frames {batch_idx + 1}-{min(batch_idx + batch_size, total)}")
 
-            results = process_interleaved_batch(model_obj, processor_obj, config_obj, batch)
+            results, stats = process_interleaved_batch(model_obj, processor_obj, config_obj, batch)
+
+            # Accumulate stats
+            total_prompt_tokens += stats.get("prompt_tokens", 0)
+            total_gen_tokens += stats.get("generation_tokens", 0)
+            total_generate_time += stats.get("generate_time_s", 0)
 
             # Stream response immediately
             is_partial = batch_idx + batch_size < total
@@ -285,6 +333,7 @@ def handle_describe_images(
                 "id": request_id,
                 "batch": batch_num,
                 "results": results,
+                "stats": stats,
                 "partial": is_partial,
                 "progress": {"current": batch_idx + len(batch), "total": total},
             })
@@ -298,6 +347,12 @@ def handle_describe_images(
                 "partial": batch_idx + batch_size < total,
                 "progress": {"current": batch_idx + len(batch), "total": total},
             })
+
+    # Log summary stats
+    if total_generate_time > 0:
+        avg_prompt_tps = total_prompt_tokens / (total_prompt_tokens / 2000) if total_prompt_tokens > 0 else 0
+        avg_gen_tps = total_gen_tokens / total_generate_time if total_generate_time > 0 else 0
+        log(f"Total: {total_prompt_tokens} prompt tokens, {total_gen_tokens} gen tokens in {total_generate_time:.1f}s")
 
     # Final done signal
     send_response(conn, {"id": request_id, "done": True})

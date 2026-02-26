@@ -138,6 +138,7 @@ We cannot sacrifice summary quality. Key quality factors:
 3. **Resume safety**: Pipeline can resume from any step if crashed
 4. **Hardware acceleration**: FFmpeg videotoolbox for M-series chips
 5. **FFmpeg keyframe-only scene detection**: `-skip_frame nokey` for 20x faster scene detection (57 min → 2.8 min)
+6. **VLM 4bit quantization**: `Qwen3-VL-2B-Instruct-4bit` for 2.5x faster inference (43 min → 19.6 min)
 
 ---
 
@@ -154,11 +155,12 @@ We cannot sacrifice summary quality. Key quality factors:
 
 ### VLM Optimizations
 
-| Idea | Estimated Savings | Tradeoffs |
-|------|-------------------|-----------|
-| Smaller model (Moondream2) | ~50% faster | May reduce description quality |
-| Larger batch size | Already maxed at 12 | Memory constraint |
-| Parallel workers | **NOT POSSIBLE** | MLX architecture limitation |
+| Idea | Estimated Savings | Tradeoffs | Status |
+|------|-------------------|-----------|--------|
+| **4bit quantization** | **~55% faster (43→19.6 min)** | Minimal quality loss | **✅ Implemented** |
+| Smaller model (Moondream2) | ~50% faster | May reduce description quality | Not needed |
+| Larger batch size | Already maxed at 12 | Memory constraint | N/A |
+| Parallel workers | **NOT POSSIBLE** | MLX architecture limitation | Rejected |
 
 ### Sampling Optimizations
 

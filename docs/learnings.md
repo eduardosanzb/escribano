@@ -197,3 +197,49 @@ Summary quality **improved** with the optimized approach:
 - May miss very brief transitions (<1 I-frame interval)
 - In practice: no quality degradation observed on screen recordings
 - **Recommendation:** Keep as default for all screen recordings
+
+## VLM 4bit Quantization (Feb 2026)
+
+### Problem
+VLM inference was the second-largest bottleneck after scene detection optimization, 
+taking ~43 minutes for a 3-hour video (43% of total processing time).
+
+### Solution
+Switched from bf16 to 4bit quantized model:
+- **Old model:** `Qwen3-VL-2B-Instruct-bf16` (~4GB, ~70 tok/s generation)
+- **New model:** `Qwen3-VL-2B-Instruct-4bit` (~2GB, ~170-190 tok/s generation)
+
+### Why It Works
+4bit quantization reduces memory bandwidth by 4x, which is the bottleneck for 
+token generation on Apple Silicon. The smaller model also loads faster and uses 
+half the memory.
+
+### Results (180-min video comparison)
+
+| Metric | bf16 (Before) | 4bit (After) | Speedup |
+|--------|---------------|--------------|---------|
+| VLM inference time | 43.5 min | 19.6 min | **2.5x** |
+| Generation speed | ~70 tok/s | ~170-190 tok/s | **2.5x** |
+| Peak memory | ~5.8 GB | ~3.3 GB | **1.8x less** |
+| Segments created | 17 | 23 | **More granular** |
+
+### Combined Pipeline Results
+
+| Phase | Original | +Key_frame | +4bit | Total Speedup |
+|-------|----------|------------|-------|---------------|
+| Scene detection | 57.1 min | 2.8 min | 3.4 min | 17x |
+| VLM inference | 43.5 min | 48.2 min | 19.6 min | 2.2x |
+| **Total pipeline** | **102 min** | **52 min** | **25.7 min** | **4x** |
+
+### Quality Impact
+Summary quality **maintained or improved**:
+- More granular segmentation (23 vs 17 segments)
+- Thematic grouping works well (Terminal Work, Code Editing, Research)
+- Structured "Accomplished/Unresolved/Next Steps" format preserved
+- No major hallucinations observed
+- Generation tok/s consistent at 170-190 across batches
+
+### Tradeoffs
+- 4bit may lose some nuance on complex visual scenes
+- In practice: quality acceptable for developer session summarization
+- **Recommendation:** Use 4bit as default; bf16 available if quality issues arise

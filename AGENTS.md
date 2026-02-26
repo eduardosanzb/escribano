@@ -21,7 +21,7 @@
 
 - **Machine**: MacBook Pro M4 Max
 - **Unified Memory**: 128GB (Optimized for VLM inference)
-- **VLM Model**: `Qwen3-VL-2B-Instruct-bf16` (~4GB, ~1.7s per frame) via MLX-VLM
+- **VLM Model**: `Qwen3-VL-2B-Instruct-4bit` (~2GB, ~0.7s per frame) via MLX-VLM
 - **LLM Model**: `qwen3:32b` (for high-quality narrative generation) via Ollama
 
 ### MLX-VLM Setup
@@ -45,7 +45,7 @@ The adapter auto-detects Python in this priority:
 
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
-| `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-bf16` |
+| `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-4bit` |
 | `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `16` |
 | `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `4000` |
 | `ESCRIBANO_VLM_REPETITION_PENALTY` | Repetition penalty for generation (1.0=disabled) | `1.15` |
@@ -62,7 +62,8 @@ The adapter auto-detects Python in this priority:
 
 ### Performance Notes
 - **Scene Detection**: Uses `-skip_frame nokey` FFmpeg optimization by default for 20x speedup (57 min → 2.8 min for 3-hour videos)
-- **VLM Inference**: Interleaved batching with 16-frame batches for optimal M4 Max throughput
+- **VLM Inference**: 4bit quantization + interleaved batching for 2.5x speedup (43 min → 19.6 min)
+- **Total Pipeline**: Combined optimizations achieve 4x speedup (102 min → 25.7 min for 3-hour videos)
 
 ### Deprecated
 - `ESCRIBANO_VLM_BACKEND` — VLM is always MLX, LLM is always Ollama (explicit in index.ts)

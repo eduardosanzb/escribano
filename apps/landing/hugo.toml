@@ -1,0 +1,25 @@
+baseURL = "https://escribano.work"
+languageCode = "en"
+title = "Escribano — Your AI Scribe for Deep Work"
+
+[params]
+  description = "Turn hours of deep work into structured, shareable summaries. AI-powered session intelligence for knowledge workers."
+  author = "Eduardo Sanchez"
+  githubRepo = "https://github.com/eduardosanzb/escribano"
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+    [markup.goldmark.parser]
+      [markup.goldmark.parser.attribute]
+        block = true
+        title = true
+
+[outputs]
+  home = ["HTML"]
+
+[sitemap]
+  changefreq = "weekly"
+  filename = "sitemap.xml"
+  priority = 0.5

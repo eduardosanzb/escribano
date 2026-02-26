@@ -297,16 +297,16 @@ The pipeline saves progress aggressively to enable crash recovery:
 ### P1 — Launch Blockers
 
 **Must have for public launch**
-- ☐ **README with before/after** — First impression for every GitHub visitor — *1-2h*
+- ✅ **README with before/after** — First impression for every GitHub visitor
 - ☐ **Make repo public** — Unlocks all distribution channels — *15min*
-- ☐ **Landing page** — Single page for HN/Twitter links — *3-4h*
+- ✅ **Landing page** — `apps/landing/` Hugo site for escribano.work
 - ☐ **2-min Loom demo** — Shows the product, not describes it — *1h*
 - ☐ **ADR-005 blog post** — "Why OCR-based screen intelligence fails" — best marketing asset — *2-3h*
 
 ### P2 — Next Iteration
 
 **When bandwidth drops to 10-15 hrs/week**
-- ☐ **Real-time capture pipeline** — Rust-based always-on capture — *20+ h* — See `docs/screen_capture_pipeline.md`
+- ☐ **Real-time capture pipeline** — Rust-based always-on capture — *20+ h*
   - Removes Cap/QuickTime dependency
   - Enables automatic session recording (no forgetting to start)
 - ☐ **MCP server** — Expose TopicBlocks via MCP for AI assistant integration — *8-12h*

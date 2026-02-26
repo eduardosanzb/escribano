@@ -1,0 +1,7 @@
+{
+  "name": "escribano-landing",
+  "scripts": {
+    "dev": "hugo server -D --navigateToChanged",
+    "build": "hugo --gc --minify"
+  }
+}

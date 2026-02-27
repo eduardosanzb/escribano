@@ -112,13 +112,32 @@ export type DbTopicBlockInsert = Omit<DbTopicBlock, 'created_at'>;
 
 export interface DbArtifact {
   id: string;
+  recording_id: string | null;
   type: string;
   content: string;
   format: string;
-  source_block_ids: string | null; // JSON array
-  source_context_ids: string | null; // JSON array
+  source_block_ids: string | null;
+  source_context_ids: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export type DbArtifactInsert = Omit<DbArtifact, 'created_at' | 'updated_at'>;
+
+export interface DbSubject {
+  id: string;
+  recording_id: string;
+  label: string;
+  is_personal: number;
+  duration: number;
+  activity_breakdown: string | null;
+  metadata: string | null;
+  created_at: string;
+}
+
+export type DbSubjectInsert = Omit<DbSubject, 'created_at'>;
+
+export interface DbSubjectTopicBlock {
+  subject_id: string;
+  topic_block_id: string;
+}

@@ -463,6 +463,148 @@
       margin-bottom: 1rem;
       opacity: 0.5;
     }
+
+    /* Filter Controls */
+    .filter-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      align-items: center;
+    }
+
+    .filter-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .filter-chip {
+      padding: 0.25rem 0.75rem;
+      border-radius: 16px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      border: 1px solid var(--pico-muted-border-color);
+      background: var(--pico-background-color);
+      transition: all 0.2s;
+    }
+
+    .filter-chip:hover {
+      background: var(--pico-muted-background-color);
+    }
+
+    .filter-chip.active {
+      background: var(--pico-primary-background);
+      color: var(--pico-primary-inverse);
+      border-color: var(--pico-primary-background);
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 200px;
+      max-width: 300px;
+    }
+
+    .search-box input {
+      font-size: 0.875rem;
+      padding: 0.4rem 0.75rem;
+    }
+
+    /* Missing indicators */
+    .missing-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.125rem 0.375rem;
+      border-radius: 4px;
+      font-size: 0.65rem;
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    /* Subjects section */
+    .subjects-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .subject-card {
+      background: var(--pico-background-color);
+      border-radius: 6px;
+      padding: 0.75rem;
+      border-left: 3px solid var(--pico-primary);
+    }
+
+    .subject-card.personal {
+      border-left-color: #f59e0b;
+    }
+
+    .subject-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .subject-label {
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    .subject-badge {
+      font-size: 0.65rem;
+      padding: 0.125rem 0.375rem;
+      border-radius: 4px;
+      background: var(--pico-muted-background-color);
+      color: var(--pico-muted-color);
+    }
+
+    .subject-badge.personal {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .subject-badge.work {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .subject-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--pico-muted-color);
+    }
+
+    .subject-apps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      margin-top: 0.5rem;
+    }
+
+    .app-tag {
+      font-size: 0.7rem;
+      padding: 0.125rem 0.375rem;
+      border-radius: 4px;
+      background: var(--pico-muted-background-color);
+    }
+
+    .subjects-summary {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--pico-muted-color);
+    }
+
+    .subjects-summary span {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
   </style>
 </head>
 <body>
@@ -501,6 +643,26 @@
         🎬 Recordings
         <button class="refresh-btn" onclick="loadRecordings()">↻ Refresh</button>
       </h2>
+      
+      <!-- Filter Controls -->
+      <div class="filter-controls">
+        <div class="filter-chips">
+          <span class="filter-chip active" data-filter="status" data-value="all" onclick="setFilter('status', 'all')">All</span>
+          <span class="filter-chip" data-filter="status" data-value="published" onclick="setFilter('status', 'published')">✅ Published</span>
+          <span class="filter-chip" data-filter="status" data-value="processing" onclick="setFilter('status', 'processing')">🔄 Processing</span>
+          <span class="filter-chip" data-filter="status" data-value="raw" onclick="setFilter('status', 'raw')">⏳ Raw</span>
+          <span class="filter-chip" data-filter="status" data-value="error" onclick="setFilter('status', 'error')">❌ Error</span>
+        </div>
+        <div class="filter-chips">
+          <span class="filter-chip active" data-filter="source" data-value="all" onclick="setFilter('source', 'all')">All Sources</span>
+          <span class="filter-chip" data-filter="source" data-value="cap" onclick="setFilter('source', 'cap')">Cap</span>
+          <span class="filter-chip" data-filter="source" data-value="file" onclick="setFilter('source', 'file')">File</span>
+        </div>
+        <div class="search-box">
+          <input type="text" placeholder="Search recordings..." oninput="setSearch(this.value)">
+        </div>
+      </div>
+      
       <div id="recordings-list">
         <div class="loading">Loading...</div>
       </div>
@@ -522,6 +684,14 @@
   </div>
 
   <script>
+    // Filter state
+    let filters = {
+      status: 'all',
+      source: 'all',
+      search: ''
+    };
+    let allRecordings = [];
+
     // Simple markdown renderer
     function renderMarkdown(text) {
       if (!text) return '';
@@ -698,14 +868,43 @@
 
       try {
         const res = await fetch('/api/recordings/overview');
-        const recordings = await res.json();
+        allRecordings = await res.json();
+        renderRecordings();
+      } catch (err) {
+        container.innerHTML = `<div class="error">Failed to load recordings: ${err.message}</div>`;
+      }
+    }
 
-        if (recordings.length === 0) {
-          container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎬</div>No recordings yet</div>';
-          return;
+    // Apply filters and render
+    function renderRecordings() {
+      const container = document.getElementById('recordings-list');
+      
+      let filtered = allRecordings.filter(rec => {
+        // Status filter
+        if (filters.status !== 'all' && rec.status !== filters.status) return false;
+        // Source filter
+        if (filters.source !== 'all' && rec.source_type !== filters.source) return false;
+        // Search filter
+        if (filters.search) {
+          const search = filters.search.toLowerCase();
+          const matchId = rec.id.toLowerCase().includes(search);
+          const matchPath = (rec.video_path || '').toLowerCase().includes(search);
+          if (!matchId && !matchPath) return false;
         }
+        return true;
+      });
 
-        const rows = recordings.map(rec => `
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎬</div>No recordings match filters</div>';
+        return;
+      }
+
+      const rows = filtered.map(rec => {
+        // Check for missing summary/outline
+        const missingSummary = rec.status === 'published' && !rec.summary.path;
+        const missingOutline = rec.status === 'published' && !rec.summary.outline_url;
+        
+        return `
           <tr class="recording-row" data-id="${rec.id}" onclick="toggleRecordingDetail('${rec.id}')">
             <td>
               <span class="status-badge status-${rec.status}">
@@ -714,48 +913,65 @@
             </td>
             <td class="recording-name">${formatRecordingName(rec.id)}</td>
             <td>${formatDuration(rec.duration)}</td>
+            <td>${rec.last_run_at ? formatTimestamp(rec.last_run_at) : '<span style="color: var(--pico-muted-color)">—</span>'}</td>
             <td>${rec.stats.frames || '--'}</td>
             <td>${rec.stats.vlm_fps ? rec.stats.vlm_fps + ' fps' : '--'}</td>
             <td>${formatDuration(rec.stats.processing_time_sec)}</td>
             <td class="actions-cell">
-<button class="link-icon" onclick="event.stopPropagation(); navigator.clipboard.writeText('${rec.id}'); alert('Recording ID copied to clipboard');" title="Copy ID">📋</button>
+              <button class="link-icon" onclick="event.stopPropagation(); navigator.clipboard.writeText('${rec.id}'); alert('Recording ID copied to clipboard');" title="Copy ID">📋</button>
               <a href="debug.html?recording=${rec.id}" class="link-icon" onclick="event.stopPropagation()" title="View frames">🖼️</a>
               <a href="stats.html?recording=${rec.id}" class="link-icon" onclick="event.stopPropagation()" title="View stats">📊</a>
               ${rec.summary.outline_url
                 ? `<a href="${rec.summary.outline_url}" target="_blank" class="link-icon" onclick="event.stopPropagation()" title="View in Outline">📄</a>`
                 : ''}
+              ${missingSummary ? '<span class="missing-indicator" title="Missing summary">⚠️ Summary</span>' : ''}
+              ${missingOutline && !missingSummary ? '<span class="missing-indicator" title="Missing Outline link">⚠️ Outline</span>' : ''}
             </td>
           </tr>
           <tr class="detail-row" id="detail-${rec.id}" style="display: none;">
-            <td colspan="7">
+            <td colspan="8">
               <div class="detail-content" id="detail-content-${rec.id}">
                 <div class="loading">Loading details...</div>
               </div>
             </td>
           </tr>
-        `).join('');
-
-        container.innerHTML = `
-          <table class="recordings-table">
-            <thead>
-              <tr>
-                <th>Status</th>
-                <th>Recording</th>
-                <th>Duration</th>
-                <th>Frames</th>
-                <th>VLM</th>
-                <th>Time</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows}
-            </tbody>
-          </table>
         `;
-      } catch (err) {
-        container.innerHTML = `<div class="error">Failed to load recordings: ${err.message}</div>`;
-      }
+      }).join('');
+
+      container.innerHTML = `
+        <table class="recordings-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Recording</th>
+              <th>Duration</th>
+              <th>Last Run</th>
+              <th>Frames</th>
+              <th>VLM</th>
+              <th>Time</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      `;
+    }
+
+    // Filter functions
+    function setFilter(type, value) {
+      filters[type] = value;
+      // Update chip active state
+      document.querySelectorAll(`.filter-chip[data-filter="${type}"]`).forEach(chip => {
+        chip.classList.toggle('active', chip.dataset.value === value);
+      });
+      renderRecordings();
+    }
+
+    function setSearch(value) {
+      filters.search = value;
+      renderRecordings();
     }
 
     function getStatusIcon(status) {
@@ -794,6 +1010,41 @@
         // Build detail view
         let html = '';
 
+        // Subjects section (NEW - show first)
+        if (data.subjects && data.subjects.length > 0) {
+          const workSubjects = data.subjects.filter(s => !s.is_personal);
+          const personalSubjects = data.subjects.filter(s => s.is_personal);
+          const totalWorkDuration = workSubjects.reduce((sum, s) => sum + s.duration, 0);
+          const totalPersonalDuration = personalSubjects.reduce((sum, s) => sum + s.duration, 0);
+
+          html += `
+            <div class="detail-section">
+              <h3>🏷️ Subjects (${data.subjects.length})</h3>
+              <div class="subjects-summary">
+                <span><span class="subject-badge work">Work</span> ${formatDuration(totalWorkDuration)}</span>
+                <span><span class="subject-badge personal">Personal</span> ${formatDuration(totalPersonalDuration)}</span>
+              </div>
+              <div class="subjects-list">
+                ${data.subjects.map(s => `
+                  <div class="subject-card ${s.is_personal ? 'personal' : ''}">
+                    <div class="subject-header">
+                      <span class="subject-label">${escapeHtml(s.label)}</span>
+                      <span class="subject-badge ${s.is_personal ? 'personal' : 'work'}">${s.is_personal ? 'Personal' : 'Work'}</span>
+                    </div>
+                    <div class="subject-meta">
+                      <span>⏱️ ${formatDuration(s.duration)}</span>
+                    </div>
+                    ${s.apps && s.apps.length > 0 ? `
+                      <div class="subject-apps">
+                        ${s.apps.map(app => `<span class="app-tag">${escapeHtml(app)}</span>`).join('')}
+                      </div>
+                    ` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }
 
         // Summary section
         if (data.summary.content) {
@@ -803,11 +1054,18 @@
                 📝 Summary
                 ${data.summary.outline_url
                   ? `<a href="${data.summary.outline_url}" target="_blank">View in Outline →</a>`
-                  : ''}
+                  : '<span class="missing-indicator">⚠️ No Outline link</span>'}
               </h3>
               <div class="summary-content">
                 ${renderMarkdown(data.summary.content)}
               </div>
+            </div>
+          `;
+        } else if (data.recording.status === 'published') {
+          html += `
+            <div class="detail-section">
+              <h3>📝 Summary</h3>
+              <div class="missing-indicator" style="padding: 0.5rem;">⚠️ Summary not generated - try reprocessing</div>
             </div>
           `;
         }

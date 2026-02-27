@@ -36,6 +36,10 @@ interface ParsedArgs {
   skipSummary: boolean;
   micAudio: string | null;
   systemAudio: string | null;
+  format: 'card' | 'standup' | 'narrative';
+  includePersonal: boolean;
+  copyToClipboard: boolean;
+  printToStdout: boolean;
 }
 
 function main(): void {
@@ -78,6 +82,9 @@ function parseArgs(argsArray: string[]): ParsedArgs {
   const sysIndex = argsArray.indexOf('--system-audio');
   const systemAudio = sysIndex !== -1 ? argsArray[sysIndex + 1] || null : null;
 
+  const formatIndex = argsArray.indexOf('--format');
+  const formatValue = formatIndex !== -1 ? argsArray[formatIndex + 1] : 'card';
+
   return {
     force: argsArray.includes('--force'),
     help: argsArray.includes('--help') || argsArray.includes('-h'),
@@ -86,6 +93,13 @@ function parseArgs(argsArray: string[]): ParsedArgs {
     skipSummary: argsArray.includes('--skip-summary'),
     micAudio,
     systemAudio,
+    format:
+      formatValue === 'standup' || formatValue === 'narrative'
+        ? formatValue
+        : 'card',
+    includePersonal: argsArray.includes('--include-personal'),
+    copyToClipboard: argsArray.includes('--copy'),
+    printToStdout: argsArray.includes('--stdout'),
   };
 }
 
@@ -101,19 +115,35 @@ Usage:
   pnpm escribano --file <path> --system-audio <wav>  Provide system audio
   pnpm escribano --force                   Reprocess from scratch
   pnpm escribano --skip-summary            Process only (no summary generation)
+  pnpm escribano --format <format>         Artifact format: card (default), standup, narrative
+  pnpm escribano --include-personal        Include personal time in artifact
+  pnpm escribano --copy                    Copy artifact to clipboard
+  pnpm escribano --stdout                  Print artifact to stdout
   pnpm escribano --help                    Show this help
 
 Examples:
   pnpm escribano --file "~/Desktop/Screen Recording.mov"
   pnpm escribano --file "/path/to/video.mp4" --mic-audio "/path/to/mic.wav"
   pnpm escribano --file "/path/to/video.mp4" --system-audio "/path/to/system.wav"
+  pnpm escribano --format standup --stdout
+  pnpm escribano --format narrative --include-personal
 
 Output: Markdown summary saved to ~/.escribano/artifacts/
 `);
 }
 
 async function run(args: ParsedArgs): Promise<void> {
-  const { force, file: filePath, skipSummary, micAudio, systemAudio } = args;
+  const {
+    force,
+    file: filePath,
+    skipSummary,
+    micAudio,
+    systemAudio,
+    format,
+    includePersonal,
+    copyToClipboard,
+    printToStdout,
+  } = args;
 
   // Initialize system (reuses batch-context for consistency)
   console.log('Initializing database...');
@@ -180,6 +210,10 @@ async function run(args: ParsedArgs): Promise<void> {
       skipSummary,
       micAudioPath: micAudio ?? undefined,
       systemAudioPath: systemAudio ?? undefined,
+      format,
+      includePersonal,
+      copyToClipboard,
+      printToStdout,
     }
   );
 

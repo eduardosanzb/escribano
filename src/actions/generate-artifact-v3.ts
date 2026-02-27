@@ -14,7 +14,7 @@ import type {
   IntelligenceService,
   Repositories,
 } from '../0_types.js';
-import { log } from '../pipeline/context.js';
+import { log, step } from '../pipeline/context.js';
 import { normalizeAppNames } from '../services/app-normalization.js';
 import {
   groupTopicBlocksIntoSubjects,
@@ -85,10 +85,8 @@ export async function generateArtifactV3(
     groupingResult = await loadExistingSubjects(existingSubjects, repos);
   } else {
     log('info', '[Artifact V3.1] Grouping TopicBlocks into subjects...');
-    groupingResult = await groupTopicBlocksIntoSubjects(
-      topicBlocks,
-      intelligence,
-      recordingId
+    groupingResult = await step('subject grouping', () =>
+      groupTopicBlocksIntoSubjects(topicBlocks, intelligence, recordingId)
     );
 
     log(
@@ -107,14 +105,16 @@ export async function generateArtifactV3(
     : groupingResult.subjects.filter((s) => !s.isPersonal);
 
   log('info', `[Artifact V3.1] Generating ${format} with LLM...`);
-  const content = await generateLlmArtifact(
-    subjects,
-    groupingResult,
-    format,
-    recording,
-    intelligence,
-    repos,
-    topicBlocks
+  const content = await step('artifact generation', () =>
+    generateLlmArtifact(
+      subjects,
+      groupingResult,
+      format,
+      recording,
+      intelligence,
+      repos,
+      topicBlocks
+    )
   );
 
   const outputDir =

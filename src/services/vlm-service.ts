@@ -113,6 +113,7 @@ export function normalizeActivity(rawActivity: string): string {
     research: 'research',
     browsing: 'research',
     searching: 'research',
+    watching: 'research',
     'stack overflow': 'research',
     googling: 'research',
 
@@ -130,9 +131,11 @@ export function normalizeActivity(rawActivity: string): string {
     shell: 'terminal',
 
     // Code Review
-    'code review': 'code_review',
-    'reviewing pr': 'code_review',
-    'pull request': 'code_review',
+    review: 'review',
+    reviewing: 'review',
+    'code review': 'review',
+    'reviewing pr': 'review',
+    'pull request': 'review',
   };
 
   // Check exact match

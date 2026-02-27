@@ -641,7 +641,7 @@ Rules:
 async function generateTextWithOllama(
   prompt: string,
   config: IntelligenceConfig,
-  options?: { model?: string; expectJson?: boolean }
+  options?: { model?: string; expectJson?: boolean; numPredict?: number }
 ): Promise<string> {
   const model =
     options?.model ||
@@ -654,6 +654,7 @@ async function generateTextWithOllama(
     const result = await callOllama(prompt, config, {
       expectJson,
       model,
+      num_predict: options?.numPredict,
     });
 
     // If expectJson, result might be an object - stringify it

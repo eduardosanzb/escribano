@@ -100,6 +100,7 @@ export async function groupTopicBlocksIntoSubjects(
     const response = await intelligence.generateText(prompt, {
       expectJson: false,
       model: SUBJECT_GROUPING_MODEL,
+      numPredict: 2000,
     });
 
     console.log(

@@ -6,6 +6,7 @@
  */
 
 import type { DbObservation } from '../db/types.js';
+import { normalizeActivity } from './vlm-service.js';
 
 export interface Segment {
   /** Unique segment ID */
@@ -278,7 +279,9 @@ export function segmentByActivity(
   let currentSegment: (typeof rawSegments)[0] | null = null;
 
   for (const obs of visualObs) {
-    const activityType = extractActivityType(obs.vlm_description);
+    const rawActivity =
+      obs.activity_type || extractActivityType(obs.vlm_description);
+    const activityType = normalizeActivity(rawActivity);
 
     if (!currentSegment || currentSegment.activityType !== activityType) {
       // Start new segment

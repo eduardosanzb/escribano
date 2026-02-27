@@ -232,9 +232,13 @@ app.get('/api/recordings/overview', (req, res) => {
           r.status, 
           r.source_type,
           r.video_path,
-          r.source_metadata
+          r.source_metadata,
+          (SELECT MAX(pr.started_at) FROM processing_runs pr WHERE pr.recording_id = r.id) as last_run_at
          FROM recordings r
-         ORDER BY r.captured_at DESC
+         ORDER BY COALESCE(
+           (SELECT MAX(pr.started_at) FROM processing_runs pr WHERE pr.recording_id = r.id),
+           r.captured_at
+         ) DESC
          LIMIT 50`
       )
       .all();
@@ -291,6 +295,7 @@ app.get('/api/recordings/overview', (req, res) => {
       return {
         id: rec.id,
         captured_at: rec.captured_at,
+        last_run_at: rec.last_run_at,
         duration: rec.duration,
         status: rec.status,
         source_type: rec.source_type,
@@ -413,6 +418,43 @@ app.get('/api/recording/:id/detail', (req, res) => {
       } catch {}
     }
 
+    // Get subjects for this recording
+    const subjects = db
+      .prepare(
+        `SELECT 
+          id,
+          label,
+          is_personal,
+          duration,
+          activity_breakdown,
+          metadata
+         FROM subjects 
+         WHERE recording_id = ?
+         ORDER BY created_at ASC`
+      )
+      .all(id);
+
+    // Parse subjects data
+    const parsedSubjects = subjects.map(s => {
+      let activityBreakdown = {};
+      let apps = [];
+      try {
+        activityBreakdown = s.activity_breakdown ? JSON.parse(s.activity_breakdown) : {};
+      } catch {}
+      try {
+        const meta = s.metadata ? JSON.parse(s.metadata) : {};
+        apps = meta.apps || [];
+      } catch {}
+      return {
+        id: s.id,
+        label: s.label,
+        is_personal: s.is_personal === 1,
+        duration: s.duration,
+        activity_breakdown: activityBreakdown,
+        apps: apps
+      };
+    });
+
     res.json({
       recording: {
         id: recording.id,
@@ -431,6 +473,7 @@ app.get('/api/recording/:id/detail', (req, res) => {
         path: summaryFile,
         outline_url: outlineUrl
       },
+      subjects: parsedSubjects,
       frames: parsedFrames
     });
   } catch (err) {

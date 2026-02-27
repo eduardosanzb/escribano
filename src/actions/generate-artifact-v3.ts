@@ -75,38 +75,49 @@ export async function generateArtifactV3(
   log('info', `[Artifact V3.1] Found ${topicBlocks.length} TopicBlocks`);
 
   const existingSubjects = repos.subjects.findByRecording(recordingId);
+  let subjects: Subject[];
+  let personalDuration: number;
+  let workDuration: number;
+
   if (existingSubjects.length > 0) {
     log(
       'info',
-      `[Artifact V3.1] Deleting ${existingSubjects.length} stale subjects, re-grouping...`
+      `[Artifact V3.1] Reusing ${existingSubjects.length} existing subjects (no re-grouping needed)`
     );
-    repos.subjects.deleteByRecording(recordingId);
+    const loaded = await loadExistingSubjects(existingSubjects, repos);
+    subjects = loaded.subjects;
+    personalDuration = loaded.personalDuration;
+    workDuration = loaded.workDuration;
+  } else {
+    log('info', '[Artifact V3.1] Grouping TopicBlocks into subjects...');
+    const groupingResult = await step('subject grouping', () =>
+      groupTopicBlocksIntoSubjects(topicBlocks, intelligence, recordingId)
+    );
+
+    log(
+      'info',
+      `[Artifact V3.1] Saving ${groupingResult.subjects.length} subjects to database...`
+    );
+    saveSubjectsToDatabase(groupingResult.subjects, recordingId, repos);
+
+    subjects = groupingResult.subjects;
+    personalDuration = groupingResult.personalDuration;
+    workDuration = groupingResult.workDuration;
   }
 
-  log('info', '[Artifact V3.1] Grouping TopicBlocks into subjects...');
-  const groupingResult = await step('subject grouping', () =>
-    groupTopicBlocksIntoSubjects(topicBlocks, intelligence, recordingId)
-  );
-
-  log(
-    'info',
-    `[Artifact V3.1] Saving ${groupingResult.subjects.length} subjects to database...`
-  );
-  saveSubjectsToDatabase(groupingResult.subjects, recordingId, repos);
-
-  for (const subject of groupingResult.subjects) {
+  for (const subject of subjects) {
     subject.apps = normalizeAppNames(subject.apps);
   }
 
-  const subjects = options.includePersonal
-    ? groupingResult.subjects
-    : groupingResult.subjects.filter((s) => !s.isPersonal);
+  const filteredSubjects = options.includePersonal
+    ? subjects
+    : subjects.filter((s) => !s.isPersonal);
 
   log('info', `[Artifact V3.1] Generating ${format} with LLM...`);
   const content = await step('artifact generation', () =>
     generateLlmArtifact(
       subjects,
-      groupingResult,
+      { subjects, personalDuration, workDuration },
       format,
       recording,
       intelligence,
@@ -137,6 +148,13 @@ export async function generateArtifactV3(
   });
   log('info', `[Artifact V3.1] Saved to database: ${artifactId}`);
 
+  // Link subjects to artifact
+  repos.artifacts.linkSubjects(
+    artifactId,
+    subjects.map((s) => s.id)
+  );
+  log('info', `[Artifact V3.1] Linked ${subjects.length} subjects to artifact`);
+
   if (options.printToStdout) {
     console.log(`\n${content}\n`);
   }
@@ -157,8 +175,8 @@ export async function generateArtifactV3(
     content,
     filePath,
     subjects,
-    personalDuration: groupingResult.personalDuration,
-    workDuration: groupingResult.workDuration,
+    personalDuration,
+    workDuration,
     createdAt: new Date(),
   };
 }

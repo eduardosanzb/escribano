@@ -141,8 +141,3 @@ export interface DbSubjectTopicBlock {
   subject_id: string;
   topic_block_id: string;
 }
-
-export interface DbArtifactSubject {
-  artifact_id: string;
-  subject_id: string;
-}

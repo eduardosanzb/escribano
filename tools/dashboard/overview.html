@@ -605,6 +605,113 @@
       align-items: center;
       gap: 0.25rem;
     }
+
+    .artifact-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.125rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      background: #e0e7ff;
+      color: #3730a3;
+      margin-left: 0.5rem;
+    }
+
+    .artifacts-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .artifact-card {
+      background: var(--pico-background-color);
+      border-radius: 8px;
+      padding: 1rem;
+      border-left: 3px solid var(--pico-primary);
+    }
+
+    .artifact-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .artifact-type-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.25rem 0.75rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .artifact-type-badge.summary {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .artifact-type-badge.card {
+      background: #e0e7ff;
+      color: #3730a3;
+    }
+
+    .artifact-type-badge.standup {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .artifact-type-badge.narrative {
+      background: #fce7f3;
+      color: #9d174d;
+    }
+
+    .artifact-meta {
+      font-size: 0.75rem;
+      color: var(--pico-muted-color);
+    }
+
+    .artifact-outline-link {
+      margin-left: auto;
+      font-size: 0.75rem;
+      text-decoration: none;
+      color: var(--pico-primary);
+    }
+
+    .artifact-subjects {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .artifact-subjects-label {
+      font-size: 0.75rem;
+      color: var(--pico-muted-color);
+    }
+
+    .subject-mini-badge {
+      font-size: 0.7rem;
+      padding: 0.125rem 0.5rem;
+      border-radius: 4px;
+      background: var(--pico-muted-background-color);
+      color: var(--pico-muted-color);
+    }
+
+    .subject-mini-badge.work {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .subject-mini-badge.personal {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .artifact-content {
+      max-height: 300px;
+    }
   </style>
 </head>
 <body>
@@ -900,9 +1007,26 @@
       }
 
       const rows = filtered.map(rec => {
-        // Check for missing summary/outline
-        const missingSummary = rec.status === 'published' && !rec.summary.path;
-        const missingOutline = rec.status === 'published' && !rec.summary.outline_url;
+        const missingSummary = rec.status === 'published' && !rec.summary_present;
+        const missingOutline = rec.status === 'published' && !rec.outline_url;
+        const artifactCount = rec.artifact_counts?.total || 0;
+        const artifactChips = [];
+        if (rec.artifact_counts?.summary > 0) artifactChips.push(`summary:${rec.artifact_counts.summary}`);
+        if (rec.artifact_counts?.card > 0) artifactChips.push(`card:${rec.artifact_counts.card}`);
+        if (rec.artifact_counts?.standup > 0) artifactChips.push(`standup:${rec.artifact_counts.standup}`);
+        if (rec.artifact_counts?.narrative > 0) artifactChips.push(`narrative:${rec.artifact_counts.narrative}`);
+        const artifactBadge = artifactCount > 0 
+          ? `<span class="artifact-badge" title="${artifactChips.join(', ')}">${artifactCount} artifacts</span>`
+          : '';
+        
+        let outlineLinks = '';
+        if (rec.artifacts && rec.artifacts.length > 0 && rec.outline_url) {
+          outlineLinks = rec.artifacts.map((a, i) => 
+            `<a href="${rec.outline_url}" target="_blank" class="link-icon" onclick="event.stopPropagation()" title="View ${a.type} in Outline">📄</a>`
+          ).join('');
+        } else if (rec.outline_url) {
+          outlineLinks = `<a href="${rec.outline_url}" target="_blank" class="link-icon" onclick="event.stopPropagation()" title="View in Outline">📄</a>`;
+        }
         
         return `
           <tr class="recording-row" data-id="${rec.id}" onclick="toggleRecordingDetail('${rec.id}')">
@@ -921,9 +1045,8 @@
               <button class="link-icon" onclick="event.stopPropagation(); navigator.clipboard.writeText('${rec.id}'); alert('Recording ID copied to clipboard');" title="Copy ID">📋</button>
               <a href="debug.html?recording=${rec.id}" class="link-icon" onclick="event.stopPropagation()" title="View frames">🖼️</a>
               <a href="stats.html?recording=${rec.id}" class="link-icon" onclick="event.stopPropagation()" title="View stats">📊</a>
-              ${rec.summary.outline_url
-                ? `<a href="${rec.summary.outline_url}" target="_blank" class="link-icon" onclick="event.stopPropagation()" title="View in Outline">📄</a>`
-                : ''}
+              ${outlineLinks}
+              ${artifactBadge}
               ${missingSummary ? '<span class="missing-indicator" title="Missing summary">⚠️ Summary</span>' : ''}
               ${missingOutline && !missingSummary ? '<span class="missing-indicator" title="Missing Outline link">⚠️ Outline</span>' : ''}
             </td>
@@ -949,7 +1072,7 @@
               <th>Frames</th>
               <th>VLM</th>
               <th>Time</th>
-              <th>Actions</th>
+              <th>Artifacts</th>
             </tr>
           </thead>
           <tbody>
@@ -1010,7 +1133,45 @@
         // Build detail view
         let html = '';
 
-        // Subjects section (NEW - show first)
+        // Artifacts section (show first if present)
+        if (data.artifacts && data.artifacts.length > 0) {
+          html += `
+            <div class="detail-section">
+              <h3>📦 Artifacts (${data.artifacts.length})</h3>
+              <div class="artifacts-list">
+                ${data.artifacts.map(a => {
+                  const artifactSubjects = data.subjects.filter(s => a.subject_ids.includes(s.id));
+                  return `
+                    <div class="artifact-card">
+                      <div class="artifact-header">
+                        <span class="artifact-type-badge ${a.type}">${a.type}</span>
+                        <span class="artifact-meta">${a.format || 'markdown'} • ${formatTimestamp(a.created_at)}</span>
+                        ${a.outline_url 
+                          ? `<a href="${a.outline_url}" target="_blank" class="artifact-outline-link">View in Outline →</a>`
+                          : '<span class="missing-indicator">⚠️ No Outline</span>'}
+                      </div>
+                      ${artifactSubjects.length > 0 ? `
+                        <div class="artifact-subjects">
+                          <span class="artifact-subjects-label">Subjects:</span>
+                          ${artifactSubjects.map(s => `
+                            <span class="subject-mini-badge ${s.is_personal ? 'personal' : 'work'}">${escapeHtml(s.label)}</span>
+                          `).join('')}
+                        </div>
+                      ` : ''}
+                      ${a.content ? `
+                        <div class="summary-content artifact-content">
+                          ${renderMarkdown(a.content)}
+                        </div>
+                      ` : ''}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        }
+
+        // Subjects section (show if no artifacts OR for reference)
         if (data.subjects && data.subjects.length > 0) {
           const workSubjects = data.subjects.filter(s => !s.is_personal);
           const personalSubjects = data.subjects.filter(s => s.is_personal);
@@ -1046,12 +1207,12 @@
           `;
         }
 
-        // Summary section
-        if (data.summary.content) {
+        // Legacy Summary section (file-based fallback)
+        if (data.summary.content && (!data.artifacts || data.artifacts.length === 0)) {
           html += `
             <div class="detail-section">
               <h3>
-                📝 Summary
+                📝 Summary (File)
                 ${data.summary.outline_url
                   ? `<a href="${data.summary.outline_url}" target="_blank">View in Outline →</a>`
                   : '<span class="missing-indicator">⚠️ No Outline link</span>'}
@@ -1061,7 +1222,7 @@
               </div>
             </div>
           `;
-        } else if (data.recording.status === 'published') {
+        } else if (!data.summary_present && data.recording.status === 'published') {
           html += `
             <div class="detail-section">
               <h3>📝 Summary</h3>

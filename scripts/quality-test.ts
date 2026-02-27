@@ -121,6 +121,7 @@ async function main(): Promise<void> {
         force: false,
         skipSummary,
         format,
+        includePersonal: true,
       });
       debugLog(result);
 
@@ -197,7 +198,7 @@ async function main(): Promise<void> {
   if (successCount > 0) {
     console.log('Generated artifacts:');
     const successResults = results.filter((r) => r.success && r.artifactPath);
-    
+
     // Group by format for better readability
     const byFormat = new Map<ArtifactFormat, string[]>();
     successResults.forEach((r) => {

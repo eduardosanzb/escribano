@@ -7,6 +7,7 @@ import type {
   ArtifactRepository,
   DbArtifact,
   DbArtifactInsert,
+  DbArtifactSubject,
 } from '../../0_types.js';
 import { nowISO } from '../helpers.js';
 
@@ -45,6 +46,12 @@ export function createSqliteArtifactRepository(
     delete: db.prepare('DELETE FROM artifacts WHERE id = ?'),
     deleteByRecording: db.prepare(
       'DELETE FROM artifacts WHERE recording_id = ?'
+    ),
+    linkSubject: db.prepare(
+      'INSERT OR IGNORE INTO artifact_subjects (artifact_id, subject_id) VALUES (?, ?)'
+    ),
+    findSubjectsByArtifact: db.prepare(
+      'SELECT * FROM artifact_subjects WHERE artifact_id = ?'
     ),
   };
 
@@ -95,6 +102,18 @@ export function createSqliteArtifactRepository(
 
     deleteByRecording(recordingId: string): void {
       stmts.deleteByRecording.run(recordingId);
+    },
+
+    linkSubjects(artifactId: string, subjectIds: string[]): void {
+      for (const subjectId of subjectIds) {
+        stmts.linkSubject.run(artifactId, subjectId);
+      }
+    },
+
+    findSubjectsByArtifact(artifactId: string): DbArtifactSubject[] {
+      return stmts.findSubjectsByArtifact.all(
+        artifactId
+      ) as DbArtifactSubject[];
     },
   };
 }

@@ -543,6 +543,7 @@ export type OutlineConfig = z.infer<typeof outlineConfigSchema>;
 import type {
   DbArtifact,
   DbArtifactInsert,
+  DbArtifactSubject,
   DbCluster,
   DbClusterInsert,
   DbClusterMerge,
@@ -564,6 +565,7 @@ import type {
 export type {
   DbArtifact,
   DbArtifactInsert,
+  DbArtifactSubject,
   DbCluster,
   DbClusterInsert,
   DbClusterMerge,
@@ -687,6 +689,8 @@ export interface ArtifactRepository {
   update(id: string, content: string): void;
   delete(id: string): void;
   deleteByRecording(recordingId: string): void;
+  linkSubjects(artifactId: string, subjectIds: string[]): void;
+  findSubjectsByArtifact(artifactId: string): DbArtifactSubject[];
 }
 
 export interface SubjectRepository {

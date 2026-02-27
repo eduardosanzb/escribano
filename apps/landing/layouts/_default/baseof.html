@@ -3,7 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="light only">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function() {
+      const stored = localStorage.getItem('theme');
+      if (stored) {
+        document.documentElement.classList.add(stored === 'dark' ? 'dark-mode' : 'light-mode');
+      }
+    })();
+  </script>
 
   {{ if .Description }}
   <meta name="description" content="{{ .Description }}">
@@ -56,6 +64,30 @@
     document.querySelectorAll('.fade-up').forEach(function(el) {
       observer.observe(el);
     });
+
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+      const html = document.documentElement;
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const stored = localStorage.getItem('theme');
+      
+      let isDark = stored ? stored === 'dark' : prefersDark;
+      themeToggle.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      
+      themeToggle.addEventListener('click', function() {
+        isDark = !isDark;
+        themeToggle.setAttribute('data-theme', isDark ? 'dark' : 'light');
+        if (isDark) {
+          html.classList.add('dark-mode');
+          html.classList.remove('light-mode');
+          localStorage.setItem('theme', 'dark');
+        } else {
+          html.classList.add('light-mode');
+          html.classList.remove('dark-mode');
+          localStorage.setItem('theme', 'light');
+        }
+      });
+    }
   </script>
 </body>
 </html>

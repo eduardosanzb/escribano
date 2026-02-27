@@ -6,6 +6,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { z } from 'zod';
 import {
   type ArtifactType,
@@ -492,9 +493,16 @@ async function describeImagesWithOllama(
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        const response = await fetch(endpoint, {
+        // Custom agent with extended headers timeout to prevent UND_ERR_HEADERS_TIMEOUT
+        const agent = new Agent({
+          headersTimeout: timeout,
+          connectTimeout: timeout,
+        });
+
+        const response = await undiciFetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          dispatcher: agent,
           body: JSON.stringify({
             model,
             messages: [
@@ -522,7 +530,10 @@ async function describeImagesWithOllama(
           );
         }
 
-        const data = await response.json();
+        const data = (await response.json()) as {
+          message?: { content: string };
+          response?: string;
+        };
         debugLog('[VLM] Response data keys:', Object.keys(data).join(', '));
         const content = data.message?.content || data.response || '';
         debugLog('[VLM] Raw content length:', content.length);
@@ -754,11 +765,19 @@ async function callOllama(
 
       debugLog(`[${requestId}] Attempt ${attempt}/${maxRetries}...`);
 
-      const response = await fetch(endpoint, {
+      // Custom agent with extended headers timeout to prevent UND_ERR_HEADERS_TIMEOUT
+      // when models take a long time to generate the first token (thinking mode)
+      const agent = new Agent({
+        headersTimeout: timeout,
+        connectTimeout: timeout,
+      });
+
+      const response = await undiciFetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        dispatcher: agent,
         body: JSON.stringify({
           model: options.model,
           messages: [
@@ -799,7 +818,16 @@ async function callOllama(
         );
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as {
+        eval_count?: number;
+        prompt_eval_count?: number;
+        done?: boolean;
+        done_reason?: string;
+        message: {
+          content: string;
+          thinking?: string;
+        };
+      };
 
       debugLog(
         `[${requestId}] Response received in ${Date.now() - attemptStart}ms`,

@@ -46,8 +46,8 @@ The adapter auto-detects Python in this priority:
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
 | `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-4bit` |
-| `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `16` |
-| `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `4000` |
+| `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `4` |
+| `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
 | `ESCRIBANO_LLM_MODEL` | Ollama model for text generation (summaries) | `qwen3:32b` |
 | `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3:32b` |
 | `ESCRIBANO_ARTIFACT_THINK` | Enable thinking for artifact/card generation (slower, higher quality) | `false` |

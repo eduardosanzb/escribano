@@ -31,17 +31,31 @@ import {
 import { debuglog } from 'node:util';
 import { debugLog } from '../src/adapters/intelligence.ollama.adapter.js';
 import type { ArtifactFormat } from '../src/actions/generate-artifact-v3.js';
+import fs from 'fs';
 
+// we have to find all the *.mov in the desktop
 // Video files to process (in order)
-const VIDEOS: string[] = [
-  path.join(homedir(), 'Desktop', 'Screen Recording 2026-02-21 at 10.03.16.mov'),
-  path.join(homedir(), 'Desktop', 'Screen Recording 2026-02-21 at 21.13.07.mov'),
-  path.join(homedir(), 'Desktop', 'Screen Recording 2026-02-22 at 09.45.32.mov'),
-  path.join(homedir(), 'Desktop', 'Screen Recording 2026-02-23 at 22.50.47.mov'),
-  path.join(homedir(), 'Desktop', 'Screen Recording 2026-02-24 at 09.57.28.mov'),
-  path.join(homedir(), 'Desktop', 'Screen Recording 2026-02-24 at 12.10.13.mov'),
-  path.join(homedir(), 'Desktop', 'Screen Recording 2026-02-24 at 12.26.09.mov'),
-];
+const DESKTOP = path.join(homedir(), 'Desktop');
+const VIDEOS: string[] = [];
+try {
+  const files = await fs.promises.readdir(DESKTOP);
+  for (const file of files) {
+    if (file.toLowerCase().endsWith('.mov')) {
+      VIDEOS.push(path.join(DESKTOP, file));
+    }
+  }
+} catch (error) {
+  console.error('Error reading desktop directory:', error);
+  process.exit(1);
+}
+
+if (VIDEOS.length === 0) {
+  console.error('No .mov files found on the desktop. Please add videos to process.');
+  process.exit(1);
+}
+
+debuglog('quality-test')('Videos to process:', VIDEOS);
+
 
 /**
  * Parse artifact formats from command-line args or environment variable

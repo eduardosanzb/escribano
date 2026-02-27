@@ -48,7 +48,9 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-4bit` |
 | `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `16` |
 | `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `4000` |
-| `ESCRIBANO_VLM_REPETITION_PENALTY` | Repetition penalty for generation (1.0=disabled) | `1.15` |
+| `ESCRIBANO_LLM_MODEL` | Ollama model for text generation (summaries) | `qwen3:32b` |
+| `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3:32b` |
+| `ESCRIBANO_ARTIFACT_THINK` | Enable thinking for artifact/card generation (slower, higher quality) | `false` |
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
 | `ESCRIBANO_MLX_STARTUP_TIMEOUT` | MLX bridge model loading timeout (ms) | `60000` |
 | `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-detected (venv > system) |
@@ -56,11 +58,10 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
 | `ESCRIBANO_VERBOSE` | Enable verbose pipeline logging | `false` |
-| `ESCRIBANO_DEBUG_OLLAMA` | Debug Ollama request/response logging (includes prompt preview) | `false` |
+| `ESCRIBANO_DEBUG_OLLAMA` | Debug Ollama request/response logging (includes full prompt) | `false` |
+| `ESCRIBANO_DEBUG_VLM` | Debug VLM processing output | `false` |
 | `ESCRIBANO_SKIP_LLM` | Skip LLM summary, use template fallback | `false` |
-| `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3:32b` |
-| `ESCRIBANO_ARTIFACT_THINK` | Enable thinking for artifact/card LLM generation (slower, potentially higher quality) | `false` |
-| `OLLAMA_NUM_PARALLEL` | Ollama inference slots (sequential processing) | `1` |
+| `OLLAMA_NUM_PARALLEL` | Ollama server inference slots (configure Ollama itself) | `1` |
 
 ### Performance Notes
 - **Scene Detection**: Uses `-skip_frame nokey` FFmpeg optimization by default for 20x speedup (57 min → 2.8 min for 3-hour videos)

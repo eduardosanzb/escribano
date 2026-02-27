@@ -740,6 +740,7 @@ async function callOllama(
     `  Prompt: ${prompt.length} chars (~${Math.ceil(prompt.length / 4)} tokens)`
   );
   debugLog(`  Context: ${contextSize}, Timeout: ${timeout}ms`);
+  debugLog(`  Thinking: ${options.think ? 'enabled' : 'disabled'}`);
   debugLog(`  Expect JSON: ${options.expectJson}`);
   debugLog(`  Prompt:\n${prompt}`);
 

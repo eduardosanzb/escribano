@@ -95,6 +95,7 @@ export async function groupTopicBlocksIntoSubjects(
   console.log(
     `[subject-grouping] Grouping ${topicBlocks.length} blocks into subjects (model: ${SUBJECT_GROUPING_MODEL})`
   );
+  console.log(`[subject-grouping] Full prompt:\n---\n${prompt}\n---`);
 
   try {
     const response = await intelligence.generateText(prompt, {

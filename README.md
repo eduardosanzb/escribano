@@ -1,104 +1,222 @@
 # Escribano
 
-**AI-powered session intelligence for developers.**
+Record your screen. Get a structured summary of what you did.
 
-Escribano watches you work, understands what you're doing, and writes about it. Feed it a screen recording and get a structured summary of your coding session — what you worked on, when, and what you accomplished.
+---
 
-## What You Get
+## What you put in
 
-**Before**: A 49-minute screen recording. Hours of debugging, research, coding. No notes.
+A screen recording. Could be 20 minutes, could be 3 hours. You didn't take notes.
 
-**After** (auto-generated):
+## What you get back (~9 minutes later)
 
 ```markdown
-# Session Summary: 2/21/2026
+# Session Card - Feb 25, 2026
 
-## Overview  
-Spent 49 minutes debugging and refining a Visual Language Model (VLM) pipeline, 
-switching between terminal logs, code updates, and external resources.
+## Escribano Pipeline Optimization
+**1h 53m** | coding 22m, debugging 30m, terminal 24m, review 58m, planning 6m
+
+- Optimized the video processing pipeline by evaluating skip-frame strategies 
+  and removing scene detection for 180-minute videos.
+- Resolved persistent VLM parsing failures and truncation errors by implementing 
+  raw response logging and fallback mechanisms.
+- Executed database migrations to add the new observations table schema.
+- Benchmarked the performance of the GLM-5 and Qwen-VL models.
+
+## Frame Extraction & Scene Detection
+**19m** | coding 11m, debugging 4m, terminal 4m
+
+- Developed TypeScript scripts for video frame extraction using FFmpeg.
+- Debugged a critical parsing failure at Frame 3.
+- Monitored terminal logs to track progress of a 792-second video file.
+
+## Research & System Analysis
+**22m** | review 3m, research 2m, coding 7m, terminal 6m
+
+- Reviewed GitHub Copilot pricing and Screenpipe repository architecture.
+- Investigated the database schema in TablePlus.
 
 ---
-
-## Debugging VLM Pipeline Issues: 4:48 - 14:20  
-Debugging deprecated VLM pipeline code in the OpenCode terminal. The logs show 
-warnings about outdated VLM implementations. Repeatedly inspecting error messages 
-for the `open-code.json` file, particularly an LSP error related to the language 
-server protocol. Switching between macOS terminal windows and the Ghostty terminal 
-emulator to test different configurations.
-
----
-
-## Refactoring VLM Pipeline Code: 20:12 - 37:38  
-Deeply engaged in refactoring the VLM pipeline in OpenCode. Editing the 
-`src/adapters/intelligence/ollama.adapter.ts` file to define a `describeImageSequential()` 
-function, replacing batch processing with sequential logic. The focus shifts to 
-Phase 4: Future Considerations, including "firecrawl-mcp" and "MLX migration."
-
----
-
-## Key Outcomes  
-- **Completed:**
-  - Refactored `describeImageSequential()` to handle single-image processing
-  - Updated deprecated VLM code with function renaming and prompt simplification
-- **Remaining Tasks:**
-  - Resolve the LSP error in `open-code.json`
-  - Debug the Qwen3-Coder Next model in LM Studio
+*Personal time: 2h 38m (WhatsApp, Instagram, Email)*
 ```
 
-## Why Escribano?
+That's the **card** format. Two others:
 
-- **Understands activities**: Classifies debugging, coding, research, meetings, terminal work — not just OCR text
-- **Segments your work**: Breaks sessions into coherent topic blocks with timestamps
-- **Local-first**: All processing happens on your machine. Your screen data never leaves.
-- **VLM-powered**: Uses vision-language models to understand screenshots directly (proven better than OCR clustering)
+### Standup format
+
+```markdown
+## Standup - Feb 25, 2026
+
+**What I did:**
+- Debugged VLM parsing failures by implementing raw response logging
+- Optimized video frame extraction pipeline using FFmpeg
+- Analyzed GLM-5 and Qwen-VL model performance
+- Implemented database schema migrations
+
+**Key outcomes:**
+- Resolved truncated response issues with fallback parsing
+- Identified scene detection as a latency bottleneck
+- Validated new batch extraction strategy
+
+**Next:**
+- Merge scene detection optimization branch
+- Benchmark qwen3_next model
+- Add unit tests for fallback parsing
+```
+
+Paste straight into Slack.
+
+### Narrative format
+
+```markdown
+# Session Summary: Sunday, February 22, 2026
+
+## Overview
+I spent nearly three hours optimizing the VLM inference pipeline. The main focus 
+was resolving JSON parsing errors during batch processing and benchmarking the 
+qwen3-vl:4b model against InternVL-14B. By the end, I'd identified the truncation 
+root cause, adjusted MAX_TOKENS, and validated the fix against 342 frames — 
+resulting in a 4x speedup with continuous batching.
+
+## Timeline
+* **0:00** (45m): Terminal work, running benchmark scripts
+* **45:00** (60m): Debugging JSON parsing in VS Code
+* **1:45:00** (40m): Researching model quantization
+* **2:25:00** (34m): Documenting performance metrics
+...
+```
+
+Good for retrospectives or blog drafts.
+
+---
+
+## Benchmarks
+
+Ran the full pipeline on 11 real screen recordings:
+
+| Metric | Result |
+|--------|--------|
+| Videos processed | 11 |
+| Artifacts generated | 33 (3 formats × 11 videos) |
+| Success rate | 100% |
+| Total time | 1h 41m |
+| Avg per video | **~9 min** (pipeline + all 3 formats) |
+| Hardware | MacBook Pro M4 Max, 128GB |
+
+Everything runs locally. No API keys. Nothing leaves your machine.
+
+---
+
+## Why this exists
+
+Most screen recording tools just give you a video file. If you want to remember what you did, you have to watch it back.
+
+Escribano watches it for you. It extracts frames, runs them through a vision-language model, transcribes any audio, and writes up what happened — broken into topics, with timestamps and time per activity.
+
+Built for developers: understands the difference between debugging, coding, reading docs, and scrolling Slack. Doesn't just OCR text (which produces garbage when every screen has "function" and "const" on it).
+
+---
+
+## How it works
+
+```
+Screen recording
+     │
+     ├──► Audio: Silero VAD → Whisper → transcripts
+     │
+     └──► Video: FFmpeg frames → scene detection → adaptive sampling
+                                              │
+                                              ▼
+                                    VLM inference (MLX-VLM, Qwen3-VL-2B)
+                                              │
+                                              ▼
+                                    "Debugging in terminal"
+                                    "Reading docs in Chrome"
+                                    "Coding in VS Code"
+     │
+     ▼
+Activity segmentation → temporal audio alignment → TopicBlocks
+     │
+     ▼
+LLM summary (Ollama, qwen3:32b) → Markdown artifact
+```
+
+Uses VLM-first visual understanding, not OCR + text clustering. OCR fails for developer work because all code screens produce similar tokens. VLMs understand the *activity*, not just the text.
+
+---
 
 ## Quick Start
 
 ### Prerequisites
 
 ```bash
-# macOS (via Homebrew)
+# macOS (Homebrew)
 brew install ollama whisper-cpp ffmpeg
 
-# Pull the LLM model for summary generation
+# LLM model for summaries
 ollama pull qwen3:32b
 
-# Install MLX-VLM for frame analysis (Python)
+# MLX-VLM for frame analysis
 pip install mlx-vlm
 ```
 
 ### Run
 
 ```bash
-# Process a screen recording
-npx github:eduardosanzb/escribano --file "/path/to/recording.mov"
+npx github:eduardosanzb/escribano --file "~/Desktop/Screen Recording.mov"
 
-# Or clone and run locally
+# Or locally
 git clone https://github.com/eduardosanzb/escribano.git
 cd escribano
 pnpm install
 pnpm escribano --file "~/Desktop/Screen Recording.mov"
 ```
 
-Output: Markdown summary saved to `~/.escribano/artifacts/`
+Output: `~/.escribano/artifacts/`
 
-## How It Works
+---
 
+## CLI
+
+### Flags
+
+| Flag | What it does |
+|------|--------------|
+| `--file <path>` | Process a video file |
+| `--mic-audio <path>` | External mic audio |
+| `--system-audio <path>` | External system audio |
+| `--format <format>` | `card`, `standup`, or `narrative` (default: card) |
+| `--force` | Reprocess from scratch |
+| `--skip-summary` | Process frames only, skip artifact |
+| `--include-personal` | Include personal time (filtered by default) |
+| `--copy` | Copy to clipboard |
+| `--stdout` | Print to stdout |
+| `--help` | Show all options |
+
+### Formats
+
+| Format | Use for | Style |
+|--------|---------|-------|
+| `card` | Personal review, daily notes | Time breakdowns per subject, bullets |
+| `standup` | Daily standup, async updates | What I did / Outcomes / Next |
+| `narrative` | Retrospectives, blog drafts | Prose with timeline |
+
+### Examples
+
+```bash
+# Process and copy
+pnpm escribano --file "~/Desktop/Screen Recording.mov" --format standup --copy
+
+# Narrative format
+pnpm escribano --file session.mp4 --format narrative --force
+
+# With external audio
+pnpm escribano --file recording.mov --mic-audio mic.wav
 ```
-Recording → Frame Extraction → Scene Detection → Adaptive Sampling (~100-150 frames)
-    ↓
-VLM Batch Inference (MLX-VLM, Qwen3-VL-2B) → "Debugging in terminal", "Reading docs in Chrome"
-    ↓
-Audio Pipeline (parallel): Silero VAD → Whisper → Transcripts
-    ↓
-Activity Segmentation → Temporal Audio Alignment → TopicBlocks
-    ↓
-LLM Summary (Ollama, qwen3:32b) → Markdown Artifact
-```
 
-**Key insight**: Escribano uses VLM-first visual understanding instead of OCR + text clustering. OCR fails for developer work because all code screens produce similar tokens (`const`, `function`, `import`). VLMs understand the *activity*, not just the text.
+---
 
-## Supported Inputs
+## Supported inputs
 
 | Source | Command |
 |--------|---------|
@@ -107,91 +225,41 @@ LLM Summary (Ollama, qwen3:32b) → Markdown Artifact
 | Any MP4/MOV | `--file /path/to/video.mp4` |
 | External audio | `--mic-audio mic.wav --system-audio system.wav` |
 
-## CLI Reference
-
-### Flags & Options
-
-| Flag | Description | Example |
-|------|-------------|---------|
-| `--file <path>` | Process a specific video file | `pnpm escribano --file "~/Desktop/recording.mov"` |
-| `--mic-audio <path>` | Provide external microphone audio | `pnpm escribano --file video.mov --mic-audio mic.wav` |
-| `--system-audio <path>` | Provide system audio recording | `pnpm escribano --file video.mov --system-audio system.wav` |
-| `--format <format>` | Artifact format: `card`, `standup`, or `narrative` (default: `card`) | `pnpm escribano --format standup` |
-| `--force` | Reprocess from scratch, skip cached observations | `pnpm escribano --force` |
-| `--skip-summary` | Process only (segment frames), skip LLM artifact generation | `pnpm escribano --skip-summary` |
-| `--include-personal` | Include personal time in artifact (normally filtered) | `pnpm escribano --include-personal` |
-| `--copy` | Copy generated artifact to clipboard | `pnpm escribano --copy` |
-| `--stdout` | Print artifact to stdout instead of saving to file | `pnpm escribano --stdout` |
-| `--help` | Show all available options | `pnpm escribano --help` |
-
-### Artifact Formats
-
-| Format | Purpose | Best For | Output Style |
-|--------|---------|----------|--------------|
-| `card` (default) | Structured per-subject summary with activity breakdown | Personal review, journal, daily notes | **2h 15m** \| coding 1h 30m, debugging 45m<br/>- Achieved 20.6x speedup in scene detection<br/>- Resolved LLM truncation errors |
-| `standup` | Concise what-I-did, key outcomes, and next steps | Daily standup, async updates to team | **What I did:** - Debugged VLM pipeline<br/>**Key outcomes:** - Fixed timeout issues |
-| `narrative` | Flowing prose summary of the session | Blog drafts, retrospectives, storytelling | *Spent 2 hours debugging and refactoring the VLM pipeline, switching between terminal logs and code updates...* |
-
-### Example Commands
-
-**Process and copy to clipboard:**
-```bash
-pnpm escribano --file "~/Desktop/Screen Recording.mov" --format standup --copy
-```
-
-**Cap recording → Standup format → Print to terminal:**
-```bash
-pnpm escribano --format standup --stdout
-```
-
-**Reprocess with narrative format, include personal time:**
-```bash
-pnpm escribano --file session.mp4 --format narrative --include-personal --force
-```
-
-**Process video with both mic and system audio:**
-```bash
-pnpm escribano --file recording.mov --mic-audio mic.wav --system-audio system.wav
-```
-
-**Segment and store, skip summary generation (fast mode):**
-```bash
-pnpm escribano --skip-summary
-```
-
-**Output:** Markdown artifact saved to `~/.escribano/artifacts/`
+---
 
 ## Architecture
 
-Built with Clean Architecture principles:
+Clean architecture: domain entities, pure services, adapter interfaces for external systems (MLX-VLM, Ollama, Whisper, FFmpeg, SQLite).
 
-- **Domain**: Core entities (Recording, Observation, TopicBlock, Context, Artifact)
-- **Services**: Pure business logic (frame sampling, activity segmentation, temporal alignment)
-- **Adapters**: External systems (MLX-VLM, Ollama, Whisper, FFmpeg, SQLite)
+Deep dives:
+- [Why OCR fails for developers](docs/adr/005-vlm-first-visual-pipeline.md)
+- [MLX-VLM migration for 4x speedup](docs/adr/006-mlx-vlm-adapter.md)
+- [Benchmarks and learnings](docs/learnings.md)
 
-See [docs/architecture.md](docs/architecture.md) for full details.
+Full architecture: [docs/architecture.md](docs/architecture.md)
 
-## Technical Deep Dives
-
-- [ADR-005: Why OCR-based screen intelligence fails for developers](docs/adr/005-vlm-first-visual-pipeline.md)
-- [ADR-006: MLX-VLM migration for 4x faster inference](docs/adr/006-mlx-vlm-adapter.md)
-- [Learnings: VLM benchmarks, frame sampling, audio preprocessing](docs/learnings.md)
+---
 
 ## Requirements
 
-- **macOS** (Apple Silicon recommended for MLX-VLM)
+- **macOS** (Apple Silicon for MLX-VLM)
 - **Node.js 20+**
-- **16GB+ RAM** (32GB+ recommended for larger models)
-- **~10GB disk** for models (qwen3:32b is ~20GB, qwen3-vl-2b is ~4GB)
+- **16GB+ RAM** (32GB+ recommended)
+- **~10GB disk** for models
+
+---
 
 ## Roadmap
 
 - [x] VLM-first visual pipeline
-- [x] MLX-VLM migration (4x speedup)
+- [x] MLX-VLM migration
 - [x] Activity segmentation
-- [ ] OCR on keyframes (concrete code/URLs in summaries)
-- [ ] MCP server for AI assistant integration
-- [ ] Cross-recording context queries
+- [x] Multiple artifact formats
+- [ ] OCR on keyframes for code/URLs
+- [ ] MCP server for AI assistants
+- [ ] Cross-recording queries
+
+---
 
 ## License
 
@@ -199,4 +267,4 @@ MIT
 
 ---
 
-*Escribano = "The Scribe" — because your coding sessions deserve documentation too.*
+*Escribano = "The Scribe"*

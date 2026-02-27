@@ -485,7 +485,7 @@ function collectRunMetadata(
     vlm_model:
       process.env.ESCRIBANO_VLM_MODEL ??
       'mlx-community/Qwen3-VL-2B-Instruct-bf16',
-    // TODO>: make it env variabels
+    // TODO: make it env variables
     llm_model: process.env.ESCRIBANO_LLM_MODEL ?? 'qwen3.5:27b',
     commit_hash: commitHash,
     node_version: process.version,

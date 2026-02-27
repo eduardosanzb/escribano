@@ -1,7 +1,7 @@
 {
   "name": "escribano",
-  "version": "1.0.0",
-  "description": "AI-powered session intelligence tool",
+  "version": "0.1.0",
+  "description": "AI-powered session intelligence tool — turn screen recordings into structured work summaries",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -30,9 +30,27 @@
     "ollama-2": "OLLAMA_NUM_PARALLEL=1 OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=262144 ollama serve",
     "index:rebuild": "tsx --env-file=.env src/scripts/rebuild-index.ts"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "ai",
+    "vlm",
+    "screen-recording",
+    "developer-tools",
+    "session-intelligence",
+    "productivity",
+    "macos",
+    "local-ai",
+    "whisper",
+    "ollama",
+    "mlx"
+  ],
+  "author": "Eduardo Sanchez",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eduardosanzb/escribano"
+  },
+  "homepage": "https://escribano.work",
+  "bugs": "https://github.com/eduardosanzb/escribano/issues",
   "packageManager": "pnpm@10.8.0",
   "dependencies": {
     "better-sqlite3": "^12.6.2",

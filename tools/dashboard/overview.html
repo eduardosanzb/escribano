@@ -1233,9 +1233,10 @@
 
         // Stats section
         if (data.stats.phases && data.stats.phases.length > 0) {
+          const totalTime = data.stats.total_processing_sec || 0;
           html += `
             <div class="detail-section">
-              <h3>📊 Processing Stats</h3>
+              <h3>📊 Processing Stats ${totalTime ? `(${formatDuration(totalTime)} total)` : ''}</h3>
               <table class="detail-stats-table">
                 <thead>
                   <tr>

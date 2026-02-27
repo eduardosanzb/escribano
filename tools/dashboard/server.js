@@ -263,15 +263,27 @@ app.get('/api/recordings/overview', (req, res) => {
         )
         .get(rec.id);
 
-      // Get total processing time from LATEST successful run
+      // Get total processing time: sum of LATEST duration per distinct phase
+      // This correctly aggregates time across multiple runs (initial + artifact re-runs)
       const runStats = db
         .prepare(
-          `SELECT total_duration_ms as total_ms
-           FROM processing_runs
-           WHERE recording_id = ? AND status = 'completed'
-           ORDER BY started_at DESC LIMIT 1`
+          `WITH latest_phases AS (
+            SELECT ps.phase, MAX(ps.started_at) as last_started
+            FROM processing_stats ps
+            JOIN processing_runs pr ON ps.run_id = pr.id
+            WHERE pr.recording_id = ?
+              AND ps.status = 'success'
+              AND ps.duration_ms > 0
+            GROUP BY ps.phase
+          )
+          SELECT SUM(ps.duration_ms) as total_ms
+          FROM processing_stats ps
+          JOIN processing_runs pr ON ps.run_id = pr.id
+          JOIN latest_phases lp ON ps.phase = lp.phase AND ps.started_at = lp.last_started
+          WHERE pr.recording_id = ?
+            AND ps.status = 'success'`
         )
-        .get(rec.id);
+        .get(rec.id, rec.id);
 
       // Get outline URL from metadata
       let outlineUrl = null;
@@ -536,6 +548,29 @@ app.get('/api/recording/:id/detail', (req, res) => {
 
     const summaryPresent = artifactCounts.summary > 0 || !!summaryContent;
 
+    // Get total processing time: sum of LATEST duration per distinct phase
+    const totalProcessingStats = db
+      .prepare(
+        `WITH latest_phases AS (
+          SELECT ps.phase, MAX(ps.started_at) as last_started
+          FROM processing_stats ps
+          JOIN processing_runs pr ON ps.run_id = pr.id
+          WHERE pr.recording_id = ?
+            AND ps.status = 'success'
+            AND ps.duration_ms > 0
+          GROUP BY ps.phase
+        )
+        SELECT SUM(ps.duration_ms) as total_ms
+        FROM processing_stats ps
+        JOIN processing_runs pr ON ps.run_id = pr.id
+        JOIN latest_phases lp ON ps.phase = lp.phase AND ps.started_at = lp.last_started
+        WHERE pr.recording_id = ?
+          AND ps.status = 'success'`
+      )
+      .get(id, id);
+
+    const totalProcessingSec = Math.round((totalProcessingStats?.total_ms || 0) / 1000);
+
     res.json({
       recording: {
         id: recording.id,
@@ -547,7 +582,8 @@ app.get('/api/recording/:id/detail', (req, res) => {
       },
       stats: {
         phases,
-        frame_count: frames.length
+        frame_count: frames.length,
+        total_processing_sec: totalProcessingSec
       },
       summary: {
         content: summaryContent,

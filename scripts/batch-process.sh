@@ -1,15 +1,23 @@
 #!/bin/bash
 # Batch processing with proper DB initialization
 
+# Add your video files here, or pass them as arguments
+# Example: ./batch-process.sh ~/Desktop/recording1.mov ~/Desktop/recording2.mov
 VIDEOS=(
-  "$HOME/Desktop/Screen Recording 2026-02-21 at 10.03.16.mov"
-  "$HOME/Desktop/Screen Recording 2026-02-21 at 21.13.07.mov"
-  "$HOME/Desktop/Screen Recording 2026-02-22 at 09.45.32.mov"
-  "$HOME/Desktop/Screen Recording 2026-02-23 at 22.50.47.mov"
-  "$HOME/Desktop/Screen Recording 2026-02-24 at 09.57.28.mov"
-  "$HOME/Desktop/Screen Recording 2026-02-24 at 12.10.13.mov"
-  "$HOME/Desktop/Screen Recording 2026-02-24 at 12.26.09.mov"
+  # "$HOME/Desktop/Screen Recording 1.mov"
+  # "$HOME/Desktop/Screen Recording 2.mov"
 )
+
+# Override with command-line arguments if provided
+if [ ${#@} -gt 0 ]; then
+  VIDEOS=("$@")
+fi
+
+if [ ${#VIDEOS[@]} -eq 0 ]; then
+  echo "Usage: ./batch-process.sh <video1.mov> [video2.mov] ..."
+  echo "Or edit the VIDEOS array in this script"
+  exit 1
+fi
 
 TOTAL=${#VIDEOS[@]}
 CURRENT=0

@@ -10,17 +10,59 @@
   --olive: #5c6b3a;
   --gold: #c4963a;
   --cream: #faf7f2;
+  --surface: var(--cream);
+  --surface-elevated: var(--parchment);
+  --surface-highlight: rgba(0, 0, 0, 0.04);
+  --nav-bg: rgba(250, 247, 242, 0.85);
 
   --serif: 'Cormorant Garamond', Georgia, serif;
   --serif-body: 'Spectral', Georgia, serif;
   --sans: 'DM Sans', system-ui, sans-serif;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #E8E9EE;
+    --ink-soft: #9395A5;
+    --ink-muted: #5C5F72;
+    --parchment: #15171F;
+    --parchment-warm: #1C1F2B;
+    --parchment-deep: #2A2D3A;
+    --terracotta: #E8A838;
+    --terracotta-light: #F0BC5A;
+    --olive: #4A9E7A;
+    --gold: #E8A838;
+    --cream: #0E0F14;
+    --surface: #15171F;
+    --surface-elevated: #1C1F2B;
+    --surface-highlight: rgba(255, 255, 255, 0.04);
+    --nav-bg: rgba(14, 15, 20, 0.85);
+  }
+}
+
+:root.dark-mode {
+  --ink: #E8E9EE;
+  --ink-soft: #9395A5;
+  --ink-muted: #5C5F72;
+  --parchment: #15171F;
+  --parchment-warm: #1C1F2B;
+  --parchment-deep: #2A2D3A;
+  --terracotta: #E8A838;
+  --terracotta-light: #F0BC5A;
+  --olive: #4A9E7A;
+  --gold: #E8A838;
+  --cream: #0E0F14;
+  --surface: #15171F;
+  --surface-elevated: #1C1F2B;
+  --surface-highlight: rgba(255, 255, 255, 0.04);
+  --nav-bg: rgba(14, 15, 20, 0.85);
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html {
   scroll-behavior: smooth;
-  color-scheme: light only;
+  color-scheme: light dark;
 }
 
 body {
@@ -63,7 +105,7 @@ nav {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem 4rem;
-  background: rgba(250, 247, 242, 0.85);
+  background: var(--nav-bg);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--parchment-deep);
 }
@@ -78,6 +120,35 @@ nav {
 }
 
 .nav-logo span { color: var(--terracotta); }
+
+.nav-theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 50%;
+  color: var(--ink-muted);
+  transition: color 0.2s, background-color 0.2s;
+}
+
+.nav-theme-toggle:hover {
+  color: var(--ink);
+  background: var(--surface-highlight);
+}
+
+.nav-theme-toggle svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: none;
+}
+
+.nav-theme-toggle[data-theme="light"] .sun-icon { display: block; }
+.nav-theme-toggle[data-theme="dark"] .moon-icon { display: block; }
 
 .nav-links {
   display: flex;

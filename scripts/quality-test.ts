@@ -5,12 +5,17 @@
  * with a single MLX bridge instance (no socket conflicts).
  *
  * Usage:
- *   pnpm quality-test           # Full pipeline + summary + outline
- *   pnpm quality-test:fast      # Pipeline only (no summary generation)
+ *   pnpm quality-test                              # Full pipeline + all artifact formats
+ *   pnpm quality-test --skip-summary               # Pipeline only (no summary generation)
+ *   pnpm quality-test --formats card,standup       # Specific formats (comma-separated)
+ *   ARTIFACT_FORMATS=narrative pnpm quality-test   # Use environment variable
+ *
+ * Formats: card (default), standup, narrative
  *
  * Features:
  * - Adapters initialized ONCE (MLX bridge loads model once)
  * - Continues processing on individual video failures
+ * - Generate artifacts in specified formats (default: all three)
  * - Progress tracking with timestamps
  * - Final summary report
  */
@@ -25,6 +30,7 @@ import {
 } from '../src/batch-context.js';
 import { debuglog } from 'node:util';
 import { debugLog } from '../src/adapters/intelligence.ollama.adapter.js';
+import type { ArtifactFormat } from '../src/actions/generate-artifact-v3.js';
 
 // Video files to process (in order)
 const VIDEOS: string[] = [
@@ -37,16 +43,41 @@ const VIDEOS: string[] = [
   path.join(homedir(), 'Desktop', 'Screen Recording 2026-02-24 at 12.26.09.mov'),
 ];
 
+/**
+ * Parse artifact formats from command-line args or environment variable
+ * Priority: --formats flag > ARTIFACT_FORMATS env var > default (all)
+ */
+function getArtifactFormats(): ArtifactFormat[] {
+  // Check command-line argument
+  const formatsArg = process.argv.find((arg) => arg.startsWith('--formats='));
+  if (formatsArg) {
+    const formats = formatsArg.split('=')[1].split(',').map((f) => f.trim());
+    return formats.filter((f) => ['card', 'standup', 'narrative'].includes(f)) as ArtifactFormat[];
+  }
+
+  // Check environment variable
+  const envFormats = process.env.ARTIFACT_FORMATS;
+  if (envFormats) {
+    const formats = envFormats.split(',').map((f) => f.trim());
+    return formats.filter((f) => ['card', 'standup', 'narrative'].includes(f)) as ArtifactFormat[];
+  }
+
+  // Default: all formats
+  return ['card', 'standup', 'narrative'];
+}
+
 async function main(): Promise<void> {
   const skipSummary = process.argv.includes('--skip-summary');
+  const formats = getArtifactFormats();
   const startTime = Date.now();
 
   console.log('╔════════════════════════════════════════════════════════════╗');
   console.log('║           ESCRIBANO QUALITY TEST BATCH PROCESSOR           ║');
   console.log('╚════════════════════════════════════════════════════════════╝');
   console.log();
-  console.log(`Mode: ${skipSummary ? 'Pipeline only (no summary)' : 'Full (pipeline + summary + outline)'}`);
+  console.log(`Mode: ${skipSummary ? 'Pipeline only (no summary)' : `Full (pipeline + ${formats.join(', ')} formats)`}`);
   console.log(`Videos: ${VIDEOS.length}`);
+  console.log(`Artifact formats: ${formats.length > 0 ? formats.join(', ') : 'none'}`);
   console.log(`Started: ${new Date().toLocaleString()}`);
   console.log();
 
@@ -82,27 +113,42 @@ async function main(): Promise<void> {
     console.log(`Started: ${new Date().toLocaleTimeString()}`);
     console.log();
 
-    const result = await processVideo(videoPath, ctx, {
-      force: false, // Force reprocess for quality testing
-      skipSummary,
-    });
-    debugLog(result)
+    // Process each format for this video
+    let videoSuccess = false;
+    for (const format of formats) {
+      console.log(`  Format: ${format}`);
+      const result = await processVideo(videoPath, ctx, {
+        force: false,
+        skipSummary,
+        format,
+      });
+      debugLog(result);
 
-    results.push(result);
+      results.push(result);
+
+      if (result.success) {
+        videoSuccess = true;
+        console.log(`    ✓ ${format} generated`);
+        if (result.artifactPath) {
+          console.log(`      Path: ${path.basename(result.artifactPath)}`);
+        }
+      } else {
+        console.log(`    ✗ ${format} failed: ${result.error}`);
+      }
+    }
 
     console.log();
-    console.log(`Duration: ${result.duration.toFixed(1)}s`);
+    if (results.length > 0) {
+      const lastResult = results[results.length - 1];
+      console.log(`Duration: ${lastResult.duration.toFixed(1)}s`);
+    }
 
-    if (result.success) {
+    if (videoSuccess) {
       successCount++;
       console.log(`Status: ✓ SUCCESS`);
-      if (result.outlineUrl) {
-        console.log(`Outline: ${result.outlineUrl}`);
-      }
     } else {
       failCount++;
       console.log(`Status: ✗ FAILED`);
-      console.log(`Error: ${result.error}`);
     }
 
     console.log(`Completed: ${new Date().toLocaleTimeString()}`);
@@ -138,24 +184,39 @@ async function main(): Promise<void> {
   console.log();
 
   // List failures
-  if (failCount > 0) {
-    console.log('Failed videos:');
-    results
-      .filter((r) => !r.success)
-      .forEach((r) => {
-        console.log(`  ✗ ${path.basename(r.videoPath)}: ${r.error}`);
-      });
+  const failedResults = results.filter((r) => !r.success);
+  if (failedResults.length > 0) {
+    console.log('Failed artifacts:');
+    failedResults.forEach((r) => {
+      console.log(`  ✗ ${path.basename(r.videoPath)}: ${r.error}`);
+    });
     console.log();
   }
 
-  // Success summary
+  // Success summary by format
   if (successCount > 0) {
     console.log('Generated artifacts:');
-    results
-      .filter((r) => r.success && r.artifactPath)
-      .forEach((r) => {
-        console.log(`  ✓ ${path.basename(r.artifactPath!)}`);
+    const successResults = results.filter((r) => r.success && r.artifactPath);
+    
+    // Group by format for better readability
+    const byFormat = new Map<ArtifactFormat, string[]>();
+    successResults.forEach((r) => {
+      const baseName = path.basename(r.artifactPath!);
+      // Extract format from filename (card/standup/narrative typically in the name)
+      const format = (r.format || 'unknown') as ArtifactFormat;
+      if (!byFormat.has(format)) {
+        byFormat.set(format, []);
+      }
+      byFormat.get(format)!.push(baseName);
+    });
+
+    // Print grouped by format
+    for (const [format, files] of byFormat) {
+      console.log(`  ${format}:`);
+      files.forEach((file) => {
+        console.log(`    ✓ ${file}`);
       });
+    }
     console.log();
   }
 

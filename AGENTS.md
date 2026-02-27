@@ -333,3 +333,24 @@ The pipeline saves progress aggressively to enable crash recovery:
 - Ports & Adapters — External systems accessed through interfaces
 - Repository Pattern — Decouples business logic from storage
 - Functional over classes — Factory functions return typed interfaces
+
+## Deployment
+
+### Landing Page (escribano.work)
+
+- **Location:** `apps/landing/` — Hugo static site
+- **Build:** Docker + nginx (see `apps/landing/Dockerfile`)
+- **Host:** Coolify server at `46.224.72.233`
+- **Auto-deploy:** GitHub Actions on push to `main` (`.github/workflows/landing-deploy.yml`)
+- **Required secret:** `COOLIFY_ESCRIBANO_WEBHOOK` — get from Coolify → app → Deploy Webhook
+
+### SSL + Cloudflare
+
+The server runs behind Cloudflare's orange-cloud proxy. Traefik uses **DNS-01 challenge** (not HTTP-01) for SSL certs.
+
+**Full setup guide:** [docs/deployment/coolify-cloudflare-dns.md](docs/deployment/coolify-cloudflare-dns.md)
+
+Key points:
+- API token stored in `/data/coolify/proxy/.env` (Coolify UI drops env blocks)
+- `delaybeforecheck=30` required to avoid DNS propagation race conditions
+- Container port must be set correctly (80 for nginx, 3000 for Node.js)

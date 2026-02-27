@@ -349,7 +349,7 @@ export function updateRecordingOutlineMetadata(
 }
 
 /**
- * Get current Outline metadata from recording if it exists.
+ * Get current Outline metadata from recording if it exists (legacy single-outline format).
  */
 export function getOutlineMetadata(
   recording: DbRecording
@@ -365,13 +365,56 @@ export function getOutlineMetadata(
 }
 
 /**
- * Check if content has changed since last publish.
+ * Get Outline metadata for a specific format.
+ * Checks outline_formats[] first, falls back to legacy outline for backward compat.
+ */
+export function getOutlineMetadataForFormat(
+  recording: DbRecording,
+  format?: string
+): OutlineMetadata | null {
+  try {
+    const metadata = recording.source_metadata
+      ? JSON.parse(recording.source_metadata)
+      : {};
+
+    // Check multi-format structure first
+    if (
+      format &&
+      metadata.outline_formats &&
+      Array.isArray(metadata.outline_formats)
+    ) {
+      const formatEntry = metadata.outline_formats.find(
+        (f: any) => f.format === format
+      );
+      if (formatEntry) {
+        return {
+          url: formatEntry.url,
+          documentId: formatEntry.documentId,
+          collectionId: formatEntry.collectionId,
+          publishedAt: formatEntry.publishedAt,
+          contentHash: formatEntry.contentHash,
+          error: formatEntry.error,
+          failedAt: formatEntry.failedAt,
+        };
+      }
+    }
+
+    // Fallback to legacy single-outline
+    return metadata.outline ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if content has changed since last publish for a specific format.
  */
 export function hasContentChanged(
   recording: DbRecording,
-  currentContent: string
+  currentContent: string,
+  format?: string
 ): boolean {
-  const outlineMeta = getOutlineMetadata(recording);
+  const outlineMeta = getOutlineMetadataForFormat(recording, format);
   if (!outlineMeta) return true;
 
   const currentHash = hashContent(currentContent);

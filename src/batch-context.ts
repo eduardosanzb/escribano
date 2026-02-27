@@ -310,7 +310,11 @@ export async function processVideo(
 
                 if (
                   dbRecording &&
-                  !hasContentChanged(dbRecording, generatedArtifact.content)
+                  !hasContentChanged(
+                    dbRecording,
+                    generatedArtifact.content,
+                    format
+                  )
                 ) {
                   console.log('Content unchanged, skipping publish.');
                 } else {
@@ -339,18 +343,9 @@ export async function processVideo(
 
                   console.log(`Published to Outline: ${published.url}`);
                   publishedUrl = published.url;
-
-                  // Update global index
-                  const indexResult = await updateGlobalIndex(
-                    repos,
-                    publishing,
-                    {
-                      collectionName: outlineConfig.collectionName,
-                    }
-                  );
-                  console.log(`Updated index: ${indexResult.url}`);
                 }
 
+                // Update status BEFORE rebuilding index so findByStatus('published') includes this recording
                 repos.recordings.updateStatus(
                   recording.id,
                   'published',
@@ -361,6 +356,18 @@ export async function processVideo(
                   'info',
                   `[Outline] Recording ${recording.id} status updated to 'published'`
                 );
+
+                // Update global index (after status update so this recording is included)
+                if (publishedUrl) {
+                  const indexResult = await updateGlobalIndex(
+                    repos,
+                    publishing,
+                    {
+                      collectionName: outlineConfig.collectionName,
+                    }
+                  );
+                  console.log(`Updated index: ${indexResult.url}`);
+                }
               });
             } catch (error) {
               const errorMessage = (error as Error).message;

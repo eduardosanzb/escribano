@@ -333,7 +333,8 @@ export async function processVideo(
                   updateRecordingOutlineMetadata(
                     recording.id,
                     outlineInfo,
-                    repos
+                    repos,
+                    format
                   );
 
                   console.log(`Published to Outline: ${published.url}`);

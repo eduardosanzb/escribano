@@ -308,7 +308,8 @@ function hashContent(content: string): string {
 export function updateRecordingOutlineMetadata(
   recordingId: string,
   outlineInfo: OutlineMetadata,
-  repos: Repositories
+  repos: Repositories,
+  format?: string
 ): void {
   const recording = repos.recordings.findById(recordingId);
   if (!recording) {
@@ -320,14 +321,31 @@ export function updateRecordingOutlineMetadata(
     ? JSON.parse(recording.source_metadata)
     : {};
 
-  // Update with outline info
-  const updatedMetadata = {
-    ...currentMetadata,
-    outline: outlineInfo,
-  };
+  // Store format-specific metadata
+  if (format) {
+    // Initialize formats array if needed
+    if (!currentMetadata.outline_formats) {
+      currentMetadata.outline_formats = [];
+    }
 
-  repos.recordings.updateMetadata(recordingId, JSON.stringify(updatedMetadata));
-  log('info', `[Publish V3] Updated metadata for ${recordingId}`);
+    // Remove any existing entry for this format and add the new one
+    currentMetadata.outline_formats = currentMetadata.outline_formats.filter(
+      (f: any) => f.format !== format
+    );
+    currentMetadata.outline_formats.push({
+      format,
+      ...outlineInfo,
+    });
+  } else {
+    // Backward compatibility: store as single outline object if no format specified
+    currentMetadata.outline = outlineInfo;
+  }
+
+  repos.recordings.updateMetadata(recordingId, JSON.stringify(currentMetadata));
+  log(
+    'info',
+    `[Publish V3] Updated metadata for ${recordingId}${format ? ` (${format})` : ''}`
+  );
 }
 
 /**

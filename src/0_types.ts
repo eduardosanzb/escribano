@@ -427,7 +427,12 @@ export interface IntelligenceService {
   extractTopics(observations: DbObservation[]): Promise<string[]>;
   generateText(
     prompt: string,
-    options?: { model?: string; expectJson?: boolean; numPredict?: number }
+    options?: {
+      model?: string;
+      expectJson?: boolean;
+      numPredict?: number;
+      think?: boolean;
+    }
   ): Promise<string>;
 }
 

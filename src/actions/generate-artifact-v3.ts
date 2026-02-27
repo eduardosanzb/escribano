@@ -335,6 +335,8 @@ async function generateLlmArtifact(
   repos: Repositories,
   allTopicBlocks: DbTopicBlock[]
 ): Promise<string> {
+  const ARTIFACT_THINK = process.env.ESCRIBANO_ARTIFACT_THINK === 'true';
+
   const promptFileName =
     format === 'card'
       ? 'card.md'
@@ -378,7 +380,10 @@ async function generateLlmArtifact(
     .replace('{{SUBJECTS_DATA}}', subjectsData)
     .replace('{{WORK_SUBJECTS}}', subjectsData);
 
-  return intelligence.generateText(prompt, { expectJson: false });
+  return intelligence.generateText(prompt, {
+    expectJson: false,
+    think: ARTIFACT_THINK,
+  });
 }
 
 function buildSubjectsDataForPrompt(

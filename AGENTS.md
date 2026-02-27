@@ -56,8 +56,10 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
 | `ESCRIBANO_VERBOSE` | Enable verbose pipeline logging | `false` |
-| `ESCRIBANO_DEBUG_OLLAMA` | Debug Ollama request/response logging | `false` |
+| `ESCRIBANO_DEBUG_OLLAMA` | Debug Ollama request/response logging (includes prompt preview) | `false` |
 | `ESCRIBANO_SKIP_LLM` | Skip LLM summary, use template fallback | `false` |
+| `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3:32b` |
+| `ESCRIBANO_ARTIFACT_THINK` | Enable thinking for artifact/card LLM generation (slower, potentially higher quality) | `false` |
 | `OLLAMA_NUM_PARALLEL` | Ollama inference slots (sequential processing) | `1` |
 
 ### Performance Notes

@@ -641,7 +641,12 @@ Rules:
 async function generateTextWithOllama(
   prompt: string,
   config: IntelligenceConfig,
-  options?: { model?: string; expectJson?: boolean; numPredict?: number }
+  options?: {
+    model?: string;
+    expectJson?: boolean;
+    numPredict?: number;
+    think?: boolean;
+  }
 ): Promise<string> {
   const model =
     options?.model ||
@@ -655,6 +660,7 @@ async function generateTextWithOllama(
       expectJson,
       model,
       num_predict: options?.numPredict,
+      think: options?.think,
     });
 
     // If expectJson, result might be an object - stringify it
@@ -735,6 +741,7 @@ async function callOllama(
   );
   debugLog(`  Context: ${contextSize}, Timeout: ${timeout}ms`);
   debugLog(`  Expect JSON: ${options.expectJson}`);
+  debugLog(`  Prompt:\n${prompt}`);
 
   let lastError: Error | null = null;
 
@@ -854,16 +861,16 @@ async function callOllama(
       lastError = error as Error;
 
       if (error instanceof Error && error.name === 'AbortError') {
-        console.log(
-          `Attempt ${attempt}/${maxRetries}: Request timed out after ${Date.now() - attemptStart}ms, retrying...`
+        console.error(
+          `[Ollama] [${requestId}] Attempt ${attempt}/${maxRetries}: Request timed out after ${Date.now() - attemptStart}ms, retrying...`
         );
         debugLog(`[${requestId}] Timeout after ${Date.now() - attemptStart}ms`);
       } else {
-        console.log(
-          `Attempt ${attempt}/${maxRetries}: Request failed, retrying...`
+        const errorMsg = lastError?.message || String(lastError);
+        console.error(
+          `[Ollama] [${requestId}] Attempt ${attempt}/${maxRetries}: Request failed: ${errorMsg} (retrying...)`
         );
-        console.log('  Error:', lastError.message);
-        debugLog(`[${requestId}] Error:`, lastError.message);
+        debugLog(`[${requestId}] Error:`, lastError);
       }
 
       if (attempt < maxRetries) {
@@ -873,6 +880,9 @@ async function callOllama(
   }
 
   debugLog(`[${requestId}] Failed after ${maxRetries} retries`);
+  console.error(
+    `[Ollama] [${requestId}] All ${maxRetries} attempts failed: ${lastError?.message}`
+  );
   throw new Error(
     `Request failed after ${maxRetries} retries: ${lastError?.message}`
   );

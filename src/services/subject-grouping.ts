@@ -92,12 +92,25 @@ export async function groupTopicBlocksIntoSubjects(
 
   const prompt = buildGroupingPrompt(blocksForGrouping);
 
+  console.log(
+    `[subject-grouping] Grouping ${topicBlocks.length} blocks into subjects (model: ${SUBJECT_GROUPING_MODEL})`
+  );
+
   try {
     const response = await intelligence.generateText(prompt, {
       expectJson: false,
       model: SUBJECT_GROUPING_MODEL,
     });
+
+    console.log(
+      `[subject-grouping] LLM response (${response.length} chars):\n${response.slice(0, 500)}${response.length > 500 ? '...' : ''}`
+    );
+
     const grouping = parseGroupingResponse(response, topicBlocks);
+
+    console.log(
+      `[subject-grouping] Parsed ${grouping.groups.length} groups: ${grouping.groups.map((g) => g.label).join(', ')}`
+    );
 
     const subjects: Subject[] = grouping.groups.map((group, index) => {
       const subjectId = `subject-${recordingId}-${index}`;
@@ -155,10 +168,18 @@ export async function groupTopicBlocksIntoSubjects(
       workDuration,
     };
   } catch (error) {
+    const err = error as Error;
+    const errorType = err.name || 'Error';
+    const errorMessage = err.message || String(err);
     console.error(
-      '[subject-grouping] LLM grouping failed, falling back to heuristic:',
-      error
+      `[subject-grouping] LLM grouping failed (${errorType}): ${errorMessage}`
     );
+    if (err.stack) {
+      console.error(
+        `[subject-grouping] Stack trace:`,
+        err.stack.split('\n').slice(0, 3).join('\n')
+      );
+    }
     return createFallbackGrouping(topicBlocks, recordingId);
   }
 }
@@ -269,10 +290,12 @@ function parseGroupingResponse(
   const groupRegex =
     /^Group\s+\d+:\s*label:\s*(.+?)\s*\|\s*blockIds:\s*\[(.+?)\]$/i;
 
+  let matchedLines = 0;
   for (const line of lines) {
     const match = line.match(groupRegex);
     if (!match) continue;
 
+    matchedLines++;
     const label = match[1].trim();
     const blockIdsStr = match[2].trim();
 
@@ -281,13 +304,22 @@ function parseGroupingResponse(
       .map((id) => id.trim().replace(/^["']|["']$/g, ''))
       .filter((id) => validBlockIds.has(id));
 
+    console.log(
+      `[subject-grouping] Parsed group "${label}": ${blockIds.length}/${blockIdsStr.split(',').length} valid block IDs`
+    );
+
     if (blockIds.length > 0 && label) {
       groups.push({ label, blockIds });
     }
   }
 
   if (groups.length === 0) {
-    throw new Error('No valid groups found in response');
+    console.error(
+      `[subject-grouping] Failed to parse any groups from ${lines.length} lines (${matchedLines} matched regex)`
+    );
+    throw new Error(
+      `No valid groups found in response. Matched ${matchedLines}/${lines.length} lines.`
+    );
   }
 
   return { groups };

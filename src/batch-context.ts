@@ -320,7 +320,7 @@ export async function processVideo(
                     topicBlocks,
                     repos,
                     publishing,
-                    { collectionName: outlineConfig.collectionName }
+                    { collectionName: outlineConfig.collectionName, format }
                   );
 
                   const outlineInfo: OutlineMetadata = {

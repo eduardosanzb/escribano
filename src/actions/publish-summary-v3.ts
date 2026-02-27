@@ -16,6 +16,7 @@ import { log } from '../pipeline/context.js';
 export interface PublishSummaryOptions {
   collectionName?: string;
   publish?: boolean;
+  format?: string;
 }
 
 export interface PublishedSummary {
@@ -88,7 +89,7 @@ export async function publishSummaryV3(
   }
 
   // 3. Build document title and content
-  const title = buildDocumentTitle(recording, topicBlocks);
+  const title = buildDocumentTitle(recording, topicBlocks, options.format);
   const documentContent = buildDocumentContent(recording, content, topicBlocks);
 
   // 4. Check for existing document (by title)
@@ -140,7 +141,8 @@ export async function publishSummaryV3(
  */
 function buildDocumentTitle(
   recording: { id: string; captured_at: string; duration: number },
-  topicBlocks: DbTopicBlock[]
+  topicBlocks: DbTopicBlock[],
+  format?: string
 ): string {
   const date = new Date(recording.captured_at);
   const dateStr = date.toISOString().split('T')[0];
@@ -150,7 +152,10 @@ function buildDocumentTitle(
   const activities = extractActivities(topicBlocks);
   const primaryActivity = activities[0] ?? 'Session';
 
-  return `[${dateStr} ${timeStr}] ${primaryActivity} (${formatDuration(recording.duration)})`;
+  // Append format if provided
+  const formatSuffix = format ? ` [${format}]` : '';
+
+  return `[${dateStr} ${timeStr}] ${primaryActivity} (${formatDuration(recording.duration)})${formatSuffix}`;
 }
 
 /**

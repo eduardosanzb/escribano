@@ -75,26 +75,24 @@ export async function generateArtifactV3(
   log('info', `[Artifact V3.1] Found ${topicBlocks.length} TopicBlocks`);
 
   const existingSubjects = repos.subjects.findByRecording(recordingId);
-  let groupingResult: SubjectGroupingResult;
-
   if (existingSubjects.length > 0) {
     log(
       'info',
-      `[Artifact V3.1] Found ${existingSubjects.length} existing subjects`
+      `[Artifact V3.1] Deleting ${existingSubjects.length} stale subjects, re-grouping...`
     );
-    groupingResult = await loadExistingSubjects(existingSubjects, repos);
-  } else {
-    log('info', '[Artifact V3.1] Grouping TopicBlocks into subjects...');
-    groupingResult = await step('subject grouping', () =>
-      groupTopicBlocksIntoSubjects(topicBlocks, intelligence, recordingId)
-    );
-
-    log(
-      'info',
-      `[Artifact V3.1] Saving ${groupingResult.subjects.length} subjects to database...`
-    );
-    saveSubjectsToDatabase(groupingResult.subjects, recordingId, repos);
+    repos.subjects.deleteByRecording(recordingId);
   }
+
+  log('info', '[Artifact V3.1] Grouping TopicBlocks into subjects...');
+  const groupingResult = await step('subject grouping', () =>
+    groupTopicBlocksIntoSubjects(topicBlocks, intelligence, recordingId)
+  );
+
+  log(
+    'info',
+    `[Artifact V3.1] Saving ${groupingResult.subjects.length} subjects to database...`
+  );
+  saveSubjectsToDatabase(groupingResult.subjects, recordingId, repos);
 
   for (const subject of groupingResult.subjects) {
     subject.apps = normalizeAppNames(subject.apps);

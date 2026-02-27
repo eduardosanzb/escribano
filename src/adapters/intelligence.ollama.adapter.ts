@@ -338,10 +338,15 @@ function loadClassifyPrompt(
 
 /**
  * Build VLM prompt for single image analysis.
- * Simple format without index tracking.
+ * Loads from prompts/vlm-single.md with fallback to inline.
  */
 function buildVLMSingleImagePrompt(): string {
-  return `Analyze this screenshot from a screen recording.
+  try {
+    const promptPath = join(process.cwd(), 'prompts', 'vlm-single.md');
+    return readFileSync(promptPath, 'utf-8');
+  } catch {
+    // Fallback inline prompt if file not found
+    return `Analyze this screenshot from a screen recording.
 
 Provide:
 - description: What's on screen? Be specific about content, text, and UI elements.
@@ -351,6 +356,7 @@ Provide:
 
 Output in this exact format:
 description: ... | activity: ... | apps: [...] | topics: [...]`;
+  }
 }
 
 /** Parsed VLM response for a single image */
@@ -597,7 +603,14 @@ async function extractTopicsWithOllama(
 
   if (textSamples.length === 0) return [];
 
-  const prompt = `Analyze these observations from a screen recording session and generate 1-3 descriptive topic labels.
+  let prompt: string;
+  try {
+    const promptPath = join(process.cwd(), 'prompts', 'topic-extract.md');
+    const template = readFileSync(promptPath, 'utf-8');
+    prompt = template.replace('{{OBSERVATIONS}}', textSamples.join('\n---\n'));
+  } catch {
+    // Fallback inline prompt if file not found
+    prompt = `Analyze these observations from a screen recording session and generate 1-3 descriptive topic labels.
 
 Observations:
 ${textSamples.join('\n---\n')}
@@ -610,6 +623,7 @@ Rules:
 - Be descriptive: "learning React hooks" not just "learning"
 - Focus on what the user is DOING, not just what's visible
 - Max 3 topics`;
+  }
 
   try {
     const result = await callOllama(prompt, config, {
@@ -629,7 +643,11 @@ async function generateTextWithOllama(
   config: IntelligenceConfig,
   options?: { model?: string; expectJson?: boolean }
 ): Promise<string> {
-  const model = options?.model || config.generationModel || config.model;
+  const model =
+    options?.model ||
+    process.env.ESCRIBANO_LLM_MODEL ||
+    config.generationModel ||
+    config.model;
   const expectJson = options?.expectJson ?? false;
 
   try {
@@ -649,6 +667,35 @@ async function generateTextWithOllama(
     console.error('Text generation failed:', (error as Error).message);
     throw error;
   }
+}
+
+function extractJsonFromThinking(thinking: string): object | null {
+  const jsonCodeBlockRegex = /```json\s*([\s\S]*?)```/g;
+  let match: RegExpExecArray | null = jsonCodeBlockRegex.exec(thinking);
+  while (match !== null) {
+    try {
+      return JSON.parse(match[1].trim());
+    } catch {
+      match = jsonCodeBlockRegex.exec(thinking);
+    }
+  }
+
+  const jsonObjectRegex = /\{[\s\S]*?"\w+"[\s\S]*?\}/g;
+  match = jsonObjectRegex.exec(thinking);
+  while (match !== null) {
+    try {
+      const parsed = JSON.parse(match[0]);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      match = jsonObjectRegex.exec(thinking);
+      continue;
+    }
+    match = jsonObjectRegex.exec(thinking);
+  }
+
+  return null;
 }
 
 async function callOllama(
@@ -709,7 +756,7 @@ async function callOllama(
             {
               role: 'system',
               content: options.expectJson
-                ? 'You are a JSON-only output system. Output ONLY valid JSON, no other text.'
+                ? 'You are a helpful assistant. Respond only with the requested JSON object, no other text.'
                 : 'You are a helpful assistant that generates high-quality markdown documentation.',
             },
             {
@@ -770,10 +817,38 @@ async function callOllama(
       }
 
       if (options.expectJson) {
-        return JSON.parse(data.message.content);
+        const content = data.message.content as string;
+        const thinking = data.message.thinking as string | undefined;
+
+        try {
+          return JSON.parse(content);
+        } catch {
+          if (thinking) {
+            const extracted = extractJsonFromThinking(thinking);
+            if (extracted) {
+              debugLog(`[${requestId}] Extracted JSON from thinking block`);
+              return extracted;
+            }
+          }
+          throw new Error(
+            `Failed to parse JSON response: ${content.slice(0, 100)}`
+          );
+        }
       }
 
-      return data.message.content as string;
+      const content = data.message.content as string;
+      const thinking = data.message.thinking as string | undefined;
+
+      if (!content || content.length < 20) {
+        if (thinking && thinking.length > content.length) {
+          debugLog(
+            `[${requestId}] Using thinking content as fallback (${thinking.length} chars)`
+          );
+          return thinking;
+        }
+      }
+
+      return content;
     } catch (error) {
       lastError = error as Error;
 

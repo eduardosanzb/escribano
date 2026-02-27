@@ -32,17 +32,6 @@ export function debugLog(...args: unknown[]): void {
   }
 }
 
-// Zod schema for VLM batch response validation
-const vlmBatchItemSchema = z.object({
-  index: z.number(),
-  description: z.string(),
-  activity: z.string(),
-  apps: z.array(z.string()).default([]),
-  topics: z.array(z.string()).default([]),
-});
-
-const vlmBatchResponseSchema = z.array(vlmBatchItemSchema);
-
 /**
  * Helper to convert Zod schema to Ollama-compatible JSON schema
  */

@@ -237,6 +237,11 @@ function aggregateContextFromObservations(observations: DbObservation[]): {
         // Invalid JSON, skip
       }
     }
+    if (obs.vlm_description) {
+      const extracted = extractContext(obs.vlm_description);
+      for (const app of extracted.apps) appsSet.add(app);
+      for (const topic of extracted.topics) topicsSet.add(topic);
+    }
   }
 
   return {

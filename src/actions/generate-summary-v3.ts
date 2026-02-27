@@ -207,7 +207,6 @@ async function generateLlmSummary(
   // Build activity timeline
   const activityTimeline = sections
     .map((section, i) => {
-      const startMin = Math.round(section.startTime / 60);
       const durationMin = Math.round(section.duration / 60);
       const startTimeStr = `${Math.floor(section.startTime / 60)}:${Math.floor(
         section.startTime % 60

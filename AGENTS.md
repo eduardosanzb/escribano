@@ -57,10 +57,17 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
+| `ESCRIBANO_FRAME_INTERVAL` | Seconds between extracted frames | `2` |
+| `ESCRIBANO_FRAME_WIDTH` | Frame extraction width in pixels | `1920` |
+| `ESCRIBANO_SCENE_THRESHOLD` | Scene change detection threshold (0-1) | `0.4` |
+| `ESCRIBANO_SCENE_MIN_INTERVAL` | Minimum seconds between scene changes | `2` |
 | `ESCRIBANO_VERBOSE` | Enable verbose pipeline logging | `false` |
 | `ESCRIBANO_DEBUG_OLLAMA` | Debug Ollama request/response logging (includes full prompt) | `false` |
 | `ESCRIBANO_DEBUG_VLM` | Debug VLM processing output | `false` |
 | `ESCRIBANO_SKIP_LLM` | Skip LLM summary, use template fallback | `false` |
+| `ESCRIBANO_OUTLINE_URL` | Outline wiki base URL (for publishing) | — |
+| `ESCRIBANO_OUTLINE_TOKEN` | Outline API token | — |
+| `ESCRIBANO_OUTLINE_COLLECTION` | Outline collection name | `Escribano Sessions` |
 | `OLLAMA_NUM_PARALLEL` | Ollama server inference slots (configure Ollama itself) | `1` |
 
 ### Performance Notes
@@ -176,11 +183,18 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
    ├─ Create TopicBlock with full context in classification JSON
    └─ Recording marked as 'processed'
 
-7. Summary Generation
-   ├─ Read TopicBlocks + observations
-   ├─ Build prompt from template (prompts/summary-v3.md)
-   ├─ LLM call (qwen3:32b) → narrative summary
-   └─ Save markdown to ~/.escribano/artifacts/
+7. Artifact Generation
+   ├─ Load TopicBlocks for recording
+   ├─ Subject grouping via LLM (or reuse existing subjects)
+   ├─ Build prompt from format template (card/standup/narrative)
+   ├─ LLM call (qwen3:32b) → formatted artifact
+   ├─ Save markdown to ~/.escribano/artifacts/
+   └─ Link artifact to subjects via artifact_subjects join table
+
+8. Outline Publishing (optional, if configured)
+   ├─ Publish artifact to Outline wiki
+   ├─ Update recording metadata with outline_formats[]
+   └─ Rebuild global index showing all format links per recording
 ```
 
 ## Activity Types (V3 Per-Segment)

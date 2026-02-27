@@ -297,5 +297,5 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 | `IntelligenceService` | `intelligence.mlx.adapter.ts` | VLM inference (MLX-VLM, frame analysis) |
 | `IntelligenceService` | `intelligence.ollama.adapter.ts` | LLM inference (summary generation) |
 | `EmbeddingService` | `embedding.ollama.adapter.ts` | **(deprecated in V3, kept for future)** |
+| `PublishingService` | `publishing.outline.adapter.ts` | Outline wiki publishing |
 | `StorageService` | `storage.fs.adapter.ts` | **(deprecated in V3, V1 only)** |
-| `PublishingService` | `publishing.outline.adapter.ts` | **(deprecated in V3, V1 only)** |

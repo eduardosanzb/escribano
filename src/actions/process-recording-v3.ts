@@ -30,7 +30,6 @@ import {
 import { log, step } from '../pipeline/context.js';
 import {
   calculateRequiredTimestamps,
-  getSamplingStats,
   type InputFrame,
 } from '../services/frame-sampling.js';
 import { describeFrames } from '../services/vlm-service.js';

@@ -5,25 +5,14 @@
  */
 
 import { z } from 'zod';
+import { type Recording, recordingSchema } from './domain/recording.schema.js';
 
 // =============================================================================
 // RECORDING
 // =============================================================================
 
-export const recordingSchema = z.object({
-  id: z.string(),
-  source: z.object({
-    type: z.enum(['cap', 'meetily', 'raw']),
-    originalPath: z.string(),
-    metadata: z.record(z.string(), z.any()).optional(),
-  }),
-  videoPath: z.string().nullable(),
-  audioMicPath: z.string().nullable(),
-  audioSystemPath: z.string().nullable(),
-  duration: z.number(),
-  capturedAt: z.date(),
-});
-export type Recording = z.infer<typeof recordingSchema>;
+export { recordingSchema };
+export type { Recording };
 
 // =============================================================================
 // TRANSCRIPT
@@ -519,13 +508,6 @@ export type IntelligenceConfig = z.infer<typeof intelligenceConfigSchema>;
 
 export const DEFAULT_INTELLIGENCE_CONFIG: IntelligenceConfig =
   intelligenceConfigSchema.parse({});
-
-const artifactConfigSchema = z.object({
-  parallelGeneration: z.boolean().default(false),
-  maxParallel: z.number().default(3),
-  maxScreenshots: z.number().default(10),
-});
-type ArtifactConfig = z.infer<typeof artifactConfigSchema>;
 
 export const outlineConfigSchema = z.object({
   url: z.string().url(),

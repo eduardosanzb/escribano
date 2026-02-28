@@ -1,0 +1,61 @@
+{{ define "main" }}
+
+<div class="tile-strip"></div>
+
+<nav style="top:5px;">
+  <a href="/" class="nav-logo">Escrib<span>a</span>no</a>
+  <ul class="nav-links">
+    <li><a href="/">Home</a></li>
+    <li><a href="/blog/">Blog</a></li>
+    <li>
+      <button id="theme-toggle" class="nav-theme-toggle" aria-label="Toggle dark mode">
+        <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+        <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+    </li>
+    <li><a href="https://github.com/eduardosanzb/escribano" class="nav-cta">GitHub</a></li>
+  </ul>
+</nav>
+
+<article class="post">
+  <header class="post-header">
+    <div class="post-header-inner">
+      <a href="/blog/" class="post-back">← Back to blog</a>
+      <div class="post-meta">
+        <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "2 January 2006" }}</time>
+        <span class="post-reading-time">{{ .ReadingTime }} min read</span>
+      </div>
+      <h1>{{ .Title }}</h1>
+      <p class="post-description">{{ .Description }}</p>
+    </div>
+  </header>
+
+  <div class="post-body">
+    <div class="prose">
+      {{ .Content }}
+    </div>
+  </div>
+</article>
+
+<footer>
+  <div>
+    <div class="footer-logo">Escrib<span>a</span>no</div>
+    <div class="footer-tagline">Your AI scribe for deep work</div>
+  </div>
+  <div class="footer-right">
+    <a href="#">Privacy Policy</a> · <a href="#">Terms</a> · <a href="#">Contact</a><br>
+    Made with care in Europe · No VC funding · © {{ now.Year }} Escribano
+  </div>
+</footer>
+
+<div class="gdpr-strip">
+  <div class="gdpr-dot"></div>
+  All data processed in accordance with GDPR. European infrastructure only. We do not train on your sessions.
+</div>
+
+{{ end }}

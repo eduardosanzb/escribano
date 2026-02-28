@@ -18,6 +18,8 @@ title = "Escribano — Your AI Scribe for Deep Work"
 
 [outputs]
   home = ["HTML"]
+  section = ["HTML"]
+  page = ["HTML"]
 
 [sitemap]
   changefreq = "weekly"

@@ -2,9 +2,12 @@
  * Intelligence Adapter Tests
  */
 
+import { fetch as undiciFetch } from 'undici';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IntelligenceConfig, Transcript } from '../0_types.js';
 import { createOllamaIntelligenceService } from '../adapters/intelligence.ollama.adapter.js';
+
+const mockFetch = vi.mocked(undiciFetch);
 
 // Mock node:fs
 vi.mock('node:fs', () => ({
@@ -17,6 +20,12 @@ vi.mock('node:fs', () => ({
     }
     return '';
   }),
+}));
+
+// Mock undici
+vi.mock('undici', () => ({
+  Agent: vi.fn(),
+  fetch: vi.fn(),
 }));
 
 const mockConfig: IntelligenceConfig = {
@@ -76,8 +85,7 @@ describe('IntelligenceService', () => {
     // Mock response for single image VLM calls (sequential processing)
     // The API returns a pipe-delimited format: description | activity | apps | topics
     // Apps and topics are comma-separated lists (not JSON arrays)
-    global.fetch = vi
-      .fn()
+    mockFetch
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -88,7 +96,7 @@ describe('IntelligenceService', () => {
           done: true,
           done_reason: 'stop',
         }),
-      } as unknown as typeof fetch)
+      } as any)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -99,7 +107,7 @@ describe('IntelligenceService', () => {
           done: true,
           done_reason: 'stop',
         }),
-      } as unknown as typeof fetch);
+      } as any);
 
     const service = createOllamaIntelligenceService(mockConfig);
     const result = await service.describeImages([
@@ -133,10 +141,10 @@ describe('IntelligenceService', () => {
       done_reason: 'stop',
     });
 
-    global.fetch = vi.fn().mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: true,
       json: async () => JSON.parse(mockResponse),
-    } as unknown as typeof fetch);
+    } as any);
 
     const service = createOllamaIntelligenceService(mockConfig);
     const result = await service.classify(mockTranscript);
@@ -150,7 +158,7 @@ describe('IntelligenceService', () => {
 
   it('should retry on API failures', async () => {
     let attempts = 0;
-    global.fetch = vi.fn().mockImplementation(async () => {
+    mockFetch.mockImplementation(async () => {
       attempts++;
       if (attempts < 3) {
         throw new Error('API timeout');
@@ -170,7 +178,7 @@ describe('IntelligenceService', () => {
           done: true,
           done_reason: 'stop',
         }),
-      };
+      } as any;
     });
 
     const service = createOllamaIntelligenceService(mockConfig);
@@ -181,11 +189,11 @@ describe('IntelligenceService', () => {
   });
 
   it('should handle fetch errors correctly', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    mockFetch.mockResolvedValue({
       ok: false,
       status: 500,
       statusText: 'Internal Server Error',
-    } as unknown as typeof fetch);
+    } as any);
 
     const service = createOllamaIntelligenceService(mockConfig);
 

@@ -16,6 +16,7 @@ import { log } from '../pipeline/context.js';
 export interface PublishSummaryOptions {
   collectionName?: string;
   publish?: boolean;
+  format?: string;
 }
 
 export interface PublishedSummary {
@@ -88,7 +89,7 @@ export async function publishSummaryV3(
   }
 
   // 3. Build document title and content
-  const title = buildDocumentTitle(recording, topicBlocks);
+  const title = buildDocumentTitle(recording, topicBlocks, options.format);
   const documentContent = buildDocumentContent(recording, content, topicBlocks);
 
   // 4. Check for existing document (by title)
@@ -140,7 +141,8 @@ export async function publishSummaryV3(
  */
 function buildDocumentTitle(
   recording: { id: string; captured_at: string; duration: number },
-  topicBlocks: DbTopicBlock[]
+  topicBlocks: DbTopicBlock[],
+  format?: string
 ): string {
   const date = new Date(recording.captured_at);
   const dateStr = date.toISOString().split('T')[0];
@@ -150,7 +152,10 @@ function buildDocumentTitle(
   const activities = extractActivities(topicBlocks);
   const primaryActivity = activities[0] ?? 'Session';
 
-  return `[${dateStr} ${timeStr}] ${primaryActivity} (${formatDuration(recording.duration)})`;
+  // Append format if provided
+  const formatSuffix = format ? ` [${format}]` : '';
+
+  return `[${dateStr} ${timeStr}] ${primaryActivity} (${formatDuration(recording.duration)})${formatSuffix}`;
 }
 
 /**
@@ -303,7 +308,8 @@ function hashContent(content: string): string {
 export function updateRecordingOutlineMetadata(
   recordingId: string,
   outlineInfo: OutlineMetadata,
-  repos: Repositories
+  repos: Repositories,
+  format?: string
 ): void {
   const recording = repos.recordings.findById(recordingId);
   if (!recording) {
@@ -315,18 +321,35 @@ export function updateRecordingOutlineMetadata(
     ? JSON.parse(recording.source_metadata)
     : {};
 
-  // Update with outline info
-  const updatedMetadata = {
-    ...currentMetadata,
-    outline: outlineInfo,
-  };
+  // Store format-specific metadata
+  if (format) {
+    // Initialize formats array if needed
+    if (!currentMetadata.outline_formats) {
+      currentMetadata.outline_formats = [];
+    }
 
-  repos.recordings.updateMetadata(recordingId, JSON.stringify(updatedMetadata));
-  log('info', `[Publish V3] Updated metadata for ${recordingId}`);
+    // Remove any existing entry for this format and add the new one
+    currentMetadata.outline_formats = currentMetadata.outline_formats.filter(
+      (f: any) => f.format !== format
+    );
+    currentMetadata.outline_formats.push({
+      format,
+      ...outlineInfo,
+    });
+  } else {
+    // Backward compatibility: store as single outline object if no format specified
+    currentMetadata.outline = outlineInfo;
+  }
+
+  repos.recordings.updateMetadata(recordingId, JSON.stringify(currentMetadata));
+  log(
+    'info',
+    `[Publish V3] Updated metadata for ${recordingId}${format ? ` (${format})` : ''}`
+  );
 }
 
 /**
- * Get current Outline metadata from recording if it exists.
+ * Get current Outline metadata from recording if it exists (legacy single-outline format).
  */
 export function getOutlineMetadata(
   recording: DbRecording
@@ -342,13 +365,56 @@ export function getOutlineMetadata(
 }
 
 /**
- * Check if content has changed since last publish.
+ * Get Outline metadata for a specific format.
+ * Checks outline_formats[] first, falls back to legacy outline for backward compat.
+ */
+export function getOutlineMetadataForFormat(
+  recording: DbRecording,
+  format?: string
+): OutlineMetadata | null {
+  try {
+    const metadata = recording.source_metadata
+      ? JSON.parse(recording.source_metadata)
+      : {};
+
+    // Check multi-format structure first
+    if (
+      format &&
+      metadata.outline_formats &&
+      Array.isArray(metadata.outline_formats)
+    ) {
+      const formatEntry = metadata.outline_formats.find(
+        (f: any) => f.format === format
+      );
+      if (formatEntry) {
+        return {
+          url: formatEntry.url,
+          documentId: formatEntry.documentId,
+          collectionId: formatEntry.collectionId,
+          publishedAt: formatEntry.publishedAt,
+          contentHash: formatEntry.contentHash,
+          error: formatEntry.error,
+          failedAt: formatEntry.failedAt,
+        };
+      }
+    }
+
+    // Fallback to legacy single-outline
+    return metadata.outline ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if content has changed since last publish for a specific format.
  */
 export function hasContentChanged(
   recording: DbRecording,
-  currentContent: string
+  currentContent: string,
+  format?: string
 ): boolean {
-  const outlineMeta = getOutlineMetadata(recording);
+  const outlineMeta = getOutlineMetadataForFormat(recording, format);
   if (!outlineMeta) return true;
 
   const currentHash = hashContent(currentContent);

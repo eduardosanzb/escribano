@@ -232,9 +232,13 @@ app.get('/api/recordings/overview', (req, res) => {
           r.status, 
           r.source_type,
           r.video_path,
-          r.source_metadata
+          r.source_metadata,
+          (SELECT MAX(pr.started_at) FROM processing_runs pr WHERE pr.recording_id = r.id) as last_run_at
          FROM recordings r
-         ORDER BY r.captured_at DESC
+         ORDER BY COALESCE(
+           (SELECT MAX(pr.started_at) FROM processing_runs pr WHERE pr.recording_id = r.id),
+           r.captured_at
+         ) DESC
          LIMIT 50`
       )
       .all();
@@ -278,8 +282,40 @@ app.get('/api/recordings/overview', (req, res) => {
         } catch {}
       }
 
-      // Find summary file
+      // Get artifacts from database
+      const artifacts = db
+        .prepare(
+          `SELECT id, type, format, created_at
+           FROM artifacts 
+           WHERE recording_id = ?
+           ORDER BY created_at DESC`
+        )
+        .all(rec.id);
+
+      // Get artifact_subjects mapping
+      const artifactSubjects = {};
+      for (const artifact of artifacts) {
+        const links = db
+          .prepare(
+            `SELECT subject_id FROM artifact_subjects WHERE artifact_id = ?`
+          )
+          .all(artifact.id);
+        artifactSubjects[artifact.id] = links.map(l => l.subject_id);
+      }
+
+      // Count artifacts by type
+      const artifactCounts = { total: artifacts.length, summary: 0, card: 0, standup: 0, narrative: 0 };
+      for (const a of artifacts) {
+        if (artifactCounts[a.type] !== undefined) {
+          artifactCounts[a.type]++;
+        }
+      }
+
+      // Find summary file (legacy fallback)
       const summaryFile = findSummaryFile(rec.id);
+
+      // Determine if summary is present (DB artifacts OR file fallback)
+      const summaryPresent = artifactCounts.summary > 0 || !!summaryFile;
 
       // Calculate real-time factor
       const procTime = (runStats?.total_ms || 0) / 1000;
@@ -291,6 +327,7 @@ app.get('/api/recordings/overview', (req, res) => {
       return {
         id: rec.id,
         captured_at: rec.captured_at,
+        last_run_at: rec.last_run_at,
         duration: rec.duration,
         status: rec.status,
         source_type: rec.source_type,
@@ -304,7 +341,18 @@ app.get('/api/recordings/overview', (req, res) => {
         summary: {
           path: summaryFile,
           outline_url: outlineUrl
-        }
+        },
+        artifacts: artifacts.map(a => ({
+          id: a.id,
+          type: a.type,
+          format: a.format,
+          created_at: a.created_at,
+          outline_url: outlineUrl,
+          subject_ids: artifactSubjects[a.id] || []
+        })),
+        artifact_counts: artifactCounts,
+        summary_present: summaryPresent,
+        outline_url: outlineUrl
       };
     });
 
@@ -413,6 +461,81 @@ app.get('/api/recording/:id/detail', (req, res) => {
       } catch {}
     }
 
+    // Get subjects for this recording
+    const subjects = db
+      .prepare(
+        `SELECT 
+          id,
+          label,
+          is_personal,
+          duration,
+          activity_breakdown,
+          metadata
+         FROM subjects 
+         WHERE recording_id = ?
+         ORDER BY created_at ASC`
+      )
+      .all(id);
+
+    // Parse subjects data
+    const parsedSubjects = subjects.map(s => {
+      let activityBreakdown = {};
+      let apps = [];
+      try {
+        activityBreakdown = s.activity_breakdown ? JSON.parse(s.activity_breakdown) : {};
+      } catch {}
+      try {
+        const meta = s.metadata ? JSON.parse(s.metadata) : {};
+        apps = meta.apps || [];
+      } catch {}
+      return {
+        id: s.id,
+        label: s.label,
+        is_personal: s.is_personal === 1,
+        duration: s.duration,
+        activity_breakdown: activityBreakdown,
+        apps: apps
+      };
+    });
+
+    // Get artifacts from database
+    const dbArtifacts = db
+      .prepare(
+        `SELECT id, type, format, content, created_at
+         FROM artifacts 
+         WHERE recording_id = ?
+         ORDER BY created_at DESC`
+      )
+      .all(id);
+
+    // Get artifact_subjects mapping
+    const artifactsWithSubjects = dbArtifacts.map(a => {
+      const links = db
+        .prepare(
+          `SELECT subject_id FROM artifact_subjects WHERE artifact_id = ?`
+        )
+        .all(a.id);
+      return {
+        id: a.id,
+        type: a.type,
+        format: a.format,
+        content: a.content,
+        created_at: a.created_at,
+        outline_url: outlineUrl,
+        subject_ids: links.map(l => l.subject_id)
+      };
+    });
+
+    // Count artifacts by type
+    const artifactCounts = { total: dbArtifacts.length, summary: 0, card: 0, standup: 0, narrative: 0 };
+    for (const a of dbArtifacts) {
+      if (artifactCounts[a.type] !== undefined) {
+        artifactCounts[a.type]++;
+      }
+    }
+
+    const summaryPresent = artifactCounts.summary > 0 || !!summaryContent;
+
     res.json({
       recording: {
         id: recording.id,
@@ -431,7 +554,12 @@ app.get('/api/recording/:id/detail', (req, res) => {
         path: summaryFile,
         outline_url: outlineUrl
       },
-      frames: parsedFrames
+      subjects: parsedSubjects,
+      frames: parsedFrames,
+      artifacts: artifactsWithSubjects,
+      artifact_counts: artifactCounts,
+      summary_present: summaryPresent,
+      outline_url: outlineUrl
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

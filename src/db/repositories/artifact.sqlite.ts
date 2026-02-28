@@ -28,16 +28,24 @@ export function createSqliteArtifactRepository(
       WHERE source_context_ids LIKE ?
       ORDER BY created_at DESC
     `),
+    findByRecording: db.prepare(`
+      SELECT * FROM artifacts 
+      WHERE recording_id = ?
+      ORDER BY created_at DESC
+    `),
     insert: db.prepare(`
       INSERT INTO artifacts (
-        id, type, content, format, source_block_ids, source_context_ids, created_at, updated_at
+        id, recording_id, type, content, format, source_block_ids, source_context_ids, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     update: db.prepare(`
       UPDATE artifacts SET content = ?, updated_at = ? WHERE id = ?
     `),
     delete: db.prepare('DELETE FROM artifacts WHERE id = ?'),
+    deleteByRecording: db.prepare(
+      'DELETE FROM artifacts WHERE recording_id = ?'
+    ),
   };
 
   return {
@@ -51,21 +59,22 @@ export function createSqliteArtifactRepository(
     },
 
     findByBlock(blockId: string): DbArtifact[] {
-      // NOTE: Matches substrings in JSON array string.
-      // TODO: Use JSON_EACH for more robust matching.
       return stmts.findByBlock.all(`%${blockId}%`) as DbArtifact[];
     },
 
     findByContext(contextId: string): DbArtifact[] {
-      // NOTE: Matches substrings in JSON array string.
-      // TODO: Use JSON_EACH for more robust matching.
       return stmts.findByContext.all(`%${contextId}%`) as DbArtifact[];
+    },
+
+    findByRecording(recordingId: string): DbArtifact[] {
+      return stmts.findByRecording.all(recordingId) as DbArtifact[];
     },
 
     save(artifact: DbArtifactInsert): void {
       const now = nowISO();
       stmts.insert.run(
         artifact.id,
+        artifact.recording_id ?? null,
         artifact.type,
         artifact.content,
         artifact.format,
@@ -82,6 +91,10 @@ export function createSqliteArtifactRepository(
 
     delete(id: string): void {
       stmts.delete.run(id);
+    },
+
+    deleteByRecording(recordingId: string): void {
+      stmts.deleteByRecording.run(recordingId);
     },
   };
 }

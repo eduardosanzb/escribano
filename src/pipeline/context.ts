@@ -15,7 +15,7 @@ export interface StepResult {
 export interface PipelineState {
   recordingId: string;
   runId: string;
-  runType: 'initial' | 'resume' | 'force';
+  runType: 'initial' | 'resume' | 'force' | 'artifact';
   steps: StepResult[];
   verbose: boolean;
   startTime: number;
@@ -34,7 +34,7 @@ export function getResourceTracker(): ResourceTracker | null {
 
 export function withPipeline<T>(
   recordingId: string,
-  runType: 'initial' | 'resume' | 'force',
+  runType: 'initial' | 'resume' | 'force' | 'artifact',
   metadata: Record<string, unknown> | undefined,
   fn: () => Promise<T>
 ): Promise<T> {

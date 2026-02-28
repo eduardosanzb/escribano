@@ -18,6 +18,7 @@ import {
   createSqliteContextRepository,
   createSqliteObservationRepository,
   createSqliteRecordingRepository,
+  createSqliteSubjectRepository,
   createSqliteTopicBlockRepository,
 } from './repositories/index.js';
 
@@ -71,6 +72,7 @@ export function getRepositories(): Repositories {
     topicBlocks: createSqliteTopicBlockRepository(dbInstance),
     artifacts: createSqliteArtifactRepository(dbInstance),
     clusters: createSqliteClusterRepository(dbInstance),
+    subjects: createSqliteSubjectRepository(dbInstance),
     stats: createStatsRepository(dbInstance),
   };
 
@@ -94,6 +96,7 @@ export function createTestRepositories(): Repositories & {
     topicBlocks: createSqliteTopicBlockRepository(testDb),
     artifacts: createSqliteArtifactRepository(testDb),
     clusters: createSqliteClusterRepository(testDb),
+    subjects: createSqliteSubjectRepository(testDb),
     stats: createStatsRepository(testDb),
     cleanup: () => testDb.close(),
   };

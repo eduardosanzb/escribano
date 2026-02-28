@@ -6,6 +6,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { z } from 'zod';
 import {
   type ArtifactType,
@@ -327,10 +328,15 @@ function loadClassifyPrompt(
 
 /**
  * Build VLM prompt for single image analysis.
- * Simple format without index tracking.
+ * Loads from prompts/vlm-single.md with fallback to inline.
  */
 function buildVLMSingleImagePrompt(): string {
-  return `Analyze this screenshot from a screen recording.
+  try {
+    const promptPath = join(process.cwd(), 'prompts', 'vlm-single.md');
+    return readFileSync(promptPath, 'utf-8');
+  } catch {
+    // Fallback inline prompt if file not found
+    return `Analyze this screenshot from a screen recording.
 
 Provide:
 - description: What's on screen? Be specific about content, text, and UI elements.
@@ -340,6 +346,7 @@ Provide:
 
 Output in this exact format:
 description: ... | activity: ... | apps: [...] | topics: [...]`;
+  }
 }
 
 /** Parsed VLM response for a single image */
@@ -475,9 +482,16 @@ async function describeImagesWithOllama(
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        const response = await fetch(endpoint, {
+        // Custom agent with extended headers timeout to prevent UND_ERR_HEADERS_TIMEOUT
+        const agent = new Agent({
+          headersTimeout: timeout,
+          connectTimeout: timeout,
+        });
+
+        const response = await undiciFetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          dispatcher: agent,
           body: JSON.stringify({
             model,
             messages: [
@@ -505,7 +519,10 @@ async function describeImagesWithOllama(
           );
         }
 
-        const data = await response.json();
+        const data = (await response.json()) as {
+          message?: { content: string };
+          response?: string;
+        };
         debugLog('[VLM] Response data keys:', Object.keys(data).join(', '));
         const content = data.message?.content || data.response || '';
         debugLog('[VLM] Raw content length:', content.length);
@@ -586,7 +603,14 @@ async function extractTopicsWithOllama(
 
   if (textSamples.length === 0) return [];
 
-  const prompt = `Analyze these observations from a screen recording session and generate 1-3 descriptive topic labels.
+  let prompt: string;
+  try {
+    const promptPath = join(process.cwd(), 'prompts', 'topic-extract.md');
+    const template = readFileSync(promptPath, 'utf-8');
+    prompt = template.replace('{{OBSERVATIONS}}', textSamples.join('\n---\n'));
+  } catch {
+    // Fallback inline prompt if file not found
+    prompt = `Analyze these observations from a screen recording session and generate 1-3 descriptive topic labels.
 
 Observations:
 ${textSamples.join('\n---\n')}
@@ -599,6 +623,7 @@ Rules:
 - Be descriptive: "learning React hooks" not just "learning"
 - Focus on what the user is DOING, not just what's visible
 - Max 3 topics`;
+  }
 
   try {
     const result = await callOllama(prompt, config, {
@@ -616,15 +641,26 @@ Rules:
 async function generateTextWithOllama(
   prompt: string,
   config: IntelligenceConfig,
-  options?: { model?: string; expectJson?: boolean }
+  options?: {
+    model?: string;
+    expectJson?: boolean;
+    numPredict?: number;
+    think?: boolean;
+  }
 ): Promise<string> {
-  const model = options?.model || config.generationModel || config.model;
+  const model =
+    options?.model ||
+    process.env.ESCRIBANO_LLM_MODEL ||
+    config.generationModel ||
+    config.model;
   const expectJson = options?.expectJson ?? false;
 
   try {
     const result = await callOllama(prompt, config, {
       expectJson,
       model,
+      num_predict: options?.numPredict,
+      think: options?.think,
     });
 
     // If expectJson, result might be an object - stringify it
@@ -638,6 +674,35 @@ async function generateTextWithOllama(
     console.error('Text generation failed:', (error as Error).message);
     throw error;
   }
+}
+
+function extractJsonFromThinking(thinking: string): object | null {
+  const jsonCodeBlockRegex = /```json\s*([\s\S]*?)```/g;
+  let match: RegExpExecArray | null = jsonCodeBlockRegex.exec(thinking);
+  while (match !== null) {
+    try {
+      return JSON.parse(match[1].trim());
+    } catch {
+      match = jsonCodeBlockRegex.exec(thinking);
+    }
+  }
+
+  const jsonObjectRegex = /\{[\s\S]*?"\w+"[\s\S]*?\}/g;
+  match = jsonObjectRegex.exec(thinking);
+  while (match !== null) {
+    try {
+      const parsed = JSON.parse(match[0]);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      match = jsonObjectRegex.exec(thinking);
+      continue;
+    }
+    match = jsonObjectRegex.exec(thinking);
+  }
+
+  return null;
 }
 
 async function callOllama(
@@ -675,7 +740,9 @@ async function callOllama(
     `  Prompt: ${prompt.length} chars (~${Math.ceil(prompt.length / 4)} tokens)`
   );
   debugLog(`  Context: ${contextSize}, Timeout: ${timeout}ms`);
+  debugLog(`  Thinking: ${options.think ? 'enabled' : 'disabled'}`);
   debugLog(`  Expect JSON: ${options.expectJson}`);
+  debugLog(`  Prompt:\n${prompt}`);
 
   let lastError: Error | null = null;
 
@@ -687,18 +754,26 @@ async function callOllama(
 
       debugLog(`[${requestId}] Attempt ${attempt}/${maxRetries}...`);
 
-      const response = await fetch(endpoint, {
+      // Custom agent with extended headers timeout to prevent UND_ERR_HEADERS_TIMEOUT
+      // when models take a long time to generate the first token (thinking mode)
+      const agent = new Agent({
+        headersTimeout: timeout,
+        connectTimeout: timeout,
+      });
+
+      const response = await undiciFetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        dispatcher: agent,
         body: JSON.stringify({
           model: options.model,
           messages: [
             {
               role: 'system',
               content: options.expectJson
-                ? 'You are a JSON-only output system. Output ONLY valid JSON, no other text.'
+                ? 'You are a helpful assistant. Respond only with the requested JSON object, no other text.'
                 : 'You are a helpful assistant that generates high-quality markdown documentation.',
             },
             {
@@ -732,7 +807,16 @@ async function callOllama(
         );
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as {
+        eval_count?: number;
+        prompt_eval_count?: number;
+        done?: boolean;
+        done_reason?: string;
+        message: {
+          content: string;
+          thinking?: string;
+        };
+      };
 
       debugLog(
         `[${requestId}] Response received in ${Date.now() - attemptStart}ms`,
@@ -759,24 +843,52 @@ async function callOllama(
       }
 
       if (options.expectJson) {
-        return JSON.parse(data.message.content);
+        const content = data.message.content as string;
+        const thinking = data.message.thinking as string | undefined;
+
+        try {
+          return JSON.parse(content);
+        } catch {
+          if (thinking) {
+            const extracted = extractJsonFromThinking(thinking);
+            if (extracted) {
+              debugLog(`[${requestId}] Extracted JSON from thinking block`);
+              return extracted;
+            }
+          }
+          throw new Error(
+            `Failed to parse JSON response: ${content.slice(0, 100)}`
+          );
+        }
       }
 
-      return data.message.content as string;
+      const content = data.message.content as string;
+      const thinking = data.message.thinking as string | undefined;
+
+      if (!content || content.length < 20) {
+        if (thinking && thinking.length > content.length) {
+          debugLog(
+            `[${requestId}] Using thinking content as fallback (${thinking.length} chars)`
+          );
+          return thinking;
+        }
+      }
+
+      return content;
     } catch (error) {
       lastError = error as Error;
 
       if (error instanceof Error && error.name === 'AbortError') {
-        console.log(
-          `Attempt ${attempt}/${maxRetries}: Request timed out after ${Date.now() - attemptStart}ms, retrying...`
+        console.error(
+          `[Ollama] [${requestId}] Attempt ${attempt}/${maxRetries}: Request timed out after ${Date.now() - attemptStart}ms, retrying...`
         );
         debugLog(`[${requestId}] Timeout after ${Date.now() - attemptStart}ms`);
       } else {
-        console.log(
-          `Attempt ${attempt}/${maxRetries}: Request failed, retrying...`
+        const errorMsg = lastError?.message || String(lastError);
+        console.error(
+          `[Ollama] [${requestId}] Attempt ${attempt}/${maxRetries}: Request failed: ${errorMsg} (retrying...)`
         );
-        console.log('  Error:', lastError.message);
-        debugLog(`[${requestId}] Error:`, lastError.message);
+        debugLog(`[${requestId}] Error:`, lastError);
       }
 
       if (attempt < maxRetries) {
@@ -786,6 +898,9 @@ async function callOllama(
   }
 
   debugLog(`[${requestId}] Failed after ${maxRetries} retries`);
+  console.error(
+    `[Ollama] [${requestId}] All ${maxRetries} attempts failed: ${lastError?.message}`
+  );
   throw new Error(
     `Request failed after ${maxRetries} retries: ${lastError?.message}`
   );

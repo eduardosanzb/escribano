@@ -416,7 +416,12 @@ export interface IntelligenceService {
   extractTopics(observations: DbObservation[]): Promise<string[]>;
   generateText(
     prompt: string,
-    options?: { model?: string; expectJson?: boolean }
+    options?: {
+      model?: string;
+      expectJson?: boolean;
+      numPredict?: number;
+      think?: boolean;
+    }
   ): Promise<string>;
 }
 
@@ -483,8 +488,8 @@ export type WhisperConfig = z.infer<typeof whisperConfigSchema>;
 export const intelligenceConfigSchema = z.object({
   provider: z.enum(['ollama', 'mlx']).default('ollama'),
   endpoint: z.string().default('http://localhost:11434/api/chat'),
-  model: z.string().default('qwen3:8b'),
-  generationModel: z.string().default('qwen3:32b'),
+  model: z.string().default('qwen3.5:27b'),
+  generationModel: z.string().default('qwen3.5:27b'),
   visionModel: z.string().default('minicpm-v:8b'),
   maxRetries: z.number().default(3),
   timeout: z.number().default(600000), // 10 minutes
@@ -531,6 +536,9 @@ import type {
   DbObservationInsert,
   DbRecording,
   DbRecordingInsert,
+  DbSubject,
+  DbSubjectInsert,
+  DbSubjectTopicBlock,
   DbTopicBlock,
   DbTopicBlockInsert,
 } from './db/types.js';
@@ -549,6 +557,9 @@ export type {
   DbObservationInsert,
   DbRecording,
   DbRecordingInsert,
+  DbSubject,
+  DbSubjectInsert,
+  DbSubjectTopicBlock,
   DbTopicBlock,
   DbTopicBlockInsert,
 };
@@ -652,10 +663,24 @@ export interface ArtifactRepository {
   findById(id: string): DbArtifact | null;
   findByType(type: string): DbArtifact[];
   findByBlock(blockId: string): DbArtifact[];
-  findByContext(contextId: string): DbArtifact[]; // Cross-recording!
+  findByContext(contextId: string): DbArtifact[];
+  findByRecording(recordingId: string): DbArtifact[];
   save(artifact: DbArtifactInsert): void;
   update(id: string, content: string): void;
   delete(id: string): void;
+  deleteByRecording(recordingId: string): void;
+}
+
+export interface SubjectRepository {
+  findById(id: string): DbSubject | null;
+  findByRecording(recordingId: string): DbSubject[];
+  save(subject: DbSubjectInsert): void;
+  saveBatch(subjects: DbSubjectInsert[]): void;
+  linkTopicBlocksBatch(
+    links: Array<{ subjectId: string; topicBlockId: string }>
+  ): void;
+  getTopicBlocks(subjectId: string): DbTopicBlock[];
+  deleteByRecording(recordingId: string): void;
 }
 
 import type { StatsRepository } from './stats/types.js';
@@ -669,5 +694,6 @@ export interface Repositories {
   topicBlocks: TopicBlockRepository;
   artifacts: ArtifactRepository;
   clusters: ClusterRepository;
+  subjects: SubjectRepository;
   stats: StatsRepository;
 }

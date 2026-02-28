@@ -22,7 +22,11 @@ import type {
   TranscriptionService,
   VideoService,
 } from './0_types.js';
-import { generateSummaryV3 } from './actions/generate-summary-v3.js';
+import {
+  type ArtifactFormat,
+  type ArtifactResult,
+  generateArtifactV3,
+} from './actions/generate-artifact-v3.js';
 import { updateGlobalIndex } from './actions/outline-index.js';
 import { processRecordingV3 } from './actions/process-recording-v3.js';
 import {
@@ -44,7 +48,12 @@ import { createOutlinePublishingService } from './adapters/publishing.outline.ad
 import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
 import { createFfmpegVideoService } from './adapters/video.ffmpeg.adapter.js';
 import { getDbPath, getRepositories } from './db/index.js';
-import { log, setResourceTracker, withPipeline } from './pipeline/context.js';
+import {
+  log,
+  setResourceTracker,
+  step,
+  withPipeline,
+} from './pipeline/context.js';
 import {
   type ResourceTrackable,
   ResourceTracker,
@@ -73,6 +82,10 @@ export interface ProcessVideoOptions {
   skipSummary?: boolean;
   micAudioPath?: string;
   systemAudioPath?: string;
+  format?: ArtifactFormat;
+  includePersonal?: boolean;
+  copyToClipboard?: boolean;
+  printToStdout?: boolean;
 }
 
 export interface ProcessVideoResult {
@@ -82,7 +95,10 @@ export interface ProcessVideoResult {
   artifactPath?: string;
   outlineUrl?: string;
   error?: string;
-  duration: number; // processing time in seconds
+  duration: number;
+  format?: ArtifactFormat;
+  workDuration?: number;
+  personalDuration?: number;
 }
 
 /**
@@ -161,6 +177,10 @@ export async function processVideo(
     skipSummary = false,
     micAudioPath,
     systemAudioPath,
+    format = 'card',
+    includePersonal = false,
+    copyToClipboard = false,
+    printToStdout = false,
   } = options;
   const { repos, adapters, outlineConfig } = ctx;
   const { vlm, llm, video, preprocessor, transcription } = adapters;
@@ -209,28 +229,19 @@ export async function processVideo(
       console.log('Force flag set: clearing existing data');
       repos.observations.deleteByRecording(recording.id);
       repos.topicBlocks.deleteByRecording(recording.id);
+      repos.subjects.deleteByRecording(recording.id);
       repos.recordings.updateStatus(recording.id, 'raw', null, null);
-    } else if (dbRec.status === 'published') {
-      // Already done - return early
-      const outlineMeta = getOutlineMetadata(dbRec);
-      console.log('Recording already published to Outline.');
-      if (outlineMeta) {
-        console.log(`Published document: ${outlineMeta.url}`);
-      }
-      console.log('Use --force to reprocess.');
-      return {
-        success: true,
-        recordingId: recording.id,
-        videoPath,
-        outlineUrl: outlineMeta?.url,
-        duration: (Date.now() - startTime) / 1000,
-      };
-    } else if (dbRec.status === 'processed') {
-      console.log('Recording already processed. Generating summary...');
+    } else if (dbRec.status === 'published' || dbRec.status === 'processed') {
+      console.log(
+        `Recording already ${dbRec.status}. Regenerating artifact...`
+      );
     }
 
-    // Run VLM pipeline (skip if already processed)
-    const skipProcessing = dbRec && dbRec.status === 'processed' && !force;
+    // Run VLM pipeline (skip if already processed or published)
+    const skipProcessing =
+      dbRec &&
+      (dbRec.status === 'processed' || dbRec.status === 'published') &&
+      !force;
     if (!skipProcessing) {
       const runType = force
         ? 'force'
@@ -249,97 +260,165 @@ export async function processVideo(
       });
     }
 
-    // Generate summary (unless skipped)
-    let artifact: { content: string; filePath: string } | null = null;
-    if (!skipSummary) {
-      console.log('\nGenerating summary...');
-      artifact = await generateSummaryV3(recording.id, repos, llm, {
-        recordingId: recording.id,
-      });
-      console.log(`Summary saved: ${artifact.filePath}`);
-    }
-
-    // Publish to Outline (unless skipped or no config)
+    // Generate artifact and publish (unless skipped), tracked as a pipeline run
+    let artifact: ArtifactResult | null = null;
     let outlineUrl: string | undefined;
-    if (!skipSummary && outlineConfig && artifact) {
-      console.log('\nPublishing to Outline...');
-      try {
-        const publishing = createOutlinePublishingService(outlineConfig);
-        const topicBlocks = repos.topicBlocks.findByRecording(recording.id);
-        const dbRecording = repos.recordings.findById(recording.id);
-
-        if (dbRecording && !hasContentChanged(dbRecording, artifact.content)) {
-          console.log('Content unchanged, skipping publish.');
-        } else {
-          const published = await publishSummaryV3(
+    if (!skipSummary) {
+      const artifactRunMetadata = collectRunMetadata(ctx.resourceTracker);
+      const pipelineResult = await withPipeline(
+        recording.id,
+        'artifact',
+        artifactRunMetadata,
+        async () => {
+          console.log(`\nGenerating ${format} artifact...`);
+          const generatedArtifact = await generateArtifactV3(
             recording.id,
-            artifact.content,
-            topicBlocks,
             repos,
-            publishing,
-            { collectionName: outlineConfig.collectionName }
+            llm,
+            {
+              recordingId: recording.id,
+              format,
+              includePersonal,
+              copyToClipboard,
+              printToStdout,
+            }
           );
+          console.log(`Artifact saved: ${generatedArtifact.filePath}`);
+          if (generatedArtifact.workDuration > 0) {
+            const workMins = Math.round(generatedArtifact.workDuration / 60);
+            console.log(`Work time: ${workMins} minutes`);
+          }
+          if (generatedArtifact.personalDuration > 0 && !includePersonal) {
+            const personalMins = Math.round(
+              generatedArtifact.personalDuration / 60
+            );
+            console.log(`Personal time: ${personalMins} minutes (filtered)`);
+          }
 
-          const outlineInfo: OutlineMetadata = {
-            url: published.url,
-            documentId: published.documentId,
-            collectionId: published.collectionId,
-            publishedAt: new Date().toISOString(),
-            contentHash: published.contentHash,
-          };
-          updateRecordingOutlineMetadata(recording.id, outlineInfo, repos);
+          // Publish to Outline (unless no config)
+          let publishedUrl: string | undefined;
+          if (outlineConfig) {
+            try {
+              await step('outline publish', async () => {
+                console.log('\nPublishing to Outline...');
+                const publishing =
+                  createOutlinePublishingService(outlineConfig);
+                const topicBlocks = repos.topicBlocks.findByRecording(
+                  recording.id
+                );
+                const dbRecording = repos.recordings.findById(recording.id);
 
-          console.log(`Published to Outline: ${published.url}`);
-          outlineUrl = published.url;
+                if (
+                  dbRecording &&
+                  !hasContentChanged(
+                    dbRecording,
+                    generatedArtifact.content,
+                    format
+                  )
+                ) {
+                  console.log('Content unchanged, skipping publish.');
+                } else {
+                  const published = await publishSummaryV3(
+                    recording.id,
+                    generatedArtifact.content,
+                    topicBlocks,
+                    repos,
+                    publishing,
+                    { collectionName: outlineConfig.collectionName, format }
+                  );
 
-          // Update global index
-          const indexResult = await updateGlobalIndex(repos, publishing, {
-            collectionName: outlineConfig.collectionName,
-          });
-          console.log(`Updated index: ${indexResult.url}`);
+                  const outlineInfo: OutlineMetadata = {
+                    url: published.url,
+                    documentId: published.documentId,
+                    collectionId: published.collectionId,
+                    publishedAt: new Date().toISOString(),
+                    contentHash: published.contentHash,
+                  };
+                  updateRecordingOutlineMetadata(
+                    recording.id,
+                    outlineInfo,
+                    repos,
+                    format
+                  );
+
+                  console.log(`Published to Outline: ${published.url}`);
+                  publishedUrl = published.url;
+                }
+
+                // Update status BEFORE rebuilding index so findByStatus('published') includes this recording
+                repos.recordings.updateStatus(
+                  recording.id,
+                  'published',
+                  null,
+                  null
+                );
+                log(
+                  'info',
+                  `[Outline] Recording ${recording.id} status updated to 'published'`
+                );
+
+                // Update global index (after status update so this recording is included)
+                if (publishedUrl) {
+                  const indexResult = await updateGlobalIndex(
+                    repos,
+                    publishing,
+                    {
+                      collectionName: outlineConfig.collectionName,
+                    }
+                  );
+                  console.log(`Updated index: ${indexResult.url}`);
+                }
+              });
+            } catch (error) {
+              const errorMessage = (error as Error).message;
+              console.warn(
+                `Warning: Failed to publish to Outline: ${errorMessage}`
+              );
+              log('warn', `[Outline] Publishing failed: ${errorMessage}`);
+
+              // Store error in metadata
+              try {
+                const dbRecording = repos.recordings.findById(recording.id);
+                const currentMetadata = dbRecording?.source_metadata
+                  ? JSON.parse(dbRecording.source_metadata)
+                  : {};
+                const existingOutline = currentMetadata.outline || {};
+                const updatedMetadata = {
+                  ...currentMetadata,
+                  outline: {
+                    ...existingOutline,
+                    error: errorMessage,
+                    failedAt: new Date().toISOString(),
+                  },
+                };
+                repos.recordings.updateMetadata(
+                  recording.id,
+                  JSON.stringify(updatedMetadata)
+                );
+              } catch (metaError) {
+                log(
+                  'error',
+                  `[Outline] Failed to store error metadata: ${(metaError as Error).message}`
+                );
+              }
+            }
+          } else {
+            console.log(
+              'No Outline configuration found. Marking as complete locally.'
+            );
+            repos.recordings.updateStatus(
+              recording.id,
+              'published',
+              null,
+              null
+            );
+          }
+
+          return { artifact: generatedArtifact, outlineUrl: publishedUrl };
         }
-
-        repos.recordings.updateStatus(recording.id, 'published', null, null);
-        log(
-          'info',
-          `[Outline] Recording ${recording.id} status updated to 'published'`
-        );
-      } catch (error) {
-        const errorMessage = (error as Error).message;
-        console.warn(`Warning: Failed to publish to Outline: ${errorMessage}`);
-        log('warn', `[Outline] Publishing failed: ${errorMessage}`);
-
-        // Store error in metadata
-        try {
-          const dbRecording = repos.recordings.findById(recording.id);
-          const currentMetadata = dbRecording?.source_metadata
-            ? JSON.parse(dbRecording.source_metadata)
-            : {};
-          const existingOutline = currentMetadata.outline || {};
-          const updatedMetadata = {
-            ...currentMetadata,
-            outline: {
-              ...existingOutline,
-              error: errorMessage,
-              failedAt: new Date().toISOString(),
-            },
-          };
-          repos.recordings.updateMetadata(
-            recording.id,
-            JSON.stringify(updatedMetadata)
-          );
-        } catch (metaError) {
-          log(
-            'error',
-            `[Outline] Failed to store error metadata: ${(metaError as Error).message}`
-          );
-        }
-      }
-    } else if (!skipSummary) {
-      console.log(
-        'No Outline configuration found. Marking as complete locally.'
       );
-      repos.recordings.updateStatus(recording.id, 'published', null, null);
+      artifact = pipelineResult.artifact;
+      outlineUrl = pipelineResult.outlineUrl;
     }
 
     console.log('\n✓ Complete!');
@@ -351,6 +430,9 @@ export async function processVideo(
       artifactPath: artifact?.filePath,
       outlineUrl,
       duration: (Date.now() - startTime) / 1000,
+      format: artifact?.format,
+      workDuration: artifact?.workDuration,
+      personalDuration: artifact?.personalDuration,
     };
   } catch (error) {
     const errorMessage = (error as Error).message;
@@ -403,7 +485,8 @@ function collectRunMetadata(
     vlm_model:
       process.env.ESCRIBANO_VLM_MODEL ??
       'mlx-community/Qwen3-VL-2B-Instruct-bf16',
-    llm_model: 'qwen3:32b',
+    // TODO>: make it env variabels
+    llm_model: process.env.ESCRIBANO_LLM_MODEL ?? 'qwen3.5:27b',
     commit_hash: commitHash,
     node_version: process.version,
     platform: process.platform,

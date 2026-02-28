@@ -23,6 +23,7 @@ import signal
 import socket
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 # Configuration from environment
@@ -34,6 +35,60 @@ MAX_TOKENS = int(os.environ.get("ESCRIBANO_VLM_MAX_TOKENS", "2000"))
 SOCKET_PATH = os.environ.get("ESCRIBANO_MLX_SOCKET_PATH", "/tmp/escribano-mlx.sock")
 VERBOSE = os.environ.get("ESCRIBANO_VERBOSE", "false").lower() == "true"
 TEMPERATURE = 0.3
+
+
+def find_project_root() -> Path:
+    """Find the project root by walking up from the script location."""
+    current = Path(__file__).resolve().parent
+    for _ in range(5):  # Walk up max 5 levels
+        if (current / "package.json").exists():
+            return current
+        current = current.parent
+    # Fallback: assume current working directory
+    return Path.cwd()
+
+
+def load_vlm_prompt(batch_size: int) -> str:
+    """Load and template the VLM prompt from prompts/vlm-batch.md."""
+    project_root = find_project_root()
+    prompt_file = project_root / "prompts" / "vlm-batch.md"
+    
+    if not prompt_file.exists():
+        log(f"Warning: prompt file not found at {prompt_file}, using inline prompt", "info")
+        # Fallback inline prompt (old behavior)
+        return f"""Analyze these {batch_size} screenshots from a screen recording.
+
+For each frame above, provide:
+- description: What's on screen? Be specific about content, text, and UI elements.
+- activity: What is the user doing?
+- apps: Which applications are visible?
+- topics: What topics, projects, or technical subjects?
+
+Output in this exact format for each frame:
+Frame 1: description: ... | activity: ... | apps: [...] | topics: [...]
+Frame 2: description: ... | activity: ... | apps: [...] | topics: [...]
+...and so on for all {batch_size} frames."""
+    
+    try:
+        content = prompt_file.read_text(encoding="utf-8")
+        # Replace template variable
+        content = content.replace("{{FRAME_COUNT}}", str(batch_size))
+        return content
+    except Exception as e:
+        log(f"Error loading prompt file: {e}", "error")
+        # Fallback to inline prompt
+        return f"""Analyze these {batch_size} screenshots from a screen recording.
+
+For each frame above, provide:
+- description: What's on screen? Be specific about content, text, and UI elements.
+- activity: What is the user doing?
+- apps: Which applications are visible?
+- topics: What topics, projects, or technical subjects?
+
+Output in this exact format for each frame:
+Frame 1: description: ... | activity: ... | apps: [...] | topics: [...]
+Frame 2: description: ... | activity: ... | apps: [...] | topics: [...]
+...and so on for all {batch_size} frames."""
 
 # Global state
 model = None
@@ -176,19 +231,8 @@ def process_interleaved_batch(
         # Add image placeholder
         content.append({"type": "image"})
 
-    # Add final prompt with instructions
-    final_prompt = f"""Analyze these {len(batch)} screenshots from a screen recording.
-
-For each frame above, provide:
-- description: What's on screen? Be specific about content, text, and UI elements.
-- activity: What is the user doing?
-- apps: Which applications are visible?
-- topics: What topics, projects, or technical subjects?
-
-Output in this exact format for each frame:
-Frame 1: description: ... | activity: ... | apps: [...] | topics: [...]
-Frame 2: description: ... | activity: ... | apps: [...] | topics: [...]
-...and so on for all {len(batch)} frames."""
+     # Add final prompt with instructions (loaded from prompts/vlm-batch.md)
+    final_prompt = load_vlm_prompt(len(batch))
     content.append({"type": "text", "text": final_prompt})
 
     # Build message

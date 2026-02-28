@@ -132,16 +132,16 @@ describe('segmentByActivity', () => {
     expect(segments[0].observationIds).toHaveLength(9);
   });
 
-  it('should extract apps and topics from VLM descriptions', () => {
-    const observations = [
-      createObservation(
-        '1',
-        0,
-        'Debugging Python error in VSCode, working on escribano project'
-      ),
-    ];
+  it('should extract apps and topics from observation fields', () => {
+    const obs = createObservation(
+      '1',
+      0,
+      'Debugging Python error in VSCode, working on escribano project'
+    );
+    obs.apps = JSON.stringify(['vscode']);
+    obs.topics = JSON.stringify(['escribano']);
 
-    const segments = segmentByActivity(observations);
+    const segments = segmentByActivity([obs]);
 
     expect(segments[0].apps).toContain('vscode');
     expect(segments[0].topics).toContain('escribano');

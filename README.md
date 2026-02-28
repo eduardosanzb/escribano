@@ -107,14 +107,59 @@ LLM Summary (Ollama, qwen3:32b) → Markdown Artifact
 | Any MP4/MOV | `--file /path/to/video.mp4` |
 | External audio | `--mic-audio mic.wav --system-audio system.wav` |
 
-## CLI Options
+## CLI Reference
 
+### Flags & Options
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--file <path>` | Process a specific video file | `pnpm escribano --file "~/Desktop/recording.mov"` |
+| `--mic-audio <path>` | Provide external microphone audio | `pnpm escribano --file video.mov --mic-audio mic.wav` |
+| `--system-audio <path>` | Provide system audio recording | `pnpm escribano --file video.mov --system-audio system.wav` |
+| `--format <format>` | Artifact format: `card`, `standup`, or `narrative` (default: `card`) | `pnpm escribano --format standup` |
+| `--force` | Reprocess from scratch, skip cached observations | `pnpm escribano --force` |
+| `--skip-summary` | Process only (segment frames), skip LLM artifact generation | `pnpm escribano --skip-summary` |
+| `--include-personal` | Include personal time in artifact (normally filtered) | `pnpm escribano --include-personal` |
+| `--copy` | Copy generated artifact to clipboard | `pnpm escribano --copy` |
+| `--stdout` | Print artifact to stdout instead of saving to file | `pnpm escribano --stdout` |
+| `--help` | Show all available options | `pnpm escribano --help` |
+
+### Artifact Formats
+
+| Format | Purpose | Best For | Output Style |
+|--------|---------|----------|--------------|
+| `card` (default) | Structured per-subject summary with activity breakdown | Personal review, journal, daily notes | **2h 15m** \| coding 1h 30m, debugging 45m<br/>- Achieved 20.6x speedup in scene detection<br/>- Resolved LLM truncation errors |
+| `standup` | Concise what-I-did, key outcomes, and next steps | Daily standup, async updates to team | **What I did:** - Debugged VLM pipeline<br/>**Key outcomes:** - Fixed timeout issues |
+| `narrative` | Flowing prose summary of the session | Blog drafts, retrospectives, storytelling | *Spent 2 hours debugging and refactoring the VLM pipeline, switching between terminal logs and code updates...* |
+
+### Example Commands
+
+**Process and copy to clipboard:**
 ```bash
-escribano --file recording.mov     # Process specific file
-escribano --force                  # Reprocess from scratch
-escribano --skip-summary           # Process only, skip LLM summary
-escribano --help                   # Show all options
+pnpm escribano --file "~/Desktop/Screen Recording.mov" --format standup --copy
 ```
+
+**Cap recording → Standup format → Print to terminal:**
+```bash
+pnpm escribano --format standup --stdout
+```
+
+**Reprocess with narrative format, include personal time:**
+```bash
+pnpm escribano --file session.mp4 --format narrative --include-personal --force
+```
+
+**Process video with both mic and system audio:**
+```bash
+pnpm escribano --file recording.mov --mic-audio mic.wav --system-audio system.wav
+```
+
+**Segment and store, skip summary generation (fast mode):**
+```bash
+pnpm escribano --skip-summary
+```
+
+**Output:** Markdown artifact saved to `~/.escribano/artifacts/`
 
 ## Architecture
 

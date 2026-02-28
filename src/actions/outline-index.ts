@@ -166,8 +166,8 @@ function buildMonthTable(
     return dateB - dateA;
   });
 
-  let table = `| Date | Activities | Duration | Link |\n`;
-  table += `|------|------------|----------|------|\n`;
+  let table = `| Date | Activities | Duration | Links |\n`;
+  table += `|------|------------|----------|-------|\n`;
 
   for (const { recording, blocks } of sorted) {
     const date = new Date(recording.captured_at);
@@ -176,11 +176,16 @@ function buildMonthTable(
       extractActivities(blocks).slice(0, 3).join(', ') || 'Unknown';
     const duration = formatDuration(recording.duration);
 
-    // Try to get the outline URL from metadata
-    const outlineUrl = extractOutlineUrl(recording);
-    const link = outlineUrl ? `[View](${outlineUrl})` : '—';
+    // Get all format variant links
+    const outlineUrls = extractOutlineUrls(recording);
+    let links = '—';
+    if (outlineUrls.length > 0) {
+      links = outlineUrls
+        .map((item) => `[${item.format}](${item.url})`)
+        .join(' · ');
+    }
 
-    table += `| ${dateStr} | ${activities} | ${duration} | ${link} |\n`;
+    table += `| ${dateStr} | ${activities} | ${duration} | ${links} |\n`;
   }
 
   return table;
@@ -239,15 +244,32 @@ function formatTotalDuration(
 }
 
 /**
- * Extract Outline URL from recording metadata if available.
+ * Extract Outline URLs from recording metadata.
+ * Returns all format variants if available, otherwise the single outline URL.
  */
-function extractOutlineUrl(recording: DbRecording): string | null {
+function extractOutlineUrls(
+  recording: DbRecording
+): Array<{ format: string; url: string }> {
   try {
     const metadata = recording.source_metadata
       ? JSON.parse(recording.source_metadata)
       : {};
-    return metadata.outline?.url ?? null;
+
+    // Check for multiple format variants (new structure)
+    if (metadata.outline_formats && Array.isArray(metadata.outline_formats)) {
+      return metadata.outline_formats.map((item: any) => ({
+        format: item.format || 'unknown',
+        url: item.url || '',
+      }));
+    }
+
+    // Fallback to single outline URL (backward compatibility)
+    if (metadata.outline?.url) {
+      return [{ format: 'default', url: metadata.outline.url }];
+    }
+
+    return [];
   } catch {
-    return null;
+    return [];
   }
 }

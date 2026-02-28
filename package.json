@@ -38,6 +38,7 @@
     "better-sqlite3": "^12.6.2",
     "express": "^5.0.0",
     "pidusage": "^4.0.1",
+    "undici": "^7.22.0",
     "uuidv7": "1.1.0",
     "zod": "^4.3.5"
   },

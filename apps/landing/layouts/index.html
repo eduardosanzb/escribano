@@ -8,6 +8,7 @@
     <li><a href="#how">How it works</a></li>
     <li><a href="/blog/">Blog</a></li>
     <li><a href="#pricing">Pricing</a></li>
+    <li><a href="https://github.com/eduardosanzb/escribano" target="_blank" rel="noopener">GitHub</a></li>
     <li>
       <button id="theme-toggle" class="nav-theme-toggle" aria-label="Toggle dark mode">
         <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -19,7 +20,7 @@
         </svg>
       </button>
     </li>
-    <li><a href="#" class="nav-cta">Join waitlist</a></li>
+    <li><a href="#open-source" class="nav-cta">Try it free</a></li>
   </ul>
 </nav>
 
@@ -32,7 +33,7 @@
     </p>
     <div class="hero-actions">
       <a href="#" class="btn-primary">Join the waitlist</a>
-      <a href="#how" class="btn-ghost">See how it works <span>→</span></a>
+      <a href="#open-source" class="btn-ghost">Try it free <span>→</span></a>
     </div>
     <div class="indie-badge">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -70,9 +71,9 @@
           </div>
         </div>
         <div class="block">
-          <div class="block-bar writing"></div>
+          <div class="block-bar drafting"></div>
           <div class="block-content">
-            <div class="block-label">Writing</div>
+            <div class="block-label">Drafting</div>
             <div class="block-text">Drafted executive summary and revised intro section of the proposal doc.</div>
             <div class="block-time">38 min</div>
           </div>
@@ -107,12 +108,73 @@
       <div class="step fade-up" style="transition-delay: 0.15s">
         <div class="step-num">02</div>
         <h3>Escribano understands</h3>
-        <p>Our vision pipeline watches what you did — not just what was on screen, but the activity: research, writing, review, meetings, planning.</p>
+        <p>Our vision pipeline watches what you did — not just what was on screen, but the activity: research, drafting, review, meetings, planning.</p>
       </div>
       <div class="step fade-up" style="transition-delay: 0.3s">
         <div class="step-num">03</div>
         <h3>Your artifact, ready</h3>
         <p>A structured, human-readable summary arrives — ready to paste into your standup, status report, or personal work journal.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="open-source-section" id="open-source">
+  <div class="open-source">
+    <div class="section-label">Available now</div>
+    <h2>Open source. Runs locally.</h2>
+    <p class="open-source-sub">Process your recordings on your own machine. No cloud, no API keys, no data leaves your computer.</p>
+
+    <div class="open-source-grid">
+      <div class="terminal-demo">
+        <div class="terminal-header">
+          <span class="terminal-dot"></span>
+          <span class="terminal-dot"></span>
+          <span class="terminal-dot"></span>
+          <span class="terminal-title">Terminal</span>
+        </div>
+        <div class="terminal-body">
+          <div class="terminal-line"><span class="terminal-prompt">$</span> npx escribano --file session.mov</div>
+          <div class="terminal-output">
+            <div class="terminal-dim">✓ Checking prerequisites...</div>
+            <div class="terminal-dim">✓ Loading VLM model (Qwen3-VL-2B-4bit)</div>
+            <div class="terminal-dim">✓ Extracting frames (adaptive sampling)</div>
+            <div class="terminal-dim">✓ Running VLM inference on 142 frames</div>
+            <div class="terminal-dim">✓ Transcribing audio with whisper.cpp</div>
+            <div class="terminal-dim">✓ Segmenting by activity</div>
+            <div class="terminal-dim">✓ Generating summary artifact</div>
+            <div class="terminal-success"></div>
+            <div class="terminal-highlight">Done! Artifact saved to ~/.escribano/artifacts/</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="open-source-details">
+        <div class="detail-block">
+          <h4>Quick start</h4>
+          <code>npx escribano --file recording.mov</code>
+        </div>
+        <div class="detail-block">
+          <h4>Requirements</h4>
+          <ul>
+            <li>macOS Apple Silicon (M1/M2/M3/M4)</li>
+            <li>16GB RAM minimum (32GB recommended)</li>
+            <li>~10GB disk for models</li>
+          </ul>
+        </div>
+        <div class="detail-block">
+          <h4>What you get</h4>
+          <ul>
+            <li>3 artifact formats: card, standup, narrative</li>
+            <li>Activity detection: coding, debugging, research, meetings</li>
+            <li>Audio transcription with whisper.cpp</li>
+            <li>All processing runs locally</li>
+          </ul>
+        </div>
+        <div class="detail-actions">
+          <a href="https://github.com/eduardosanzb/escribano" class="btn-primary" target="_blank" rel="noopener">View on GitHub</a>
+          <a href="#" class="btn-ghost">Star the repo <span>★</span></a>
+        </div>
       </div>
     </div>
   </div>
@@ -140,6 +202,12 @@
         <div class="persona-role">Account Manager · Sales</div>
         <h3>The Relationship Builder</h3>
         <p>Calls, proposals, follow-ups — your day is relational and fast-moving. Let Escribano handle the documentation so you can stay present with people.</p>
+      </div>
+      <div class="persona-card fade-up" style="transition-delay: 0.3s">
+        <div class="persona-icon">✦</div>
+        <div class="persona-role">Developer · Engineer</div>
+        <h3>The Builder</h3>
+        <p>You debug, refactor, review PRs, and lose hours in terminal windows. Escribano understands the difference between coding and debugging — so your standup actually reflects what you shipped.</p>
       </div>
     </div>
   </div>
@@ -181,28 +249,28 @@
     <p class="pricing-sub">No free tier designed to frustrate you into upgrading. One price, all features.</p>
     <div class="pricing-cards">
       <div class="pricing-card">
-        <div class="pricing-card-label">Early Access</div>
+        <div class="pricing-card-label">Open Source</div>
         <div class="price">Free</div>
-        <div class="price-period">While in beta · limited spots</div>
+        <div class="price-period">Forever · self-hosted</div>
         <ul class="pricing-features">
-          <li>Up to 5 sessions per week</li>
-          <li>Standup &amp; status summaries</li>
+          <li>Unlimited sessions</li>
+          <li>3 artifact formats — card, standup, narrative</li>
           <li>Local processing, no cloud upload</li>
-          <li>macOS · Windows · Linux</li>
+          <li>macOS Apple Silicon · 16GB+ RAM</li>
         </ul>
-        <a href="#" class="btn-pricing">Join the waitlist</a>
+        <a href="#open-source" class="btn-pricing">Get started</a>
       </div>
       <div class="pricing-card featured">
         <div class="pricing-card-label">Cloud · Coming soon</div>
-        <div class="price">€15</div>
+        <div class="price">Coming soon</div>
         <div class="price-period">per month · cancel anytime</div>
         <ul class="pricing-features">
-          <li>Unlimited sessions</li>
-          <li>All artifact formats — standup, PR, proposal</li>
-          <li>Cross-session context &amp; search</li>
-          <li>European cloud infrastructure only</li>
+          <li>Cloud processing — no setup required</li>
+          <li>Automatic recording capture</li>
+          <li>Cross-session search &amp; context</li>
+          <li>European infrastructure only</li>
         </ul>
-        <a href="#" class="btn-pricing">Reserve your spot</a>
+        <a href="#" class="btn-pricing">Join the waitlist</a>
       </div>
     </div>
   </div>

@@ -122,4 +122,4 @@ If you're building screen intelligence—tools that understand what people are d
 **Escribano** is an open-source tool that turns screen recordings into structured summaries. It runs entirely locally on macOS using whisper.cpp for transcription, MLX-VLM for frame analysis, and Ollama for summary generation.
 
 - **Star on GitHub**: [github.com/eduardosanzb/escribano](https://github.com/eduardosanzb/escribano)
-- **Try it**: `npx github:eduardosanzb/escribano` (requires macOS with Apple Silicon)
+- **Try it**: `npx escribano` (requires macOS with Apple Silicon)

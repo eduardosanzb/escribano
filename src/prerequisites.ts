@@ -14,6 +14,13 @@ export interface PrerequisiteResult {
   notes?: string;
 }
 
+const LLM_MODEL_TIERS = [
+  { model: 'qwen3.5:27b', tier: 4, minRamGB: 32, label: 'best' },
+  { model: 'qwen3:14b', tier: 3, minRamGB: 20, label: 'very good' },
+  { model: 'qwen3:8b', tier: 2, minRamGB: 10, label: 'good' },
+  { model: 'qwen3:4b', tier: 1, minRamGB: 6, label: 'minimum' },
+] as const;
+
 const PREREQUISITES: PrerequisiteResult[] = [
   {
     name: 'Node.js',
@@ -46,10 +53,10 @@ const PREREQUISITES: PrerequisiteResult[] = [
     notes: 'Ollama server must be running',
   },
   {
-    name: 'qwen3:32b model',
+    name: 'LLM model',
     found: false,
-    installCommand: 'ollama pull qwen3:32b',
-    notes: 'LLM model for summary generation',
+    installCommand: 'ollama pull qwen3:8b',
+    notes: 'Any of: qwen3.5:27b, qwen3:14b, qwen3:8b, qwen3:4b',
   },
   {
     name: 'Python 3',
@@ -95,17 +102,50 @@ function checkOllamaRunning(): boolean {
   }
 }
 
-function checkOllamaModel(model: string): boolean {
+function getInstalledOllamaModels(): string[] {
   try {
     const output = execSync('ollama list', {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 10000,
     });
-    return output.includes(model);
+    const lines = output.split('\n').slice(1);
+    return lines
+      .map((line) => line.split(/\s+/)[0])
+      .filter((m) => m && m.length > 0);
   } catch {
-    return false;
+    return [];
   }
+}
+
+function checkLLMModels(): {
+  found: boolean;
+  foundModels: string[];
+  bestAvailable: string | null;
+  installCommand: string;
+} {
+  const installed = getInstalledOllamaModels();
+  const foundModels: string[] = [];
+  let bestAvailable: string | null = null;
+  let bestTier = 0;
+
+  for (const tier of LLM_MODEL_TIERS) {
+    const found = installed.some((m) => m.startsWith(tier.model.split(':')[0]));
+    if (found) {
+      foundModels.push(tier.model);
+      if (tier.tier > bestTier) {
+        bestTier = tier.tier;
+        bestAvailable = tier.model;
+      }
+    }
+  }
+
+  return {
+    found: foundModels.length > 0,
+    foundModels,
+    bestAvailable,
+    installCommand: 'ollama pull qwen3:8b',
+  };
 }
 
 function checkPythonPackage(packageName: string): boolean {
@@ -156,8 +196,13 @@ export function checkPrerequisites(): PrerequisiteResult[] {
         result.found = checkOllamaRunning();
         break;
       }
-      case 'qwen3:32b model': {
-        result.found = checkOllamaModel('qwen3:32b');
+      case 'LLM model': {
+        const check = checkLLMModels();
+        result.found = check.found;
+        if (check.bestAvailable) {
+          result.version = check.bestAvailable;
+          result.notes = `Found: ${check.foundModels.join(', ')}`;
+        }
         break;
       }
       case 'Python 3': {
@@ -193,6 +238,8 @@ export function printDoctorResults(results: PrerequisiteResult[]): void {
       if (result.installCommand) {
         console.log(`  → Install: ${result.installCommand}`);
       }
+    } else if (result.notes) {
+      console.log(`  ${result.notes}`);
     }
   }
 

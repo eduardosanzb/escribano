@@ -73,7 +73,7 @@ const PERSONAL_APPS = new Set([
 const PERSONAL_APP_THRESHOLD = 0.5;
 
 const SUBJECT_GROUPING_MODEL =
-  process.env.ESCRIBANO_SUBJECT_GROUPING_MODEL || 'qwen3:32b';
+  process.env.ESCRIBANO_SUBJECT_GROUPING_MODEL || 'qwen3.5:27b';
 
 export async function groupTopicBlocksIntoSubjects(
   topicBlocks: DbTopicBlock[],

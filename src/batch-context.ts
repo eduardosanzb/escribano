@@ -59,6 +59,10 @@ import {
   ResourceTracker,
   setupStatsObserver,
 } from './stats/index.js';
+import {
+  formatModelSelection,
+  selectBestLLMModel,
+} from './utils/model-detector.js';
 
 const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
@@ -113,6 +117,11 @@ export async function initializeSystem(): Promise<SystemContext> {
 
   // Setup stats observer to capture pipeline events
   setupStatsObserver(repos.stats);
+
+  // Detect best LLM model
+  const modelSelection = await selectBestLLMModel();
+  console.log(formatModelSelection(modelSelection));
+  console.log('');
 
   // Initialize adapters ONCE
   console.log('[VLM] Using MLX-VLM for image processing');
@@ -485,8 +494,7 @@ function collectRunMetadata(
     vlm_model:
       process.env.ESCRIBANO_VLM_MODEL ??
       'mlx-community/Qwen3-VL-2B-Instruct-bf16',
-    // TODO: make it env variables
-    llm_model: process.env.ESCRIBANO_LLM_MODEL ?? 'qwen3.5:27b',
+    llm_model: process.env.ESCRIBANO_LLM_MODEL ?? 'auto-detected',
     commit_hash: commitHash,
     node_version: process.version,
     platform: process.platform,

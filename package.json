@@ -17,6 +17,8 @@
     "test:ui": "vitest --ui",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
+    "postbuild": "node scripts/add-shebang.mjs",
+    "prepublishOnly": "pnpm build",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
@@ -52,6 +54,12 @@
   "homepage": "https://escribano.work",
   "bugs": "https://github.com/eduardosanzb/escribano/issues",
   "packageManager": "pnpm@10.8.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "better-sqlite3": "^12.6.2",
     "express": "^5.0.0",

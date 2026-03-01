@@ -108,25 +108,25 @@ function showHelp(): void {
 Escribano - Session Intelligence Tool
 
 Usage:
-  pnpm escribano                           Process latest Cap recording
-  pnpm escribano doctor                    Check prerequisites
-  pnpm escribano --file <path>             Process video from filesystem
-  pnpm escribano --file <path> --mic-audio <wav>   Use external mic audio
-  pnpm escribano --file <path> --system-audio <wav>  Provide system audio
-  pnpm escribano --force                   Reprocess from scratch
-  pnpm escribano --skip-summary            Process only (no summary generation)
-  pnpm escribano --format <format>         Artifact format: card (default), standup, narrative
-  pnpm escribano --include-personal        Include personal time in artifact
-  pnpm escribano --copy                    Copy artifact to clipboard
-  pnpm escribano --stdout                  Print artifact to stdout
-  pnpm escribano --help                    Show this help
+  npx escribano                           Process latest Cap recording
+  npx escribano doctor                    Check prerequisites
+  npx escribano --file <path>             Process video from filesystem
+  npx escribano --file <path> --mic-audio <wav>   Use external mic audio
+  npx escribano --file <path> --system-audio <wav>  Provide system audio
+  npx escribano --force                   Reprocess from scratch
+  npx escribano --skip-summary            Process only (no summary generation)
+  npx escribano --format <format>         Artifact format: card (default), standup, narrative
+  npx escribano --include-personal        Include personal time in artifact
+  npx escribano --copy                    Copy artifact to clipboard
+  npx escribano --stdout                  Print artifact to stdout
+  npx escribano --help                    Show this help
 
 Examples:
-  pnpm escribano --file "~/Desktop/Screen Recording.mov"
-  pnpm escribano --file "/path/to/video.mp4" --mic-audio "/path/to/mic.wav"
-  pnpm escribano --file "/path/to/video.mp4" --system-audio "/path/to/system.wav"
-  pnpm escribano --format standup --stdout
-  pnpm escribano --format narrative --include-personal
+  npx escribano --file "~/Desktop/Screen Recording.mov"
+  npx escribano --file "/path/to/video.mp4" --mic-audio "/path/to/mic.wav"
+  npx escribano --file "/path/to/video.mp4" --system-audio "/path/to/system.wav"
+  npx escribano --format standup --stdout
+  npx escribano --format narrative --include-personal
 
 Output: Markdown summary saved to ~/.escribano/artifacts/
 `);

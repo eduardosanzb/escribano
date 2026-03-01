@@ -2,6 +2,9 @@
 
 Record your screen. Get a structured summary of what you did.
 
+> **Platform:** macOS (Apple Silicon) required. Linux/Windows on the roadmap.
+> **Minimum:** 16GB unified memory (32GB recommended for best quality)
+
 ---
 
 ## What you put in
@@ -138,7 +141,7 @@ Screen recording
 Activity segmentation → temporal audio alignment → TopicBlocks
      │
      ▼
-LLM summary (Ollama, qwen3:32b) → Markdown artifact
+LLM summary (Ollama, auto-detected) → Markdown artifact
 ```
 
 Uses VLM-first visual understanding, not OCR + text clustering. OCR fails for developer work because all code screens produce similar tokens. VLMs understand the *activity*, not just the text.
@@ -153,19 +156,41 @@ Uses VLM-first visual understanding, not OCR + text clustering. OCR fails for de
 # macOS (Homebrew)
 brew install ollama whisper-cpp ffmpeg
 
-# LLM model for summaries
-ollama pull qwen3:32b
-
-# MLX-VLM for frame analysis
+# MLX-VLM for frame analysis (Apple Silicon)
 pip install mlx-vlm
+```
+
+### LLM Model Setup
+
+Escribano auto-detects the best model for your hardware:
+
+| Your RAM | Auto-selected | Install command |
+|----------|---------------|-----------------|
+| 16GB | `qwen3:8b` | `ollama pull qwen3:8b` |
+| 32GB | `qwen3:14b` | `ollama pull qwen3:14b` |
+| 64GB+ | `qwen3.5:27b` | `ollama pull qwen3.5:27b` |
+
+```bash
+# Minimum (16GB)
+ollama pull qwen3:8b
+
+# Or best quality (64GB+)
+ollama pull qwen3.5:27b
 ```
 
 ### Run
 
 ```bash
-npx github:eduardosanzb/escribano --file "~/Desktop/Screen Recording.mov"
+# Check prerequisites
+npx escribano doctor
 
-# Or locally
+# Process a recording
+npx escribano --file "~/Desktop/Screen Recording.mov"
+```
+
+### Local Development
+
+```bash
 git clone https://github.com/eduardosanzb/escribano.git
 cd escribano
 pnpm install
@@ -205,13 +230,13 @@ Output: `~/.escribano/artifacts/`
 
 ```bash
 # Process and copy
-pnpm escribano --file "~/Desktop/Screen Recording.mov" --format standup --copy
+npx escribano --file "~/Desktop/Screen Recording.mov" --format standup --copy
 
 # Narrative format
-pnpm escribano --file session.mp4 --format narrative --force
+npx escribano --file session.mp4 --format narrative --force
 
 # With external audio
-pnpm escribano --file recording.mov --mic-audio mic.wav
+npx escribano --file recording.mov --mic-audio mic.wav
 ```
 
 ---
@@ -244,7 +269,7 @@ Full architecture: [docs/architecture.md](docs/architecture.md)
 
 - **macOS** (Apple Silicon for MLX-VLM)
 - **Node.js 20+**
-- **16GB+ RAM** (32GB+ recommended)
+- **16GB+ RAM** (see model tiers above)
 - **~10GB disk** for models
 
 ---
@@ -255,6 +280,8 @@ Full architecture: [docs/architecture.md](docs/architecture.md)
 - [x] MLX-VLM migration
 - [x] Activity segmentation
 - [x] Multiple artifact formats
+- [x] Auto-detect best LLM model
+- [ ] Auto-detect ffmpeg hardware acceleration
 - [ ] OCR on keyframes for code/URLs
 - [ ] MCP server for AI assistants
 - [ ] Cross-recording queries

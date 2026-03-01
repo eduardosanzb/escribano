@@ -14,15 +14,15 @@
 - **Linting/Formatting**: Biome
 - **Database**: SQLite (better-sqlite3)
 - **Transcription**: whisper.cpp (whisper-cli)
-- **VLM**: MLX-VLM (local, Qwen3-VL-2B) - frame analysis (~1.7s/frame)
-- **LLM**: Ollama (local, qwen3:32b) - summary generation
+- **VLM**: MLX-VLM (local, Qwen3-VL-2B) - frame analysis (~0.7s/frame with 4bit)
+- **LLM**: Ollama (local, auto-detected based on RAM) - summary generation
 
 ## Development Environment
 
 - **Machine**: MacBook Pro M4 Max
 - **Unified Memory**: 128GB (Optimized for VLM inference)
 - **VLM Model**: `Qwen3-VL-2B-Instruct-4bit` (~2GB, ~0.7s per frame) via MLX-VLM
-- **LLM Model**: `qwen3:32b` (for high-quality narrative generation) via Ollama
+- **LLM Model**: Auto-detected based on RAM (`qwen3.5:27b` recommended) via Ollama
 
 ### MLX-VLM Setup
 
@@ -48,8 +48,8 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-4bit` |
 | `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `4` |
 | `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
-| `ESCRIBANO_LLM_MODEL` | Ollama model for text generation (summaries) | `qwen3:32b` |
-| `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3:32b` |
+| `ESCRIBANO_LLM_MODEL` | Ollama model for text generation (summaries) | auto-detected |
+| `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3.5:27b` |
 | `ESCRIBANO_ARTIFACT_THINK` | Enable thinking for artifact/card generation (slower, higher quality) | `false` |
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
 | `ESCRIBANO_MLX_STARTUP_TIMEOUT` | MLX bridge model loading timeout (ms) | `60000` |
@@ -166,7 +166,7 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
    ├─ ffmpeg extracts frames at 2s intervals (~1776 frames/hour)
    ├─ Scene detection (ffmpeg) → timestamps of visual changes
    ├─ Adaptive sampling (10s base + scene changes + gap fill) → ~100-150 frames
-   ├─ VLM sequential inference (qwen3-vl:4b, 1 image/request, 30k tokens) → activity + description per frame
+   ├─ VLM sequential inference (Qwen3-VL-2B-4bit, ~0.7s/frame) → activity + description per frame
    └─ Save as Observation rows (type='visual', vlm_description)
 
 4. Activity Segmentation
@@ -187,7 +187,7 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
    ├─ Load TopicBlocks for recording
    ├─ Subject grouping via LLM (or reuse existing subjects)
    ├─ Build prompt from format template (card/standup/narrative)
-   ├─ LLM call (qwen3:32b) → formatted artifact
+   ├─ LLM call (auto-detected model) → formatted artifact
    ├─ Save markdown to ~/.escribano/artifacts/
    └─ Link artifact to subjects via artifact_subjects join table
 
@@ -213,24 +213,21 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
 ## CLI
 
 ```bash
-# Process latest Cap recording and generate summary
-pnpm escribano
-
 # Process a video file (QuickTime, downloaded, etc.)
-pnpm escribano --file "/path/to/video.mov"
+npx escribano --file "/path/to/video.mov"
 
 # Process video with external audio files
-pnpm escribano --file video.mov --mic-audio mic.wav
-pnpm escribano --file video.mov --system-audio system.wav
-pnpm escribano --file video.mov --mic-audio mic.wav --system-audio system.wav
+npx escribano --file video.mov --mic-audio mic.wav
+npx escribano --file video.mov --system-audio system.wav
+npx escribano --file video.mov --mic-audio mic.wav --system-audio system.wav
 
 # Reprocess from scratch
-pnpm escribano --force
+npx escribano --force
 
 # Process only (skip summary generation)
-pnpm escribano --skip-summary
+npx escribano --skip-summary
 
-# Batch quality testing
+# Batch quality testing (development)
 pnpm quality-test          # Process all 7 videos with summary
 pnpm quality-test:fast     # Process without summary generation
 
@@ -293,63 +290,16 @@ The pipeline saves progress aggressively to enable crash recovery:
 - **observation_clusters** — Join table
 - **cluster_merges** — Audio-visual merge records
 
-## Backlog
-
-### P0 — Critical Path
-
-**Existential: Validate the product works**
-- ☐ **Validate artifact quality** — Process 5 real sessions, identify bottleneck layer — *2-3h, do this NOW*
-  - Test with QuickTime recordings (primary workflow)
-  - Rate VLM descriptions, segmentation, summary quality
-- ✅ **MLX-VLM Migration** — ADR-006 complete. 3.5x speedup achieved.
-  - Token budget: 4000 per batch (16 frames)
-  - Adapter: `intelligence.mlx.adapter.ts` + `scripts/mlx_bridge.py`
-  - VLM/LLM separation: MLX for images, Ollama for text (explicit in `index.ts`)
-
-**Quick UX Win**
-- ☐ **Auto-process watcher** — Watch recordings folder, auto-run Escribano on new files — *2-3h*
-  - Removes manual `pnpm escribano` step
-  - Works with Cap or QuickTime recordings
-
-### P1 — Launch Blockers
-
-**Must have for public launch**
-- ✅ **README with before/after** — First impression for every GitHub visitor
-- ☐ **Make repo public** — Unlocks all distribution channels — *15min*
-- ✅ **Landing page** — `apps/landing/` Hugo site for escribano.work
-- ☐ **2-min Loom demo** — Shows the product, not describes it — *1h*
-- ☐ **ADR-005 blog post** — "Why OCR-based screen intelligence fails" — best marketing asset — *2-3h*
-
-### P2 — Next Iteration
-
-**When bandwidth drops to 10-15 hrs/week**
-- ☐ **Real-time capture pipeline** — Rust-based always-on capture — *20+ h*
-  - Removes Cap/QuickTime dependency
-  - Enables automatic session recording (no forgetting to start)
-- ☐ **MCP server** — Expose TopicBlocks via MCP for AI assistant integration — *8-12h*
-- ☐ **Cross-recording Context queries** — "show me all debugging sessions this week" — *4-6h*
-- ☐ **Compare pages (SEO)** — competitive comparison pages — *4-6h*
-- ☐ OCR on keyframes at artifact generation time — *6-8h*
-
-### P3 — Cleanup (Post-Launch)
-
-**Technical debt when product is validated**
-- ☐ Schema migration: rename `clusters` → `segments`, delete `cluster_merges`
-- ☐ Remove deprecated V2 code (`clustering.ts`, `signal-extraction.ts`, `cluster-merge.ts`, etc.)
-- ☐ Remove deprecated V1 code (`process-session.ts`, `classify-session.ts`, etc.)
-- ☐ Split `0_types.ts` into domain/port/config modules
-
-### Deferred (6+ months)
-
-- ☐ Cloud inference tier — hosted option for users without local hardware
-- ☐ Team/Enterprise features
-
 ## Code Conventions
 
 - Single types file — `0_types.ts` is the source of truth
 - Ports & Adapters — External systems accessed through interfaces
 - Repository Pattern — Decouples business logic from storage
 - Functional over classes — Factory functions return typed interfaces
+
+## Task Tracking
+
+See [BACKLOG.md](BACKLOG.md) for task priorities and progress.
 
 ## Deployment
 

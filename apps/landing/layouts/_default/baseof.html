@@ -7,8 +7,19 @@
   <script>
     (function() {
       const stored = localStorage.getItem('theme');
-      if (stored) {
-        document.documentElement.classList.add(stored === 'dark' ? 'dark-mode' : 'light-mode');
+      const html = document.documentElement;
+      
+      if (stored === 'light' || stored === 'dark') {
+        html.classList.add(stored + '-mode');
+        html.classList.remove(stored === 'light' ? 'dark-mode' : 'light-mode');
+      } else {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        html.classList.add(prefersDark ? 'dark-mode' : 'light-mode');
+        html.classList.remove(prefersDark ? 'light-mode' : 'dark-mode');
+        
+        if (!stored) {
+          localStorage.setItem('theme', 'system');
+        }
       }
     })();
   </script>
@@ -65,29 +76,87 @@
       observer.observe(el);
     });
 
-    const themeToggle = document.getElementById('theme-toggle');
-    if (themeToggle) {
-      const html = document.documentElement;
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const stored = localStorage.getItem('theme');
+    const themeButtons = document.querySelectorAll('.theme-btn');
+    const themeDropdownItems = document.querySelectorAll('.theme-dropdown-item');
+    const html = document.documentElement;
+
+    function updateDropdownIcon(theme) {
+      const triggerIcon = document.querySelector('.current-theme-icon');
+      if (!triggerIcon) return;
       
-      let isDark = stored ? stored === 'dark' : prefersDark;
-      themeToggle.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      const icons = {
+        light: '<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>',
+        dark: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+        system: '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'
+      };
       
-      themeToggle.addEventListener('click', function() {
-        isDark = !isDark;
-        themeToggle.setAttribute('data-theme', isDark ? 'dark' : 'light');
-        if (isDark) {
-          html.classList.add('dark-mode');
-          html.classList.remove('light-mode');
-          localStorage.setItem('theme', 'dark');
-        } else {
-          html.classList.add('light-mode');
-          html.classList.remove('dark-mode');
-          localStorage.setItem('theme', 'light');
+      triggerIcon.innerHTML = icons[theme] || icons.system;
+    }
+
+    function setTheme(theme) {
+      localStorage.setItem('theme', theme);
+      
+      let effectiveTheme = theme;
+      if (theme === 'system') {
+        effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      
+      html.classList.remove('light-mode', 'dark-mode');
+      html.classList.add(effectiveTheme + '-mode');
+      
+      themeButtons.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.theme === theme);
+      });
+      
+      themeDropdownItems.forEach(item => {
+        item.classList.toggle('active', item.dataset.theme === theme);
+      });
+      
+      updateDropdownIcon(theme);
+    }
+
+    const stored = localStorage.getItem('theme') || 'system';
+    setTheme(stored);
+
+    themeButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        setTheme(btn.dataset.theme);
+      });
+    });
+
+    themeDropdownItems.forEach(item => {
+      item.addEventListener('click', () => {
+        setTheme(item.dataset.theme);
+      });
+    });
+
+    const dropdownTrigger = document.querySelector('.theme-dropdown-trigger');
+    const dropdown = document.querySelector('.theme-dropdown');
+
+    if (dropdownTrigger && dropdown) {
+      dropdownTrigger.addEventListener('click', () => {
+        dropdown.classList.toggle('open');
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!dropdown.contains(e.target)) {
+          dropdown.classList.remove('open');
         }
       });
+
+      themeDropdownItems.forEach(item => {
+        item.addEventListener('click', () => {
+          dropdown.classList.remove('open');
+        });
+      });
     }
+
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+      const currentTheme = localStorage.getItem('theme');
+      if (currentTheme === 'system') {
+        setTheme('system');
+      }
+    });
   </script>
 </body>
 </html>

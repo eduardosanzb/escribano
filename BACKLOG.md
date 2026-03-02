@@ -43,6 +43,13 @@ Task tracking for Escribano development.
 
 **When bandwidth drops to 10-15 hrs/week**
 
+- [ ] **MLX-LM adapter spike** — Evaluate migrating LLM from Ollama to MLX-LM — *4-6h*
+  - Extend `mlx_bridge.py` with `generate_text` method
+  - Create `intelligence.mlx-lm.adapter.ts`
+  - Benchmark against Ollama with real prompts (subject grouping, artifact generation)
+  - Compare: speed, memory, model availability (qwen3.5:27b MLX port?), feature parity (thinking mode, JSON format)
+  - Decision criteria: >20% speedup + feature parity → migrate; else keep Ollama
+  - Risk: loses Ollama model auto-detection, thinking mode, JSON enforcement
 - [ ] **Auto-detect ffmpeg hardware accelerator** — videotoolbox/vaapi/d3d11va with `--no-hwaccel` override — currently hardcoded (video.ffmpeg.adapter.ts:105, 259, 393) — *2h*
 - [ ] **Real-time capture pipeline** — Rust-based always-on capture — *20+ h*
   - Removes Cap/QuickTime dependency

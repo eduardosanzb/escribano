@@ -5,6 +5,9 @@
  */
 
 import { execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { resolve } from 'node:path';
 
 export interface PrerequisiteResult {
   name: string;
@@ -148,16 +151,34 @@ function checkLLMModels(): {
   };
 }
 
-function checkPythonPackage(packageName: string): boolean {
+function getPythonPath(): string {
+  if (process.env.ESCRIBANO_PYTHON_PATH) {
+    return process.env.ESCRIBANO_PYTHON_PATH;
+  }
+  if (process.env.VIRTUAL_ENV) {
+    return resolve(process.env.VIRTUAL_ENV, 'bin', 'python3');
+  }
+  const uvHomeVenv = resolve(homedir(), '.venv', 'bin', 'python3');
+  if (existsSync(uvHomeVenv)) {
+    return uvHomeVenv;
+  }
+  return 'python3';
+}
+
+function checkPythonPackage(packageName: string): {
+  found: boolean;
+  pythonPath?: string;
+} {
+  const pythonPath = getPythonPath();
   try {
-    execSync(`python3 -c "import ${packageName}"`, {
+    execSync(`"${pythonPath}" -c "import ${packageName}"`, {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 5000,
     });
-    return true;
+    return { found: true, pythonPath };
   } catch {
-    return false;
+    return { found: false };
   }
 }
 
@@ -247,8 +268,11 @@ export function checkPrerequisites(): PrerequisiteResult[] {
         break;
       }
       case 'mlx-vlm': {
-        result.found = checkPythonPackage('mlx_vlm');
-        if (!result.found) {
+        const check = checkPythonPackage('mlx_vlm');
+        result.found = check.found;
+        if (check.found && check.pythonPath) {
+          result.notes = `via ${check.pythonPath}`;
+        } else {
           result.installCommand = detectPipCommand();
         }
         break;

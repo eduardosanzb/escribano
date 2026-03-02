@@ -1,6 +1,6 @@
 {
   "name": "escribano",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AI-powered session intelligence tool — turn screen recordings into structured work summaries",
   "main": "dist/index.js",
   "type": "module",

@@ -14,7 +14,11 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
 import { createConnection, type Socket } from 'node:net';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
 import type {
   ArtifactType,
   Classification,
@@ -73,7 +77,7 @@ const DEFAULT_CONFIG: MlxConfigWithTimeout = {
   maxTokens: Number(process.env.ESCRIBANO_VLM_MAX_TOKENS) || 2000,
   socketPath:
     process.env.ESCRIBANO_MLX_SOCKET_PATH ?? '/tmp/escribano-mlx.sock',
-  bridgeScript: resolve(process.cwd(), 'scripts/mlx_bridge.py'),
+  bridgeScript: resolve(__dirname, '../../scripts/mlx_bridge.py'),
   startupTimeout: Number(process.env.ESCRIBANO_MLX_STARTUP_TIMEOUT) || 60000,
 };
 

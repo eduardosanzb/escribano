@@ -161,6 +161,41 @@ function checkPythonPackage(packageName: string): boolean {
   }
 }
 
+function detectPipCommand(): string {
+  // Check for uv first (fastest, recommended)
+  try {
+    execSync('uv --version', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 3000,
+    });
+    return 'uv pip install mlx-vlm';
+  } catch {}
+
+  // Check for pip3
+  try {
+    execSync('pip3 --version', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 3000,
+    });
+    return 'pip3 install mlx-vlm';
+  } catch {}
+
+  // Check for pip
+  try {
+    execSync('pip --version', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 3000,
+    });
+    return 'pip install mlx-vlm';
+  } catch {}
+
+  // Fallback: python3 -m pip
+  return 'python3 -m pip install mlx-vlm';
+}
+
 export function checkPrerequisites(): PrerequisiteResult[] {
   const results: PrerequisiteResult[] = [];
 
@@ -213,6 +248,9 @@ export function checkPrerequisites(): PrerequisiteResult[] {
       }
       case 'mlx-vlm': {
         result.found = checkPythonPackage('mlx_vlm');
+        if (!result.found) {
+          result.installCommand = detectPipCommand();
+        }
         break;
       }
     }

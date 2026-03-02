@@ -157,6 +157,10 @@ Uses VLM-first visual understanding, not OCR + text clustering. OCR fails for de
 brew install ollama whisper-cpp ffmpeg
 
 # MLX-VLM for frame analysis (Apple Silicon)
+# Using uv (recommended, faster)
+uv pip install mlx-vlm
+
+# Or using pip
 pip install mlx-vlm
 ```
 

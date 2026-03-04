@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-03-04
+
+### Added
+- 3-state theme toggle for landing page (light/dark/system)
+- Environment variable logging for debugging
+
+### Fixed
+- Include scripts/ directory in npm package for MLX bridge
+
+### Changed
+- Documentation improvements (CHANGELOG, Features section)
+
 ## [0.1.3] - 2026-03-01
 
 ### Fixed  

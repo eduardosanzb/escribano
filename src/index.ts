@@ -7,6 +7,7 @@
 
 import { homedir } from 'node:os';
 import path from 'node:path';
+import pkg from '../package.json' with { type: 'json' };
 import type { CaptureSource } from './0_types.js';
 import { createCapCaptureSource } from './adapters/capture.cap.adapter.js';
 import { createFilesystemCaptureSource } from './adapters/capture.filesystem.adapter.js';
@@ -32,6 +33,7 @@ const MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
 interface ParsedArgs {
   force: boolean;
   help: boolean;
+  version: boolean;
   doctor: boolean;
   file: string | null;
   skipSummary: boolean;
@@ -45,6 +47,11 @@ interface ParsedArgs {
 
 function main(): void {
   const args = parseArgs(process.argv.slice(2));
+
+  if (args.version) {
+    console.log(`escribano v${pkg.version}`);
+    process.exit(0);
+  }
 
   if (args.help) {
     showHelp();
@@ -89,6 +96,7 @@ function parseArgs(argsArray: string[]): ParsedArgs {
   return {
     force: argsArray.includes('--force'),
     help: argsArray.includes('--help') || argsArray.includes('-h'),
+    version: argsArray.includes('--version') || argsArray.includes('-v'),
     doctor: argsArray[0] === 'doctor',
     file: filePath,
     skipSummary: argsArray.includes('--skip-summary'),
@@ -120,6 +128,7 @@ Usage:
   npx escribano --include-personal        Include personal time in artifact
   npx escribano --copy                    Copy artifact to clipboard
   npx escribano --stdout                  Print artifact to stdout
+  npx escribano --version                 Show version number
   npx escribano --help                    Show this help
 
 Examples:

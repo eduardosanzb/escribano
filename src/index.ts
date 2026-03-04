@@ -23,6 +23,7 @@ import {
   printDoctorResults,
 } from './prerequisites.js';
 import { setupStatsObserver } from './stats/index.js';
+import { logEnvironmentVariables } from './utils/env-logger.js';
 
 const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
@@ -144,6 +145,9 @@ async function run(args: ParsedArgs): Promise<void> {
     copyToClipboard,
     printToStdout,
   } = args;
+
+  // Log environment variables if verbose mode is enabled
+  logEnvironmentVariables();
 
   // Initialize system (reuses batch-context for consistency)
   console.log('Initializing database...');

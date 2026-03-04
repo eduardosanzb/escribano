@@ -6,12 +6,15 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type {
   DbSubjectInsert,
   DbTopicBlock,
   IntelligenceService,
 } from '../0_types.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export interface Subject {
   id: string;
@@ -232,7 +235,13 @@ ID: ${b.id}`;
 
   let template: string;
   try {
-    const promptPath = join(process.cwd(), 'prompts', 'subject-grouping.md');
+    const promptPath = resolve(
+      __dirname,
+      '..',
+      '..',
+      'prompts',
+      'subject-grouping.md'
+    );
     template = readFileSync(promptPath, 'utf-8');
   } catch {
     // Fallback inline prompt if file not found

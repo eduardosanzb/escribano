@@ -4,8 +4,9 @@
  * Implements IntelligenceService using Ollama REST API
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { z } from 'zod';
 import {
@@ -25,6 +26,8 @@ import {
 
 // Debug logging controlled by environment variable
 const DEBUG_OLLAMA = process.env.ESCRIBANO_DEBUG_OLLAMA === 'true';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // TODO: put in an util
 export function debugLog(...args: unknown[]): void {
@@ -278,7 +281,13 @@ function loadClassifySegmentPrompt(
   segment: SessionSegment,
   transcript?: Transcript
 ): string {
-  const promptPath = join(process.cwd(), 'prompts', 'classify-segment.md');
+  const promptPath = resolve(
+    __dirname,
+    '..',
+    '..',
+    'prompts',
+    'classify-segment.md'
+  );
   let prompt = readFileSync(promptPath, 'utf-8');
 
   const timeRangeStr = `[${segment.timeRange[0]}s - ${segment.timeRange[1]}s]`;
@@ -306,7 +315,7 @@ function loadClassifyPrompt(
   transcript: Transcript,
   visualLogs?: VisualLog[]
 ): string {
-  const promptPath = join(process.cwd(), 'prompts', 'classify.md');
+  const promptPath = resolve(__dirname, '..', '..', 'prompts', 'classify.md');
   let prompt = readFileSync(promptPath, 'utf-8');
 
   const segmentsText = transcript.segments
@@ -343,7 +352,13 @@ function loadClassifyPrompt(
  */
 function buildVLMSingleImagePrompt(): string {
   try {
-    const promptPath = join(process.cwd(), 'prompts', 'vlm-single.md');
+    const promptPath = resolve(
+      __dirname,
+      '..',
+      '..',
+      'prompts',
+      'vlm-single.md'
+    );
     return readFileSync(promptPath, 'utf-8');
   } catch {
     // Fallback inline prompt if file not found
@@ -616,7 +631,13 @@ async function extractTopicsWithOllama(
 
   let prompt: string;
   try {
-    const promptPath = join(process.cwd(), 'prompts', 'topic-extract.md');
+    const promptPath = resolve(
+      __dirname,
+      '..',
+      '..',
+      'prompts',
+      'topic-extract.md'
+    );
     const template = readFileSync(promptPath, 'utf-8');
     prompt = template.replace('{{OBSERVATIONS}}', textSamples.join('\n---\n'));
   } catch {
@@ -938,7 +959,13 @@ function loadMetadataPrompt(
   classification: Classification,
   visualLogs?: VisualLog[]
 ): string {
-  const promptPath = join(process.cwd(), 'prompts', 'extract-metadata.md');
+  const promptPath = resolve(
+    __dirname,
+    '..',
+    '..',
+    'prompts',
+    'extract-metadata.md'
+  );
   let prompt = readFileSync(promptPath, 'utf-8');
 
   const classificationSummary = Object.entries(classification)
@@ -1002,7 +1029,13 @@ function loadArtifactPrompt(
     visualLogs?: VisualLog[];
   }
 ): string {
-  const promptPath = join(process.cwd(), 'prompts', `${artifactType}.md`);
+  const promptPath = resolve(
+    __dirname,
+    '..',
+    '..',
+    'prompts',
+    `${artifactType}.md`
+  );
   let prompt = readFileSync(promptPath, 'utf-8');
 
   // TODO: Implement robust transcript cleaning (Milestone 4)

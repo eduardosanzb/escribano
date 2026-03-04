@@ -1,0 +1,24 @@
+# Python artifacts
+**/__pycache__/
+**/.venv/
+**/*.pyc
+**/*.pyo
+**/uv.lock
+**/pyproject.toml
+**/.python-version
+
+# Test files
+**/test_*.py
+**/*_test.py
+
+# Development-only TypeScript files
+**/seed-fixtures.ts
+**/rebuild-index.ts
+
+# Visual observer module (V2 only, not used in V3)
+**/escribano_visual/
+**/visual_observer_base.py
+**/test_visual_observer.py
+
+# POC/experimental
+**/poc-*

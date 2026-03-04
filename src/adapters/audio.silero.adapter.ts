@@ -1,11 +1,14 @@
 import { type ChildProcess, exec, spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
-import path from 'node:path';
+import path, { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import type { ResourceTrackable } from '../stats/types.js';
 
 const execAsync = promisify(exec);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export interface SpeechSegment {
   start: number;
@@ -48,26 +51,88 @@ export function createSileroPreprocessor(): AudioPreprocessor {
         );
       }
 
-      const scriptPath = path.join(
-        process.cwd(),
+      const scriptPath = resolve(
+        __dirname,
+        '..',
+        '..',
         'src',
         'scripts',
         'audio_preprocessor.py'
       );
+
+      if (!existsSync(scriptPath)) {
+        throw new Error(
+          `Audio preprocessor script not found at: ${scriptPath}`
+        );
+      }
+
       const command = `uv run "${scriptPath}" --audio "${inputWavPath}" --output-dir "${tempDir}" --output-json "${manifestPath}"`;
 
       try {
         console.log(`Running Silero VAD on ${inputWavPath}...`);
+        if (process.env.ESCRIBANO_VERBOSE === 'true') {
+          console.log(`  Script path: ${scriptPath}`);
+          console.log(`  Script exists: ${existsSync(scriptPath)}`);
+          console.log(`  Command: ${command}`);
+          console.log(`  Working directory (user): ${process.cwd()}`);
+          try {
+            const { stdout: uvVersion } = await execAsync('uv --version');
+            console.log(`  uv version: ${uvVersion.trim()}`);
+          } catch {
+            console.log(`  uv version: NOT FOUND`);
+          }
+        }
 
         currentProcess = spawn('sh', ['-c', command]);
+
+        let stderr = '';
+        let stdout = '';
+
+        if (currentProcess.stderr) {
+          currentProcess.stderr.on('data', (data) => {
+            stderr += data.toString();
+          });
+        }
+
+        if (currentProcess.stdout) {
+          currentProcess.stdout.on('data', (data) => {
+            stdout += data.toString();
+          });
+        }
 
         await new Promise<void>((resolve, reject) => {
           currentProcess?.on('close', (code) => {
             currentProcess = null;
             if (code === 0) {
+              if (process.env.ESCRIBANO_VERBOSE === 'true' && stdout) {
+                console.log(
+                  `  Silero VAD stdout:\n${stdout
+                    .split('\n')
+                    .map((l) => '    ' + l)
+                    .join('\n')}`
+                );
+              }
               resolve();
             } else {
-              reject(new Error(`Silero VAD failed with code ${code}`));
+              console.error(
+                `  Silero VAD stderr:\n${stderr
+                  .split('\n')
+                  .map((l) => '    ' + l)
+                  .join('\n')}`
+              );
+              if (stdout) {
+                console.error(
+                  `  Silero VAD stdout:\n${stdout
+                    .split('\n')
+                    .map((l) => '    ' + l)
+                    .join('\n')}`
+                );
+              }
+              reject(
+                new Error(
+                  `Silero VAD failed with code ${code}: ${stderr || stdout || 'No output captured'}`
+                )
+              );
             }
           });
           currentProcess?.on('error', (err) => {

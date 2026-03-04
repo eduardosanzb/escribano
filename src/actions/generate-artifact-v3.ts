@@ -8,7 +8,8 @@
 import { execSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import path from 'node:path';
+import path, { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type {
   DbTopicBlock,
   IntelligenceService,
@@ -22,6 +23,8 @@ import {
   type SubjectGroupingResult,
   saveSubjectsToDatabase,
 } from '../services/subject-grouping.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export type ArtifactFormat = 'card' | 'standup' | 'narrative';
 
@@ -361,7 +364,7 @@ async function generateLlmArtifact(
       : format === 'standup'
         ? 'standup.md'
         : 'summary-v3.md';
-  const promptPath = path.join(process.cwd(), 'prompts', promptFileName);
+  const promptPath = resolve(__dirname, '..', '..', 'prompts', promptFileName);
 
   let promptTemplate: string;
   try {

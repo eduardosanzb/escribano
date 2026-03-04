@@ -6,9 +6,12 @@
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import path from 'node:path';
+import path, { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { IntelligenceService, Repositories } from '../0_types.js';
 import { log } from '../pipeline/context.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export interface SummaryArtifact {
   id: string;
@@ -157,7 +160,7 @@ async function generateLlmSummary(
   intelligence: IntelligenceService
 ): Promise<string> {
   // Read prompt template
-  const promptPath = path.join(process.cwd(), 'prompts', 'summary-v3.md');
+  const promptPath = resolve(__dirname, '..', '..', 'prompts', 'summary-v3.md');
   let promptTemplate: string;
 
   try {

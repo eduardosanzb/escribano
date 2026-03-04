@@ -6,15 +6,18 @@
  */
 
 import { type ChildProcess, exec, spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
-import path from 'node:path';
+import path, { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import type { VideoService } from '../0_types.js';
 import type { ResourceTrackable } from '../stats/types.js';
 import { debugLog } from './intelligence.ollama.adapter.js';
 
 const execAsync = promisify(exec);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Scene detection configuration (with env var overrides)
 // Lower threshold = more sensitive = more scene changes detected
@@ -333,22 +336,27 @@ export function createFfmpegVideoService(): VideoService & ResourceTrackable {
      * OCR is parallelized across all available CPU cores.
      */
     runVisualIndexing: async (framesDir, outputPath) => {
-      const scriptPath = path.join(
-        process.cwd(),
+      const scriptPath = resolve(
+        __dirname,
+        '..',
+        '..',
         'src',
         'scripts',
         'visual_observer_base.py'
       );
+
+      if (!existsSync(scriptPath)) {
+        throw new Error(`Visual observer script not found at: ${scriptPath}`);
+      }
+
       const frameInterval = Number(process.env.ESCRIBANO_FRAME_INTERVAL) || 2;
       const workers = os.cpus().length;
 
-      // Use uv run to execute the script with its environment
-      // --workers enables parallel OCR processing
       const command = `uv run "${scriptPath}" --frames-dir "${framesDir}" --output "${outputPath}" --frame-interval ${frameInterval} --workers ${workers}`;
 
       try {
         await execAsync(command, {
-          cwd: path.join(process.cwd(), 'src', 'scripts'),
+          cwd: dirname(scriptPath),
         });
         const content = await readFile(outputPath, 'utf-8');
         return JSON.parse(content);

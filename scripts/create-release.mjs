@@ -15,9 +15,16 @@ function getCurrentTag() {
   try {
     return run("git describe --tags --exact-match");
   } catch {
-    console.error("❌ No git tag found at current commit");
-    console.error("   Run: git tag v<x.y.z> && git push --tags");
-    process.exit(1);
+    // No tag - create one from package.json
+    const pkg = JSON.parse(readFileSync(join(REPO_ROOT, "package.json")));
+    const tag = `v${pkg.version}`;
+    
+    console.log(`⚠️  No tag found, creating ${tag}...`);
+    run(`git tag ${tag}`);
+    run(`git push origin ${tag}`);
+    console.log(`✅ Created and pushed tag: ${tag}`);
+    
+    return tag;
   }
 }
 
@@ -161,6 +168,29 @@ function createGitHubRelease(tag, releaseNotes) {
   }
 }
 
+function commitAndPushChangelog(tag) {
+  try {
+    // Check if there are changes
+    const status = run("git status --porcelain CHANGELOG.md");
+    
+    if (!status) {
+      console.log("ℹ️  CHANGELOG.md already up to date, nothing to commit");
+      return;
+    }
+    
+    // Stage, commit, and push
+    run("git add CHANGELOG.md");
+    run(`git commit -m "docs: update CHANGELOG for ${tag}"`);
+    run("git push");
+    
+    console.log(`✅ Committed and pushed CHANGELOG.md for ${tag}`);
+  } catch (error) {
+    console.error("⚠️  Failed to commit/push CHANGELOG.md:", error.message);
+    console.error("   You may need to commit manually:");
+    console.error("   git add CHANGELOG.md && git commit -m 'docs: update CHANGELOG' && git push");
+  }
+}
+
 async function main() {
   console.log("🚀 Creating GitHub release...\n");
   
@@ -187,12 +217,9 @@ async function main() {
   
   updateChangelog(releaseNotes);
   createGitHubRelease(currentTag, releaseNotes);
+  commitAndPushChangelog(currentTag);
   
-  console.log("\n🎉 Release complete!");
-  console.log("\nNext steps:");
-  console.log("  1. Review CHANGELOG.md changes");
-  console.log("  2. Commit: git add CHANGELOG.md && git commit -m 'docs: update CHANGELOG'");
-  console.log("  3. Push: git push");
+  console.log("\n🎉 Release complete! All changes pushed to GitHub.");
 }
 
 main().catch(error => {

@@ -7,34 +7,42 @@ This document describes how to create releases for Escribano.
 Releases are **fully automated** via npm's `postpublish` hook. When you run `npm publish`, the following happens automatically:
 
 1. ✅ npm publishes the package
-2. 🤖 LLM (Ollama) analyzes commits since last tag
-3. 📝 Generates human-readable release notes
+2. 🏷️ Auto-creates git tag if missing (reads version from package.json)
+3. 📝 Generates release notes (LLM or GitHub auto-generation)
 4. 📄 Updates `CHANGELOG.md`
 5. 🚀 Creates GitHub release
+6. ⬆️ Commits and pushes CHANGELOG changes
 
 ## Prerequisites
 
-- Ollama running locally (default: `http://localhost:11434`)
-- Model installed: `qwen3:8b` (or set `ESCRIBANO_LLM_MODEL`)
 - `gh` CLI authenticated with GitHub
+- Ollama running locally (optional, for LLM-generated notes)
+- Model installed: `qwen3:8b` (or set `ESCRIBANO_LLM_MODEL`)
 
 ## Creating a Release
 
-### Standard Release
+### Simple Release
 
 ```bash
-# 1. Bump version in package.json
+npm publish
+```
+
+That's it! Everything else is automated:
+
+- ✅ Tag created automatically if missing
+- ✅ GitHub release created
+- ✅ CHANGELOG.md updated and pushed
+- ✅ All changes committed to repo
+
+### With Version Bump
+
+If you want to bump the version first:
+
+```bash
+# Bump version
 npm version patch  # or minor, or major
 
-# 2. Update CHANGELOG manually if needed (optional)
-
-# 3. Commit and tag
-git add .
-git commit -m "chore: bump version to x.y.z"
-git push
-git push --tags
-
-# 4. Publish (this triggers everything automatically)
+# Publish (tag already exists, will be used)
 npm publish
 ```
 
@@ -108,47 +116,21 @@ The LLM generates notes in [Keep a Changelog](https://keepachangelog.com/) forma
 
 ## Troubleshooting
 
-### "No git tag found at current commit"
-
-**Problem**: The postpublish hook can't find a tag.
-
-**Solution**: Make sure you create and push the tag *before* running `npm publish`:
-
-```bash
-npm version patch
-git push --tags
-npm publish
-```
-
 ### Ollama Connection Failed
 
 **Problem**: Can't connect to Ollama.
 
-**Solution**: Ensure Ollama is running:
+**Solution**: The script will automatically fall back to GitHub's auto-generated notes. No action needed.
+
+### Tag Already Exists at Different Commit
+
+**Problem**: Version in package.json matches an existing tag at a different commit.
+
+**Solution**: Bump the version:
 
 ```bash
-ollama serve
-```
-
-Or use fallback (simple format without LLM):
-
-```bash
-# The script will automatically fall back to simple format
+npm version patch
 npm publish
-```
-
-### Release Already Exists
-
-**Problem**: GitHub release already exists for this tag.
-
-**Solution**: The script will skip creation and show a warning. To recreate:
-
-```bash
-# Delete the release
-gh release delete v1.2.3 --yes
-
-# Run the script again
-node scripts/create-release.mjs
 ```
 
 ## Files

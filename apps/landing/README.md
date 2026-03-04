@@ -2,6 +2,14 @@
 
 Hugo static site for [escribano.work](https://escribano.work).
 
+## Features
+
+- **3-state theme toggle** — Light, Dark, and System modes (respects OS preference by default)
+- **Responsive design** — Mobile-first with adaptive layouts
+- **Paper texture aesthetic** — Subtle noise overlay with light/dark variants
+- **Fast static site** — Hugo + nginx, no client-side JavaScript frameworks
+- **Auto-deploy** — GitHub Actions triggers Coolify webhook on push to main
+
 ## Development
 
 ```bash

@@ -5,7 +5,7 @@
  * Refactored to use batch-context for shared initialization logic
  */
 
-import { readdir, stat } from 'node:fs/promises';
+import { access, constants, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import pkg from '../package.json' with { type: 'json' };
@@ -89,27 +89,29 @@ async function findLatestVideo(dirPath: string): Promise<string> {
     throw new Error(`No video files found in: ${resolvedPath}`);
   }
 
-  const filesWithMtime = await Promise.all(
-    videoFiles.map(async (entry) => {
-      const fullPath = path.join(resolvedPath, entry.name);
-      try {
-        const fileStat = await stat(fullPath);
-        return { path: fullPath, mtime: fileStat.mtime };
-      } catch {
-        return null;
-      }
-    })
-  );
+  let latestFilePath: string | null = null;
+  let latestMtime = -Infinity;
 
-  const validFiles = filesWithMtime.filter(
-    (f): f is { path: string; mtime: Date } => f !== null
-  );
-  if (validFiles.length === 0) {
+  for (const entry of videoFiles) {
+    const fullPath = path.join(resolvedPath, entry.name);
+    try {
+      await access(fullPath, constants.R_OK);
+      const fileStat = await stat(fullPath);
+      const mtimeMs = fileStat.mtime.getTime();
+      if (mtimeMs > latestMtime) {
+        latestMtime = mtimeMs;
+        latestFilePath = fullPath;
+      }
+    } catch {
+      // Skip files that are inaccessible (permission denied, broken symlink, etc.)
+    }
+  }
+
+  if (!latestFilePath) {
     throw new Error(`No accessible video files found in: ${resolvedPath}`);
   }
 
-  validFiles.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-  return validFiles[0].path;
+  return latestFilePath;
 }
 
 interface ParsedArgs {

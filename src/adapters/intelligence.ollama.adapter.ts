@@ -193,6 +193,41 @@ async function doModelWarmup(
   }
 }
 
+/**
+ * Unload an Ollama model from memory.
+ * Uses keep_alive: 0 to tell Ollama to release the model immediately.
+ */
+export async function unloadOllamaModel(
+  modelName: string,
+  config: IntelligenceConfig
+): Promise<void> {
+  try {
+    debugLog(`Unloading model: ${modelName}...`);
+    const response = await fetch(
+      `${config.endpoint.replace('/chat', '').replace('/generate', '')}/generate`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelName,
+          prompt: '',
+          keep_alive: 0, // Unload immediately
+        }),
+      }
+    );
+
+    if (response.ok) {
+      warmedModels.delete(modelName);
+      debugLog(`Model ${modelName} unloaded.`);
+    }
+  } catch (error) {
+    // Unload is best-effort - don't throw
+    debugLog(
+      `Failed to unload model ${modelName}: ${(error as Error).message}`
+    );
+  }
+}
+
 async function checkOllamaHealth(): Promise<void> {
   try {
     const response = await fetch('http://localhost:11434/api/tags');

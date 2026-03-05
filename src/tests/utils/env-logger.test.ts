@@ -182,7 +182,7 @@ OTHER_VAR=value`;
 
     it('marks custom values with [CUSTOM]', () => {
       const mockContent = `# Default batch size
-ESCRIBANO_VLM_BATCH_SIZE=4`;
+ESCRIBANO_VLM_BATCH_SIZE=2`;
 
       vi.mocked(readFileSync).mockReturnValue(mockContent);
       process.env.ESCRIBANO_VERBOSE = 'true';
@@ -197,18 +197,18 @@ ESCRIBANO_VLM_BATCH_SIZE=4`;
         .join('\n');
       expect(output).toContain('[CUSTOM]');
       expect(output).toContain('Current: 8');
-      expect(output).toContain('Default: 4');
+      expect(output).toContain('Default: 2');
 
       consoleSpy.mockRestore();
     });
 
     it('does not mark default values', () => {
       const mockContent = `# Default batch size
-ESCRIBANO_VLM_BATCH_SIZE=4`;
+ESCRIBANO_VLM_BATCH_SIZE=2`;
 
       vi.mocked(readFileSync).mockReturnValue(mockContent);
       process.env.ESCRIBANO_VERBOSE = 'true';
-      process.env.ESCRIBANO_VLM_BATCH_SIZE = '4';
+      process.env.ESCRIBANO_VLM_BATCH_SIZE = '2';
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -243,7 +243,7 @@ ESCRIBANO_VLM_BATCH_SIZE=4`;
     });
 
     it('does not mask non-secret values', () => {
-      const mockContent = `ESCRIBANO_VLM_BATCH_SIZE=4`;
+      const mockContent = `ESCRIBANO_VLM_BATCH_SIZE=2`;
 
       vi.mocked(readFileSync).mockReturnValue(mockContent);
       process.env.ESCRIBANO_VERBOSE = 'true';
@@ -263,7 +263,7 @@ ESCRIBANO_VLM_BATCH_SIZE=4`;
     });
 
     it('shows "not set" for undefined variables', () => {
-      const mockContent = `ESCRIBANO_VLM_BATCH_SIZE=4`;
+      const mockContent = `ESCRIBANO_VLM_BATCH_SIZE=2`;
 
       vi.mocked(readFileSync).mockReturnValue(mockContent);
       process.env.ESCRIBANO_VERBOSE = 'true';

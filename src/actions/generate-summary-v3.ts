@@ -108,7 +108,8 @@ export async function generateSummaryV3(
       const subjectForBlock = subjects.find((s) =>
         s.topicBlockIds.includes(block.id)
       );
-      return !subjectForBlock?.isPersonal;
+      // Use the collected personalSubjectIds set for filtering
+      return !personalSubjectIds.has(subjectForBlock?.id ?? '');
     });
   }
 

@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 
+
+
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+
 
 const REPO_ROOT = join(import.meta.dirname, "..");
 const CHANGELOG_PATH = join(REPO_ROOT, "CHANGELOG.md");
@@ -18,7 +21,7 @@ function getCurrentTag() {
     // No tag - create one from package.json
     const pkg = JSON.parse(readFileSync(join(REPO_ROOT, "package.json")));
     const tag = `v${pkg.version}`;
-    
+
     // Check if tag already exists locally
     try {
       run(`git rev-parse ${tag}`);
@@ -37,16 +40,16 @@ function getCurrentTag() {
 function getPreviousTag(currentTag) {
   // Fetch latest tags from remote
   run("git fetch origin --tags");
-  
+
   // Get all version tags and sort them
   const allTagsOutput = run("git tag --list 'v*'");
   const allTags = allTagsOutput.split("\n").filter(Boolean);
-  
+
   // Sort by version number
   allTags.sort((a, b) => {
     const aVersion = a.replace(/^v/, "").split(".").map(Number);
     const bVersion = b.replace(/^v/, "").split(".").map(Number);
-    
+
     for (let i = 0; i < Math.max(aVersion.length, bVersion.length); i++) {
       const aPart = aVersion[i] || 0;
       const bPart = bVersion[i] || 0;
@@ -54,9 +57,9 @@ function getPreviousTag(currentTag) {
     }
     return 0;
   });
-  
+
   const currentIndex = allTags.indexOf(currentTag);
-  
+
   if (currentIndex === 0) return null;
   return allTags[currentIndex - 1];
 }
@@ -65,7 +68,7 @@ function getCommitsSinceTag(previousTag, currentTag) {
   const range = previousTag ? `${previousTag}..${currentTag}` : currentTag;
   const format = "%H|%s|%an|%ad";
   const dateformat = "--date=short";
-  
+
   const commits = run(`git log ${range} --pretty=format:'${format}' ${dateformat}`)
     .split("\n")
     .filter(Boolean)
@@ -73,7 +76,7 @@ function getCommitsSinceTag(previousTag, currentTag) {
       const [hash, subject, author, date] = line.split("|");
       return { hash, subject, author, date };
     });
-  
+
   return commits;
 }
 
@@ -96,7 +99,7 @@ Generate a changelog entry in this exact format (use markdown):
 ### Added
 - (new features)
 
-### Fixed  
+### Fixed
 - (bug fixes)
 
 ### Changed
@@ -135,11 +138,11 @@ Rules:
   } catch (error) {
     console.error("⚠️  Failed to generate notes with Ollama, using fallback");
     console.error(error.message);
-    
+
     // Fallback: simple format
     const date = new Date().toISOString().split("T")[0];
     const changes = commits.map(c => `- ${c.subject}`).join("\n");
-    
+
     return `## [${version}] - ${date}
 
 ### Changed
@@ -149,11 +152,11 @@ ${changes}`;
 
 function updateChangelog(releaseNotes) {
   let changelog = "";
-  
+
   if (existsSync(CHANGELOG_PATH)) {
     changelog = readFileSync(CHANGELOG_PATH, "utf-8");
   }
-  
+
   const header = `# Changelog
 
 All notable changes to this project will be documented in this file.
@@ -166,13 +169,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   if (!changelog.includes("# Changelog")) {
     changelog = header + changelog;
   }
-  
+
   // Insert new release after header
   const lines = changelog.split("\n");
   const insertIndex = lines.findIndex(line => line.startsWith("## [")) || 6;
-  
+
   lines.splice(insertIndex, 0, releaseNotes, "");
-  
+
   writeFileSync(CHANGELOG_PATH, lines.join("\n"));
   console.log("✅ Updated CHANGELOG.md");
 }
@@ -180,7 +183,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 function createGitHubRelease(tag, releaseNotes) {
   const notesFile = `/tmp/escribano-release-${tag}.md`;
   writeFileSync(notesFile, releaseNotes);
-  
+
   try {
     run(`gh release create ${tag} --title "${tag}" --notes-file "${notesFile}"`);
     console.log(`✅ Created GitHub release: ${tag}`);
@@ -197,17 +200,17 @@ function commitAndPushChangelog(tag) {
   try {
     // Check if there are changes
     const status = run("git status --porcelain CHANGELOG.md");
-    
+
     if (!status) {
       console.log("ℹ️  CHANGELOG.md already up to date, nothing to commit");
       return;
     }
-    
+
     // Stage, commit, and push
     run("git add CHANGELOG.md");
     run(`git commit -m "docs: update CHANGELOG for ${tag}"`);
     run("git push");
-    
+
     console.log(`✅ Committed and pushed CHANGELOG.md for ${tag}`);
   } catch (error) {
     console.error("⚠️  Failed to commit/push CHANGELOG.md:", error.message);
@@ -218,32 +221,35 @@ function commitAndPushChangelog(tag) {
 
 async function main() {
   console.log("🚀 Creating GitHub release...\n");
-  
+
   const currentTag = getCurrentTag();
   console.log(`📌 Current tag: ${currentTag}`);
-  
+// we have to execute to push the latest tag available whic should be the same as the one from the package.json
+   run("git fetch origin --tags");
+    run(`git push origin ${currentTag}`);
+
   const previousTag = getPreviousTag(currentTag);
   console.log(`📌 Previous tag: ${previousTag || "none (first release)"}`);
-  
+
   const commits = getCommitsSinceTag(previousTag, currentTag);
   console.log(`📝 Found ${commits.length} commits\n`);
-  
+
   if (commits.length === 0) {
     console.log("⚠️  No commits found, skipping release creation");
     process.exit(0);
   }
-  
+
   const version = currentTag.replace(/^v/, "");
   const releaseNotes = await generateReleaseNotes(commits, version);
-  
+
   console.log("Generated release notes:\n");
   console.log(releaseNotes);
   console.log("\n---\n");
-  
+
   updateChangelog(releaseNotes);
   createGitHubRelease(currentTag, releaseNotes);
   commitAndPushChangelog(currentTag);
-  
+
   console.log("\n🎉 Release complete! All changes pushed to GitHub.");
 }
 

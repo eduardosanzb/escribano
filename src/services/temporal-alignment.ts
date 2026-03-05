@@ -90,10 +90,13 @@ export function alignAudioToSegments(
 
   // Filter to audio observations with transcripts
   const audioTranscripts = audioObservations
-    .filter((o) => o.type === 'audio' && o.text && o.text.trim().length > 0)
+    .filter(
+      (o): o is typeof o & { text: string } =>
+        o.type === 'audio' && o.text !== null && o.text.trim().length > 0
+    )
     .map((o) => ({
       source: o.audio_source as 'mic' | 'system',
-      text: o.text!,
+      text: o.text,
       startTime: o.timestamp,
       endTime: o.end_timestamp ?? o.timestamp + 5, // Default 5s if no end time
     }))

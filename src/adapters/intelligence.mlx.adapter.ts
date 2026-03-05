@@ -28,13 +28,13 @@ import type {
   TranscriptMetadata,
   VisualLog,
 } from '../0_types.js';
-import type { ResourceTrackable } from '../stats/types.js';
 import {
   ESCRIBANO_HOME,
   ESCRIBANO_VENV,
   ESCRIBANO_VENV_PYTHON,
   getPythonPath,
 } from '../python-utils.js';
+import type { ResourceTrackable } from '../stats/types.js';
 
 const DEBUG_MLX = process.env.ESCRIBANO_VERBOSE === 'true';
 
@@ -87,7 +87,7 @@ const DEFAULT_CONFIG: MlxConfigWithTimeout = {
 };
 
 /** pip binary inside Escribano's managed venv. */
-const ESCRIBANO_VENV_PIP = resolve(ESCRIBANO_VENV, 'bin', 'pip');
+const _ESCRIBANO_VENV_PIP = resolve(ESCRIBANO_VENV, 'bin', 'pip');
 
 /**
  * Run a command, streaming stdout/stderr directly to the terminal.

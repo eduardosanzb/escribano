@@ -91,7 +91,7 @@ export function extractProjects(texts: string[]): string[] {
   for (const text of texts) {
     for (const pattern of PROJECT_PATTERNS) {
       const match = text.match(pattern);
-      if (match && match[1]) {
+      if (match?.[1]) {
         const name = match[1].toLowerCase();
         // Filter out common non-project names
         if (

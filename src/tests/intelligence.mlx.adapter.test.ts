@@ -27,12 +27,8 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { existsSync } from 'node:fs';
-import {
-  getPythonPath,
-} from '../python-utils.js';
-import {
-  resolvePythonPath,
-} from '../adapters/intelligence.mlx.adapter.js';
+import { resolvePythonPath } from '../adapters/intelligence.mlx.adapter.js';
+import { getPythonPath } from '../python-utils.js';
 
 const mockExistsSync = vi.mocked(existsSync);
 
@@ -219,7 +215,7 @@ describe('resolvePythonPath', () => {
         args.includes('venv')
     );
     expect(venvCall).toBeDefined();
-    expect(venvCall![1]).toContain(venvDir);
+    expect(venvCall?.[1]).toContain(venvDir);
   });
 
   it('installs mlx-vlm when the import probe fails', async () => {
@@ -270,8 +266,15 @@ describe('resolvePythonPath', () => {
         args.includes('mlx-vlm')
     );
     expect(installCall).toBeDefined();
-    expect(installCall![1]).toEqual(
-      expect.arrayContaining(['-m', 'pip', 'install', 'mlx-vlm', 'torch', 'torchvision'])
+    expect(installCall?.[1]).toEqual(
+      expect.arrayContaining([
+        '-m',
+        'pip',
+        'install',
+        'mlx-vlm',
+        'torch',
+        'torchvision',
+      ])
     );
   });
 });

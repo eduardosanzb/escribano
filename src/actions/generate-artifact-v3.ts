@@ -112,7 +112,7 @@ export async function generateArtifactV3(
     subject.apps = normalizeAppNames(subject.apps);
   }
 
-  const filteredSubjects = options.includePersonal
+  const _filteredSubjects = options.includePersonal
     ? subjects
     : subjects.filter((s) => !s.isPersonal);
 
@@ -299,7 +299,7 @@ function generateCardTemplate(
 function generateStandupTemplate(
   subjects: Subject[],
   sessionDate: string,
-  sessionDuration: string
+  _sessionDuration: string
 ): string {
   let content = `## Standup - ${sessionDate}\n\n`;
   content += `**What I did:**\n`;
@@ -353,7 +353,7 @@ async function generateLlmArtifact(
   format: ArtifactFormat,
   recording: { id: string; duration: number; captured_at: string },
   intelligence: IntelligenceService,
-  repos: Repositories,
+  _repos: Repositories,
   allTopicBlocks: DbTopicBlock[]
 ): Promise<string> {
   const ARTIFACT_THINK = process.env.ESCRIBANO_ARTIFACT_THINK === 'true';

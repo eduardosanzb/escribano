@@ -1,5 +1,3 @@
-import type { DbRecording } from '../0_types.js';
-
 export type RecordingStatus = 'raw' | 'processing' | 'processed' | 'error';
 export type ProcessingStep =
   // Audio pipeline

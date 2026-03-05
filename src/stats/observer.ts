@@ -22,7 +22,7 @@ export function setupStatsObserver(repo: StatsRepository): void {
   pipelineEvents.on('run:end', (data) => {
     if (!currentRunId) return;
 
-    const startedAt = data.timestamp;
+    const _startedAt = data.timestamp;
     repo.updateRun(currentRunId, {
       status: data.status,
       completed_at: new Date(data.timestamp).toISOString(),

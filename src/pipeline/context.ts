@@ -2,7 +2,6 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { performance } from 'node:perf_hooks';
 import { generateId } from '../db/helpers.js';
 import type { ResourceTracker } from '../stats/resource-tracker.js';
-import type { ResourceSnapshot } from '../stats/types.js';
 import { pipelineEvents } from './events.js';
 
 export interface StepResult {

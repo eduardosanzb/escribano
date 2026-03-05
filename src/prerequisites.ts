@@ -6,8 +6,10 @@
 
 import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { getEffectivePythonPathSync, ESCRIBANO_VENV_PYTHON } from './python-utils.js';
+import {
+  ESCRIBANO_VENV_PYTHON,
+  getEffectivePythonPathSync,
+} from './python-utils.js';
 
 export interface PrerequisiteResult {
   name: string;
@@ -71,7 +73,8 @@ const PREREQUISITES: PrerequisiteResult[] = [
     name: 'mlx-vlm',
     found: false,
     installCommand: 'pip install mlx-vlm torch torchvision',
-    notes: 'VLM library for frame analysis (Apple Silicon) — auto-installed by escribano on first run',
+    notes:
+      'VLM library for frame analysis (Apple Silicon) — auto-installed by escribano on first run',
   },
 ];
 

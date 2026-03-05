@@ -30,7 +30,6 @@ import {
 import { updateGlobalIndex } from './actions/outline-index.js';
 import { processRecordingV3 } from './actions/process-recording-v3.js';
 import {
-  getOutlineMetadata,
   hasContentChanged,
   type OutlineMetadata,
   publishSummaryV3,

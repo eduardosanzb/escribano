@@ -77,7 +77,7 @@ interface MlxConfigWithTimeout extends MlxConfig {
 const DEFAULT_CONFIG: MlxConfigWithTimeout = {
   model:
     process.env.ESCRIBANO_VLM_MODEL ??
-    'mlx-community/Qwen3-VL-2B-Instruct-bf16',
+    'mlx-community/Qwen3-VL-2B-Instruct-4bit',
   batchSize: Number(process.env.ESCRIBANO_VLM_BATCH_SIZE) || 4,
   maxTokens: Number(process.env.ESCRIBANO_VLM_MAX_TOKENS) || 2000,
   socketPath:

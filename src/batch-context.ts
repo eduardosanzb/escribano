@@ -492,7 +492,7 @@ function collectRunMetadata(
   const metadata: Record<string, unknown> = {
     vlm_model:
       process.env.ESCRIBANO_VLM_MODEL ??
-      'mlx-community/Qwen3-VL-2B-Instruct-bf16',
+      'mlx-community/Qwen3-VL-2B-Instruct-4bit',
     llm_model: process.env.ESCRIBANO_LLM_MODEL ?? 'auto-detected',
     commit_hash: commitHash,
     node_version: process.version,

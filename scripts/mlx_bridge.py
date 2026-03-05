@@ -9,7 +9,7 @@ Usage:
     python3 scripts/mlx_bridge.py
 
 Environment Variables:
-    ESCRIBANO_VLM_MODEL       - MLX model name (default: mlx-community/Qwen3-VL-2B-Instruct-bf16)
+    ESCRIBANO_VLM_MODEL       - MLX model name (default: mlx-community/Qwen3-VL-2B-Instruct-4bit)
     ESCRIBANO_VLM_BATCH_SIZE  - Frames per batch (default: 4)
     ESCRIBANO_VLM_MAX_TOKENS  - Token budget per batch (default: 2000)
     ESCRIBANO_MLX_SOCKET_PATH - Unix socket path (default: /tmp/escribano-mlx.sock)
@@ -28,7 +28,7 @@ from typing import Any
 
 # Configuration from environment
 MODEL_NAME = os.environ.get(
-    "ESCRIBANO_VLM_MODEL", "mlx-community/Qwen3-VL-2B-Instruct-bf16"
+    "ESCRIBANO_VLM_MODEL", "mlx-community/Qwen3-VL-2B-Instruct-4bit"
 )
 BATCH_SIZE = int(os.environ.get("ESCRIBANO_VLM_BATCH_SIZE", "4"))
 MAX_TOKENS = int(os.environ.get("ESCRIBANO_VLM_MAX_TOKENS", "2000"))

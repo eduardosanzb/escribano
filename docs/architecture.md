@@ -197,11 +197,33 @@ erDiagram
 │  └──────────────────────────────────────────────────────────────────────────┘│
 │         │                                                                   │
 │         ▼                                                                   │
-│  ┌─────────────────────────────────────────────────────────────────────────┐│
+ │  ┌─────────────────────────────────────────────────────────────────────────┐│
   │  │  ARTIFACT GENERATION                                  ││
-  │  │  LLM synthesis of VLM descriptions + audio transcripts                   ││
-  │  │  Model: qwen3:32b  |  Output: Markdown summary                           ││
-│  └──────────────────────────────────────────────────────────────────────────┘│
+  │  │                                                      ││
+  │  │  ┌──────────────────┐                                   ││
+  │  │  │ format === 'narrative'?                             ││
+  │  │  └────────┬─────────┘                                   ││
+  │  │      YES  │   NO (card/standup)                             ││
+  │  │           │                                             ││
+  │  │          ▼           ▼                                          ││
+  │  │  ┌─────────────┐  ┌─────────────────┐                               ││
+  │  │  │ generate-   │  │ generate-       │                               ││
+  │  │  │ summary-v3  │  │ artifact-v3     │                               ││
+  │  │  └──────┬──────┘  └────────┬────────┘                               ││
+  │  │         │                  │                                    ││
+  │  │         ▼                  ▼                                    ││
+  │  │  TopicBlocks →        Subjects →                            ││
+  │  │  Activity Timeline    Subject Data                            ││
+  │  │         │                  │                                    ││
+  │  │         ▼                  ▼                                    ││
+  │  │  summary-v3.md         card.md / standup.md                         ││
+  │  │  (all vars filled)     (all vars filled)                            ││
+  │  │         │                  │                                    ││
+  │  │         └────────┬─────────┘                                    ││
+  │  │                  ▼                                             ││
+  │  │           Markdown Artifact                                    ││
+  │  │                                                      ││
+  │  └──────────────────────────────────────────────────────────────────────────┘│
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -299,3 +321,47 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 | `EmbeddingService` | `embedding.ollama.adapter.ts` | **(deprecated in V3, kept for future)** |
 | `PublishingService` | `publishing.outline.adapter.ts` | Outline wiki publishing |
 | `StorageService` | `storage.fs.adapter.ts` | **(deprecated in V3, V1 only)** |
+
+---
+
+## Artifact Format Architecture
+
+Escribano supports three artifact formats, each with distinct data requirements:
+
+### Format Comparison
+
+| Format | Use Case | Data Path | Prompt |
+|--------|----------|-----------|--------|
+| `card` | Personal review, daily notes | Subject grouping | `card.md` |
+| `standup` | Daily standup, async updates | Subject grouping | `standup.md` |
+| `narrative` | Retrospectives, blog drafts | Per-segment timeline | `summary-v3.md` |
+
+### Implementation Paths
+
+**Card & Standup** (`generate-artifact-v3.ts`):
+1. TopicBlocks → Subject grouping (LLM clustering)
+2. Subjects → `{{SUBJECTS_DATA}}` / `{{WORK_SUBJECTS}}`
+3. LLM synthesis → Markdown output
+
+**Narrative** (`generate-summary-v3.ts`):
+1. TopicBlocks → Subject grouping (for DB linking + personal filtering)
+2. TopicBlocks → Activity timeline (`{{ACTIVITY_TIMELINE}}`)
+3. Extract apps/URLs from descriptions (`{{APPS_LIST}}`, `{{URLS_LIST}}`)
+4. LLM synthesis → Markdown output
+
+### Why Two Paths?
+
+**Narrative** requires chronological detail with specific timestamps and transcripts, producing a flowing work log.
+
+**Card/Standup** benefit from thematic grouping that collapses time into concise bullet points.
+
+### Critical Lesson: Incomplete Template Replacement = Hallucination
+
+A bug in the original implementation demonstrated that **unfilled template placeholders cause LLMs to hallucinate**:
+
+When `summary-v3.md` was used with only 3 of 6 variables replaced, the LLM:
+1. Saw empty placeholders (`{{ACTIVITY_TIMELINE}}`, etc.)
+2. Found an example block inside the prompt with specific apps/URLs
+3. Copied the example pattern and invented matching details
+
+**Solution:** Route narrative through `generate-summary-v3.ts` which correctly builds all required variables from TopicBlocks.

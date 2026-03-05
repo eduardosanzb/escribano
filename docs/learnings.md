@@ -249,3 +249,60 @@ Summary quality **maintained or improved**:
 HTTP-01 challenge fails behind Cloudflare's orange-cloud proxy. The fix is DNS-01 challenge via the Cloudflare API. Key gotchas: Coolify silently drops `environment:` blocks (use a `.env` file), and `delaybeforecheck=30` is required to avoid DNS propagation race conditions.
 
 **Full runbook:** [docs/deployment/coolify-cloudflare-dns.md](./deployment/coolify-cloudflare-dns.md)
+
+## Narrative Artifact Hallucination (Mar 2026)
+
+### Problem
+The narrative artifact format was producing completely hallucinated content:
+- AWS CloudWatch logs that never occurred
+- Postman cache invalidation on APIs that weren't used
+- Figma wireframes when no design work happened
+
+Meanwhile, card and standup formats for the same recording were accurate.
+
+### Root Cause
+The `generate-artifact-v3.ts` was using `prompts/summary-v3.md` for narrative format 
+but only replacing 3 of 6 template variables:
+
+| Variable | Expected | Actually Replaced |
+|----------|----------|-------------------|
+| `{{SESSION_DURATION}}` | ✅ | ✅ |
+| `{{SESSION_DATE}}` | ✅ | ✅ |
+| `{{SUBJECT_COUNT}}` | ✅ | ✅ |
+| `{{ACTIVITY_TIMELINE}}` | ❌ | **Left as literal text** |
+| `{{APPS_LIST}}` | ❌ | **Left as literal text** |
+| `{{URLS_LIST}}` | ❌ | **Left as literal text** |
+
+The narrative prompt includes an example block with specific apps (Terminal, VS Code, 
+Google Chrome) and URLs (github.com/owner/repo, docs.example.com/guide). Without 
+real data in those placeholders, the LLM used the example as a scaffold and invented 
+plausible-sounding content.
+
+### Key Insight
+**Incomplete template variable replacement is a hallucination vector.** When a prompt 
+contains unfilled placeholders AND example content, LLMs will copy the example pattern 
+and generate matching details.
+
+### Solution
+Routed narrative generation through `generate-summary-v3.ts` which correctly builds 
+`ACTIVITY_TIMELINE`, `APPS_LIST`, and `URLS_LIST` from raw TopicBlocks:
+
+```
+Before (broken):
+  TopicBlocks → Subjects → {{SUBJECTS_DATA}} → narrative prompt (missing vars)
+
+After (fixed):
+  TopicBlocks → Activity Timeline → {{ACTIVITY_TIMELINE}} + {{APPS_LIST}} + {{URLS_LIST}} → narrative prompt (complete)
+```
+
+### Architecture Implication
+Different artifact formats require fundamentally different data preparation paths:
+
+| Format | Prompt | Data Source | Key Variables |
+|--------|--------|-------------|---------------|
+| `card` | `card.md` | Subject-grouped | `SUBJECTS_DATA` |
+| `standup` | `standup.md` | Subject-grouped | `WORK_SUBJECTS` |
+| `narrative` | `summary-v3.md` | Per-segment timeline | `ACTIVITY_TIMELINE`, `APPS_LIST`, `URLS_LIST` |
+
+The narrative format needs **chronological segment detail**, while card/standup need 
+**thematic grouping**.

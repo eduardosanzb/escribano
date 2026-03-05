@@ -1,11 +1,13 @@
 /**
  * Configuration Management
  *
- * Loads configuration from multiple sources with priority:
- * 1. CLI arguments (highest)
- * 2. Environment variables
+ * Loads configuration from multiple sources with priority (highest to lowest):
+ * 1. CLI arguments
+ * 2. Shell environment variables (export ESCRIBANO_*)
  * 3. ~/.escribano/.env file
- * 4. Default values (lowest)
+ * 4. Default values
+ *
+ * Note: Project-level .env is NOT loaded by default (only for development).
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -100,7 +102,7 @@ ESCRIBANO_SCENE_THRESHOLD=0.4       # Scene detection sensitivity (0.0-1.0)
 ESCRIBANO_VLM_MAX_TOKENS=2000       # Token budget per batch
 
 # === MODELS ===
-ESCRIBANO_LLM_MODEL=qwen3:32b       # Summary generation (auto-detected if not set)
+# ESCRIBANO_LLM_MODEL=qwen3.5:27b   # Summary generation (auto-detected if not set)
 ESCRIBANO_VLM_MODEL=mlx-community/Qwen3-VL-2B-Instruct-4bit
 
 # === DEBUGGING ===
@@ -136,14 +138,20 @@ export function createDefaultConfig(): void {
   const configDir = path.join(homedir(), '.escribano');
   const configPath = getConfigPath();
 
-  if (!existsSync(configDir)) {
-    mkdirSync(configDir, { recursive: true });
-  }
+  try {
+    if (!existsSync(configDir)) {
+      mkdirSync(configDir, { recursive: true });
+    }
 
-  if (!existsSync(configPath)) {
-    writeFileSync(configPath, CONFIG_TEMPLATE, 'utf-8');
-    console.log(`Created config file at ${configPath}`);
-    console.log('You can customize settings by editing this file.\n');
+    if (!existsSync(configPath)) {
+      writeFileSync(configPath, CONFIG_TEMPLATE, 'utf-8');
+      console.log(`Created config file at ${configPath}`);
+      console.log('You can customize settings by editing this file.\n');
+    }
+  } catch (error) {
+    console.error(
+      `Failed to create config file at ${configPath}: ${(error as Error).message}`
+    );
   }
 }
 
@@ -155,7 +163,22 @@ export function loadConfig(): Config {
   // 1. Load from config file (if exists)
   const configPath = getConfigPath();
   if (existsSync(configPath)) {
-    dotenvConfig({ path: configPath });
+    try {
+      const result = dotenvConfig({ path: configPath });
+      if (result.error) {
+        console.error(
+          `Failed to parse config file ${configPath}: ${result.error.message}`
+        );
+        console.error('Using default configuration.');
+      } else if (result.parsed && Object.keys(result.parsed).length > 0) {
+        console.log(`Loaded config from ${configPath}`);
+      }
+    } catch (error) {
+      console.error(
+        `Error reading config file ${configPath}: ${(error as Error).message}`
+      );
+      console.error('Using default configuration.');
+    }
   }
 
   // 2. Build config from environment variables
@@ -251,7 +274,7 @@ function parseEnvNumber(key: string, defaultValue: number): number {
   if (!value) return defaultValue;
 
   const parsed = Number(value);
-  if (isNaN(parsed)) {
+  if (Number.isNaN(parsed)) {
     console.warn(`Invalid ${key}="${value}", using default: ${defaultValue}`);
     return defaultValue;
   }

@@ -89,25 +89,27 @@ async function findLatestVideo(dirPath: string): Promise<string> {
     throw new Error(`No video files found in: ${resolvedPath}`);
   }
 
-  let latestPath: string | null = null;
-  let latestMtime = -Infinity;
+  const filesWithMtime = await Promise.all(
+    videoFiles.map(async (entry) => {
+      const fullPath = path.join(resolvedPath, entry.name);
+      try {
+        const fileStat = await stat(fullPath);
+        return { path: fullPath, mtime: fileStat.mtime };
+      } catch {
+        return null;
+      }
+    })
+  );
 
-  for (const entry of videoFiles) {
-    const fullPath = path.join(resolvedPath, entry.name);
-    const fileStat = await stat(fullPath);
-    const mtimeMs = fileStat.mtime.getTime();
-
-    if (mtimeMs > latestMtime) {
-      latestMtime = mtimeMs;
-      latestPath = fullPath;
-    }
+  const validFiles = filesWithMtime.filter(
+    (f): f is { path: string; mtime: Date } => f !== null
+  );
+  if (validFiles.length === 0) {
+    throw new Error(`No accessible video files found in: ${resolvedPath}`);
   }
 
-  if (!latestPath) {
-    throw new Error(`No video files found in: ${resolvedPath}`);
-  }
-
-  return latestPath;
+  validFiles.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+  return validFiles[0].path;
 }
 
 interface ParsedArgs {

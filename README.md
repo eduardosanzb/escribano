@@ -212,6 +212,7 @@ Output: `~/.escribano/artifacts/`
 | Flag | What it does |
 |------|--------------|
 | `--file <path>` | Process a video file |
+| `--latest <dir>` | Find and process latest video in directory |
 | `--mic-audio <path>` | External mic audio |
 | `--system-audio <path>` | External system audio |
 | `--format <format>` | `card`, `standup`, or `narrative` (default: card) |
@@ -221,6 +222,14 @@ Output: `~/.escribano/artifacts/`
 | `--copy` | Copy to clipboard |
 | `--stdout` | Print to stdout |
 | `--help` | Show all options |
+
+### Subcommands
+
+| Command | What it does |
+|---------|--------------|
+| `doctor` | Check prerequisites and system requirements |
+| `config` | Show current configuration (merged from all sources) |
+| `config --path` | Show path to config file (`~/.escribano/.env`) |
 
 ### Formats
 
@@ -236,11 +245,18 @@ Output: `~/.escribano/artifacts/`
 # Process and copy
 npx escribano --file "~/Desktop/Screen Recording.mov" --format standup --copy
 
+# Find latest video in a directory
+npx escribano --latest "~/Videos"
+
 # Narrative format
 npx escribano --file session.mp4 --format narrative --force
 
 # With external audio
 npx escribano --file recording.mov --mic-audio mic.wav
+
+# View configuration
+npx escribano config
+npx escribano config --path
 ```
 
 ---
@@ -253,6 +269,46 @@ npx escribano --file recording.mov --mic-audio mic.wav
 | Cap recording | Auto-detected in `~/Movies/Cap/` |
 | Any MP4/MOV | `--file /path/to/video.mp4` |
 | External audio | `--mic-audio mic.wav --system-audio system.wav` |
+
+---
+
+## Supported inputs
+
+| Source | Command |
+|--------|---------|
+| QuickTime recording | `--file video.mov` |
+| Cap recording | Auto-detected in `~/Movies/Cap/` |
+| Any MP4/MOV | `--file /path/to/video.mp4` |
+| External audio | `--mic-audio mic.wav --system-audio system.wav` |
+
+---
+
+## Configuration
+
+Escribano auto-creates a config file on first run that persists your settings:
+
+```bash
+# View current configuration
+npx escribano config
+
+# Show path to config file
+npx escribano config --path
+
+# Edit manually
+vim ~/.escribano/.env
+```
+
+The config file (`~/.escribano/.env`) is organized by category with inline comments:
+
+| Category | Examples |
+|----------|----------|
+| **Performance** | Frame width, batch size, sampling interval |
+| **Quality** | Scene detection, token budget |
+| **Models** | VLM model, LLM model, subject grouping model |
+| **Debugging** | Verbose logging, VLM/Ollama debug output |
+| **Advanced** | Socket path, timeouts, Python path |
+
+Environment variables always take priority over the config file. For full reference, see [AGENTS.md](AGENTS.md#configuration).
 
 ---
 

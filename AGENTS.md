@@ -57,10 +57,32 @@ The adapter auto-detects Python in this priority:
 
 ## Configuration
 
+Configuration is loaded from multiple sources with priority (highest to lowest):
+1. **Shell environment variables** (e.g., `export ESCRIBANO_FRAME_WIDTH=1280`)
+2. **`~/.escribano/.env` config file** (auto-created on first run)
+3. **Default values** (built-in)
+
+### Config File Management
+
+```bash
+# View current config (merged from all sources)
+npx escribano config
+
+# Show path to config file
+npx escribano config --path
+
+# Edit config manually
+vim ~/.escribano/.env
+```
+
+The config file is auto-created on first run with sensible defaults and inline comments. You can customize performance, quality, models, and debugging options without setting environment variables.
+
+### Environment Variables & Defaults
+
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
 | `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-4bit` |
-| `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `4` |
+| `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `2` |
 | `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
 | `ESCRIBANO_LLM_MODEL` | Ollama model for text generation (summaries) | auto-detected |
 | `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3.5:27b` |
@@ -71,8 +93,7 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
-| `ESCRIBANO_FRAME_INTERVAL` | Seconds between extracted frames | `2` |
-| `ESCRIBANO_FRAME_WIDTH` | Frame extraction width in pixels | `1920` |
+| `ESCRIBANO_FRAME_WIDTH` | Frame extraction width in pixels | `1024` |
 | `ESCRIBANO_SCENE_THRESHOLD` | Scene change detection threshold (0-1) | `0.4` |
 | `ESCRIBANO_SCENE_MIN_INTERVAL` | Minimum seconds between scene changes | `2` |
 | `ESCRIBANO_VERBOSE` | Enable verbose pipeline logging | `false` |
@@ -226,27 +247,50 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
 
 ## CLI
 
-```bash
-# Process a video file (QuickTime, downloaded, etc.)
-npx escribano --file "/path/to/video.mov"
+### Commands
 
-# Process video with external audio files
+```bash
+# Main workflow
+npx escribano                           # Process latest Cap recording
+npx escribano --file "/path/to/video.mov"  # Process video file
+npx escribano --latest "~/Videos"       # Find and process latest video in directory
+
+# Configuration management
+npx escribano config                    # Show current configuration (merged from all sources)
+npx escribano config --path             # Show path to config file (~/.escribano/.env)
+
+# Prerequisites & help
+npx escribano doctor                    # Check dependencies and system requirements
+npx escribano --help                    # Show all CLI options
+npx escribano --version                 # Show version number
+
+# Development & testing
+pnpm quality-test                       # Process all 7 videos with summary (dev)
+pnpm quality-test:fast                  # Process without summary generation (dev)
+pnpm dashboard                          # Start web dashboard at http://localhost:3456
+```
+
+### Options
+
+```bash
+# Audio handling
 npx escribano --file video.mov --mic-audio mic.wav
 npx escribano --file video.mov --system-audio system.wav
 npx escribano --file video.mov --mic-audio mic.wav --system-audio system.wav
 
-# Reprocess from scratch
-npx escribano --force
+# Output formats
+npx escribano --format card              # Default: time breakdowns per subject
+npx escribano --format standup           # What I did / Outcomes / Next
+npx escribano --format narrative         # Prose with timeline
 
-# Process only (skip summary generation)
-npx escribano --skip-summary
+# Control pipeline
+npx escribano --force                    # Reprocess from scratch (clear cache)
+npx escribano --skip-summary             # Process frames only (no artifact generation)
 
-# Batch quality testing (development)
-pnpm quality-test          # Process all 7 videos with summary
-pnpm quality-test:fast     # Process without summary generation
-
-# Dashboard for reviewing results
-pnpm dashboard             # Start at http://localhost:3456
+# Output options
+npx escribano --include-personal         # Include personal time (filtered by default)
+npx escribano --copy                     # Copy artifact to clipboard
+npx escribano --stdout                   # Print artifact to stdout instead of file
 ```
 
 ### Audio Handling

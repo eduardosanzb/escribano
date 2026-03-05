@@ -29,7 +29,26 @@ function getCurrentTag() {
 }
 
 function getPreviousTag(currentTag) {
-  const allTags = run("git tag --list 'v*' | sort -V").split("\n").filter(Boolean);
+  // Fetch latest tags from remote
+  run("git fetch origin --tags");
+  
+  // Get all version tags and sort them
+  const allTagsOutput = run("git tag --list 'v*'");
+  const allTags = allTagsOutput.split("\n").filter(Boolean);
+  
+  // Sort by version number
+  allTags.sort((a, b) => {
+    const aVersion = a.replace(/^v/, "").split(".").map(Number);
+    const bVersion = b.replace(/^v/, "").split(".").map(Number);
+    
+    for (let i = 0; i < Math.max(aVersion.length, bVersion.length); i++) {
+      const aPart = aVersion[i] || 0;
+      const bPart = bVersion[i] || 0;
+      if (aPart !== bPart) return aPart - bPart;
+    }
+    return 0;
+  });
+  
   const currentIndex = allTags.indexOf(currentTag);
   
   if (currentIndex === 0) return null;

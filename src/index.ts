@@ -34,10 +34,23 @@ const MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
 const VIDEO_EXTENSIONS = ['.mov', '.mp4', '.mkv', '.avi', '.webm'];
 
 function expandPath(inputPath: string): string {
+  if (!inputPath.startsWith('~')) {
+    return inputPath;
+  }
+
+  const homeDir = homedir();
+  if (!homeDir) {
+    return inputPath;
+  }
+
+  if (inputPath === '~' || inputPath === '~/') {
+    return homeDir;
+  }
+
   if (inputPath.startsWith('~/')) {
-    const homeDir = process.env.HOME || process.env.USERPROFILE || '';
     return path.join(homeDir, inputPath.slice(2));
   }
+
   return inputPath;
 }
 
@@ -48,8 +61,21 @@ async function findLatestVideo(dirPath: string): Promise<string> {
   try {
     entries = await readdir(resolvedPath, { withFileTypes: true });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(`Directory not found: ${resolvedPath}`);
+    const err = error as NodeJS.ErrnoException;
+    if (err && typeof err === 'object') {
+      switch (err.code) {
+        case 'ENOENT':
+          throw new Error(`Directory not found: ${resolvedPath}`);
+        case 'ENOTDIR':
+          throw new Error(`Not a directory: ${resolvedPath}`);
+        case 'EACCES':
+        case 'EPERM':
+          throw new Error(
+            `Permission denied reading directory: ${resolvedPath}`
+          );
+        default:
+          break;
+      }
     }
     throw error;
   }
@@ -64,16 +90,25 @@ async function findLatestVideo(dirPath: string): Promise<string> {
     throw new Error(`No video files found in: ${resolvedPath}`);
   }
 
-  const filesWithMtime = await Promise.all(
-    videoFiles.map(async (entry) => {
-      const fullPath = path.join(resolvedPath, entry.name);
-      const fileStat = await stat(fullPath);
-      return { path: fullPath, mtime: fileStat.mtime };
-    })
-  );
+  let latestPath: string | null = null;
+  let latestMtime = -Infinity;
 
-  filesWithMtime.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-  return filesWithMtime[0].path;
+  for (const entry of videoFiles) {
+    const fullPath = path.join(resolvedPath, entry.name);
+    const fileStat = await stat(fullPath);
+    const mtimeMs = fileStat.mtime.getTime();
+
+    if (mtimeMs > latestMtime) {
+      latestMtime = mtimeMs;
+      latestPath = fullPath;
+    }
+  }
+
+  if (!latestPath) {
+    throw new Error(`No video files found in: ${resolvedPath}`);
+  }
+
+  return latestPath;
 }
 
 interface ParsedArgs {
@@ -138,6 +173,16 @@ function parseArgs(argsArray: string[]): ParsedArgs {
 
   if (filePath && latestPath) {
     console.error('Error: Cannot use both --latest and --file');
+    process.exit(1);
+  }
+
+  if (latestIndex !== -1 && !latestPath) {
+    console.error('Error: --latest requires a directory argument');
+    process.exit(1);
+  }
+
+  if (latestIndex !== -1 && latestPath?.startsWith('-')) {
+    console.error('Error: --latest requires a directory argument');
     process.exit(1);
   }
 

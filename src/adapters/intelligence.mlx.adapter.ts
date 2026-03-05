@@ -86,16 +86,28 @@ const DEFAULT_CONFIG: MlxConfigWithTimeout = {
  * Priority:
  * 1. ESCRIBANO_PYTHON_PATH env var (explicit override)
  * 2. Active virtual environment (VIRTUAL_ENV)
- * 3. System python3 (fallback)
+ * 3. UV_PROJECT_ENVIRONMENT (uv project-synced venv)
+ * 4. Project-local .venv (created by `uv venv` in CWD)
+ * 5. ~/.venv/bin/python3 (home-level venv)
+ * 6. System python3 (fallback)
  */
-function getPythonPath(): string {
+export function getPythonPath(): string {
   if (process.env.ESCRIBANO_PYTHON_PATH) {
     return process.env.ESCRIBANO_PYTHON_PATH;
   }
   if (process.env.VIRTUAL_ENV) {
     return resolve(process.env.VIRTUAL_ENV, 'bin', 'python3');
   }
-  // Check common uv venv location (typically ~/.venv)
+  // UV_PROJECT_ENVIRONMENT: set by uv when running inside a project with `uv sync`
+  if (process.env.UV_PROJECT_ENVIRONMENT) {
+    return resolve(process.env.UV_PROJECT_ENVIRONMENT, 'bin', 'python3');
+  }
+  // Check project-local .venv (created by `uv venv` in the current working directory)
+  const localVenv = resolve(process.cwd(), '.venv', 'bin', 'python3');
+  if (existsSync(localVenv)) {
+    return localVenv;
+  }
+  // Check common home-level venv (e.g., `uv venv ~/.venv`)
   const uvHomeVenv = resolve(homedir(), '.venv', 'bin', 'python3');
   if (existsSync(uvHomeVenv)) {
     return uvHomeVenv;

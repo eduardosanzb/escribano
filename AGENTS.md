@@ -28,8 +28,12 @@
 
 Install Python dependency:
 ```bash
-# With uv (recommended)
+# With uv and an active virtual environment (recommended)
+uv venv && source .venv/bin/activate
 uv pip install mlx-vlm
+
+# With uv without a virtual environment (installs to system Python)
+uv pip install --system mlx-vlm
 
 # Or with pip
 pip install mlx-vlm
@@ -38,8 +42,10 @@ pip install mlx-vlm
 The adapter auto-detects Python in this priority:
 1. `ESCRIBANO_PYTHON_PATH` environment variable
 2. Active virtual environment (`VIRTUAL_ENV`)
-3. `~/.venv/bin/python3` (common uv venv location)
-4. System `python3`
+3. `UV_PROJECT_ENVIRONMENT` (set by `uv sync` in a project)
+4. Project-local `.venv/bin/python3` (created by `uv venv` in current directory)
+5. `~/.venv/bin/python3` (home-level venv)
+6. System `python3`
 
 ## Configuration
 
@@ -53,7 +59,7 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_ARTIFACT_THINK` | Enable thinking for artifact/card generation (slower, higher quality) | `false` |
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
 | `ESCRIBANO_MLX_STARTUP_TIMEOUT` | MLX bridge model loading timeout (ms) | `60000` |
-| `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-detected (venv > system) |
+| `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-detected (venv > UV_PROJECT_ENVIRONMENT > .venv > system) |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |

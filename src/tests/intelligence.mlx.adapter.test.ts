@@ -1,8 +1,8 @@
 /**
  * MLX Intelligence Adapter Tests
  *
- * Tests for Python path detection logic used to locate the correct Python
- * interpreter with mlx-vlm installed (supports multiple uv setups).
+ * Tests for Python path detection and auto-venv setup logic used to locate
+ * (or create) the correct Python interpreter with mlx-vlm installed.
  */
 
 import { homedir } from 'node:os';
@@ -12,78 +12,96 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Mock node:fs so we can control which paths "exist"
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => false),
+  mkdirSync: vi.fn(),
   unlinkSync: vi.fn(),
 }));
 
+// Mock node:child_process so we don't actually spawn anything
+vi.mock('node:child_process', () => ({
+  spawn: vi.fn(() => ({
+    on: vi.fn(),
+    stdout: { on: vi.fn() },
+    stderr: { on: vi.fn() },
+    kill: vi.fn(),
+  })),
+}));
+
 import { existsSync } from 'node:fs';
-import { getPythonPath } from '../adapters/intelligence.mlx.adapter.js';
+import {
+  getPythonPath,
+  resolvePythonPath,
+} from '../adapters/intelligence.mlx.adapter.js';
 
 const mockExistsSync = vi.mocked(existsSync);
 
+// Keys cleared/restored around each test
+const MANAGED_KEYS = [
+  'ESCRIBANO_PYTHON_PATH',
+  'VIRTUAL_ENV',
+  'UV_PROJECT_ENVIRONMENT',
+] as const;
+
 describe('getPythonPath', () => {
-  const originalEnv = { ...process.env };
+  const saved: Partial<Record<string, string>> = {};
 
   beforeEach(() => {
-    // Reset env and mocks before each test
-    for (const key of Object.keys(process.env)) {
-      if (
-        key === 'ESCRIBANO_PYTHON_PATH' ||
-        key === 'VIRTUAL_ENV' ||
-        key === 'UV_PROJECT_ENVIRONMENT'
-      ) {
-        delete process.env[key];
-      }
+    for (const key of MANAGED_KEYS) {
+      saved[key] = process.env[key];
+      delete process.env[key];
     }
     mockExistsSync.mockReturnValue(false);
   });
 
   afterEach(() => {
-    // Restore original env
-    process.env.ESCRIBANO_PYTHON_PATH = originalEnv.ESCRIBANO_PYTHON_PATH;
-    process.env.VIRTUAL_ENV = originalEnv.VIRTUAL_ENV;
-    process.env.UV_PROJECT_ENVIRONMENT = originalEnv.UV_PROJECT_ENVIRONMENT;
+    for (const key of MANAGED_KEYS) {
+      if (saved[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = saved[key];
+      }
+    }
   });
 
-  it('should return ESCRIBANO_PYTHON_PATH when set (highest priority)', () => {
+  it('returns ESCRIBANO_PYTHON_PATH when set (highest priority)', () => {
     process.env.ESCRIBANO_PYTHON_PATH = '/custom/python3';
     expect(getPythonPath()).toBe('/custom/python3');
   });
 
-  it('should return VIRTUAL_ENV python when set', () => {
+  it('returns VIRTUAL_ENV python when set', () => {
     process.env.VIRTUAL_ENV = '/home/user/myenv';
     expect(getPythonPath()).toBe(resolve('/home/user/myenv', 'bin', 'python3'));
   });
 
-  it('should prefer ESCRIBANO_PYTHON_PATH over VIRTUAL_ENV', () => {
+  it('prefers ESCRIBANO_PYTHON_PATH over VIRTUAL_ENV', () => {
     process.env.ESCRIBANO_PYTHON_PATH = '/explicit/python3';
     process.env.VIRTUAL_ENV = '/some/venv';
     expect(getPythonPath()).toBe('/explicit/python3');
   });
 
-  it('should return UV_PROJECT_ENVIRONMENT python when set', () => {
+  it('returns UV_PROJECT_ENVIRONMENT python when set', () => {
     process.env.UV_PROJECT_ENVIRONMENT = '/project/.venv';
     expect(getPythonPath()).toBe(resolve('/project/.venv', 'bin', 'python3'));
   });
 
-  it('should prefer VIRTUAL_ENV over UV_PROJECT_ENVIRONMENT', () => {
+  it('prefers VIRTUAL_ENV over UV_PROJECT_ENVIRONMENT', () => {
     process.env.VIRTUAL_ENV = '/active/venv';
     process.env.UV_PROJECT_ENVIRONMENT = '/project/.venv';
     expect(getPythonPath()).toBe(resolve('/active/venv', 'bin', 'python3'));
   });
 
-  it('should return project-local .venv python when it exists', () => {
+  it('returns project-local .venv python when it exists', () => {
     const localVenvPython = resolve(process.cwd(), '.venv', 'bin', 'python3');
     mockExistsSync.mockImplementation((p) => p === localVenvPython);
     expect(getPythonPath()).toBe(localVenvPython);
   });
 
-  it('should return home .venv python when it exists and local .venv does not', () => {
+  it('returns home .venv python when it exists and local .venv does not', () => {
     const homeVenvPython = resolve(homedir(), '.venv', 'bin', 'python3');
     mockExistsSync.mockImplementation((p) => p === homeVenvPython);
     expect(getPythonPath()).toBe(homeVenvPython);
   });
 
-  it('should prefer local .venv over home .venv', () => {
+  it('prefers local .venv over home .venv', () => {
     const localVenvPython = resolve(process.cwd(), '.venv', 'bin', 'python3');
     const homeVenvPython = resolve(homedir(), '.venv', 'bin', 'python3');
     mockExistsSync.mockImplementation(
@@ -92,8 +110,73 @@ describe('getPythonPath', () => {
     expect(getPythonPath()).toBe(localVenvPython);
   });
 
-  it('should fall back to system python3 when nothing else is found', () => {
+  it('returns null when nothing is explicitly configured (triggers auto-venv)', () => {
     mockExistsSync.mockReturnValue(false);
-    expect(getPythonPath()).toBe('python3');
+    expect(getPythonPath()).toBeNull();
+  });
+});
+
+describe('resolvePythonPath', () => {
+  const saved: Partial<Record<string, string>> = {};
+
+  beforeEach(() => {
+    for (const key of MANAGED_KEYS) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+    mockExistsSync.mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    for (const key of MANAGED_KEYS) {
+      if (saved[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = saved[key];
+      }
+    }
+    vi.restoreAllMocks();
+  });
+
+  it('returns the explicit path immediately when ESCRIBANO_PYTHON_PATH is set', async () => {
+    process.env.ESCRIBANO_PYTHON_PATH = '/my/python3';
+    await expect(resolvePythonPath()).resolves.toBe('/my/python3');
+  });
+
+  it('returns the explicit path immediately when VIRTUAL_ENV is set', async () => {
+    process.env.VIRTUAL_ENV = '/my/venv';
+    await expect(resolvePythonPath()).resolves.toBe(
+      resolve('/my/venv', 'bin', 'python3')
+    );
+  });
+
+  it('falls through to managed venv python when nothing is configured', async () => {
+    // Simulate: no explicit config, venv already exists, mlx-vlm already installed
+    const venvPython = resolve(
+      homedir(),
+      '.escribano',
+      'venv',
+      'bin',
+      'python3'
+    );
+    mockExistsSync.mockImplementation((p) => p === venvPython);
+
+    // Mock spawn so the mlx-vlm probe exits with 0 (already installed)
+    const { spawn } = await import('node:child_process');
+    const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockImplementation((_cmd, _args, _opts) => {
+      const emitter = {
+        on: vi.fn((event: string, cb: (code: number) => void) => {
+          if (event === 'exit') cb(0);
+          return emitter;
+        }),
+        stdout: { on: vi.fn() },
+        stderr: { on: vi.fn() },
+        kill: vi.fn(),
+      };
+      return emitter as never;
+    });
+
+    await expect(resolvePythonPath()).resolves.toBe(venvPython);
   });
 });

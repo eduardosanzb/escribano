@@ -11,7 +11,7 @@
  */
 
 import { type ChildProcess, spawn } from 'node:child_process';
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { createConnection, type Socket } from 'node:net';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -81,17 +81,26 @@ const DEFAULT_CONFIG: MlxConfigWithTimeout = {
   startupTimeout: Number(process.env.ESCRIBANO_MLX_STARTUP_TIMEOUT) || 60000,
 };
 
+/** Escribano's managed Python environment — created automatically on first use. */
+const ESCRIBANO_HOME = resolve(homedir(), '.escribano');
+const ESCRIBANO_VENV = resolve(ESCRIBANO_HOME, 'venv');
+const ESCRIBANO_VENV_PYTHON = resolve(ESCRIBANO_VENV, 'bin', 'python3');
+const ESCRIBANO_VENV_PIP = resolve(ESCRIBANO_VENV, 'bin', 'pip');
+
 /**
- * Get Python executable path.
+ * Get explicitly configured Python path.
+ * Returns null when nothing is explicitly configured — callers should
+ * fall through to ensureEscribanoVenv() for zero-config auto-setup.
+ *
  * Priority:
  * 1. ESCRIBANO_PYTHON_PATH env var (explicit override)
  * 2. Active virtual environment (VIRTUAL_ENV)
  * 3. UV_PROJECT_ENVIRONMENT (uv project-synced venv)
  * 4. Project-local .venv (created by `uv venv` in CWD)
  * 5. ~/.venv/bin/python3 (home-level venv)
- * 6. System python3 (fallback)
+ * 6. null — no explicit config found
  */
-export function getPythonPath(): string {
+export function getPythonPath(): string | null {
   if (process.env.ESCRIBANO_PYTHON_PATH) {
     return process.env.ESCRIBANO_PYTHON_PATH;
   }
@@ -112,7 +121,81 @@ export function getPythonPath(): string {
   if (existsSync(uvHomeVenv)) {
     return uvHomeVenv;
   }
-  return 'python3';
+  return null;
+}
+
+/**
+ * Run a command, streaming stdout/stderr directly to the terminal.
+ * Used for long-running setup tasks (venv creation, pip install) so the
+ * user can see progress in real time.
+ */
+function runVisible(cmd: string, args: string[]): Promise<void> {
+  return new Promise((res, rej) => {
+    const proc = spawn(cmd, args, { stdio: 'inherit' });
+    proc.on('exit', (code) =>
+      code === 0 ? res() : rej(new Error(`${cmd} exited with code ${code}`))
+    );
+    proc.on('error', rej);
+  });
+}
+
+/**
+ * Run a command silently (discard output). Used for quick probe checks.
+ */
+function runSilent(cmd: string, args: string[]): Promise<void> {
+  return new Promise((res, rej) => {
+    const proc = spawn(cmd, args, { stdio: 'ignore' });
+    proc.on('exit', (code) =>
+      code === 0 ? res() : rej(new Error(`${cmd} exited with code ${code}`))
+    );
+    proc.on('error', rej);
+  });
+}
+
+/**
+ * Ensure ~/.escribano/venv exists and has mlx-vlm installed.
+ * Uses plain `python3 -m venv` — no uv, no pip flags, no fuss.
+ * On first run this takes a few minutes; subsequent runs are instant.
+ */
+async function ensureEscribanoVenv(): Promise<string> {
+  if (!existsSync(ESCRIBANO_HOME)) {
+    mkdirSync(ESCRIBANO_HOME, { recursive: true });
+  }
+
+  if (!existsSync(ESCRIBANO_VENV_PYTHON)) {
+    console.log(
+      '[VLM] First-time setup: creating Python environment at ~/.escribano/venv'
+    );
+    await runVisible('python3', ['-m', 'venv', ESCRIBANO_VENV]);
+  }
+
+  // Check whether mlx-vlm is already importable (fast probe, ~0.3 s)
+  let mlxReady = false;
+  try {
+    await runSilent(ESCRIBANO_VENV_PYTHON, ['-c', 'import mlx_vlm']);
+    mlxReady = true;
+  } catch {
+    // not installed yet
+  }
+
+  if (!mlxReady) {
+    console.log(
+      '[VLM] Installing mlx-vlm into ~/.escribano/venv (first run — this may take a few minutes)...'
+    );
+    await runVisible(ESCRIBANO_VENV_PIP, ['install', 'mlx-vlm']);
+    console.log('[VLM] mlx-vlm installed successfully.');
+  }
+
+  return ESCRIBANO_VENV_PYTHON;
+}
+
+/**
+ * Resolve the Python executable to use for the MLX bridge.
+ * If the user has configured an explicit environment, use it.
+ * Otherwise, transparently create and populate ~/.escribano/venv.
+ */
+export async function resolvePythonPath(): Promise<string> {
+  return getPythonPath() ?? ensureEscribanoVenv();
 }
 
 // Global cleanup function to track the current bridge instance
@@ -194,12 +277,13 @@ export function createMlxIntelligenceService(
       return;
     }
 
+    debugLog('Starting MLX bridge...');
+
+    // Resolve (and if needed, auto-create) the Python environment before spawning.
+    const pythonPath = await resolvePythonPath();
+    debugLog(`Using Python: ${pythonPath}`);
+
     return new Promise((resolve, reject) => {
-      debugLog('Starting MLX bridge...');
-
-      const pythonPath = getPythonPath();
-      debugLog(`Using Python: ${pythonPath}`);
-
       bridge.process = spawn(pythonPath, [mlxConfig.bridgeScript], {
         stdio: ['ignore', 'pipe', 'pipe'],
         env: {

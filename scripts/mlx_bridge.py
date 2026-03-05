@@ -153,12 +153,9 @@ def load_model() -> tuple[Any, Any, Any]:
         return model_obj, processor_obj, config_obj
     except ImportError as e:
         log(f"Failed to import mlx_vlm: {e}", "error")
-        log("Install mlx-vlm using one of the following:", "error")
-        log("  pip install mlx-vlm", "error")
-        log("  uv pip install --system mlx-vlm  (if using uv without an active venv)", "error")
-        log("  uv pip install mlx-vlm           (if using uv with an active venv)", "error")
         log(f"Python used: {sys.executable}", "error")
-        log("Or set ESCRIBANO_PYTHON_PATH to the Python executable that has mlx-vlm installed.", "error")
+        log("mlx-vlm should have been installed automatically. Try running escribano again.", "error")
+        log("If this persists, set ESCRIBANO_PYTHON_PATH to a Python that has mlx-vlm installed.", "error")
         sys.exit(1)
     except Exception as e:
         log(f"Failed to load model: {e}", "error")

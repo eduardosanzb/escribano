@@ -26,17 +26,25 @@
 
 ### MLX-VLM Setup
 
-Install Python dependency:
+**Zero-config** — on first run escribano automatically creates `~/.escribano/venv` and installs `mlx-vlm` there using plain `python3 -m venv`. You only need Python 3 installed.
+
 ```bash
-# With uv and an active virtual environment (recommended)
-uv venv && source .venv/bin/activate
-uv pip install mlx-vlm
+# Nothing to do — just run escribano and it handles the rest.
+# The first run will print:
+#   [VLM] First-time setup: creating Python environment at ~/.escribano/venv
+#   [VLM] Installing mlx-vlm (first run — this may take a few minutes)...
+#   [VLM] mlx-vlm installed successfully.
+```
 
-# With uv without a virtual environment (installs to system Python)
-uv pip install --system mlx-vlm
+If you prefer to manage your own environment, install mlx-vlm into it and point escribano at it:
 
-# Or with pip
-pip install mlx-vlm
+```bash
+# Option A: activate your venv before running
+source /path/to/your/venv/bin/activate
+npx escribano ...
+
+# Option B: tell escribano which Python to use
+ESCRIBANO_PYTHON_PATH=/path/to/your/venv/bin/python3 npx escribano ...
 ```
 
 The adapter auto-detects Python in this priority:
@@ -45,7 +53,7 @@ The adapter auto-detects Python in this priority:
 3. `UV_PROJECT_ENVIRONMENT` (set by `uv sync` in a project)
 4. Project-local `.venv/bin/python3` (created by `uv venv` in current directory)
 5. `~/.venv/bin/python3` (home-level venv)
-6. System `python3`
+6. **Auto-setup** — creates `~/.escribano/venv` and installs `mlx-vlm` automatically
 
 ## Configuration
 
@@ -59,7 +67,7 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_ARTIFACT_THINK` | Enable thinking for artifact/card generation (slower, higher quality) | `false` |
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
 | `ESCRIBANO_MLX_STARTUP_TIMEOUT` | MLX bridge model loading timeout (ms) | `60000` |
-| `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-detected (venv > UV_PROJECT_ENVIRONMENT > .venv > system) |
+| `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-setup (`~/.escribano/venv`) |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |

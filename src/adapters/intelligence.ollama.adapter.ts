@@ -4,8 +4,8 @@
  * Implements IntelligenceService using Ollama REST API
  */
 
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { z } from 'zod';
@@ -45,13 +45,12 @@ const vlmBatchItemSchema = z.object({
   topics: z.array(z.string()).default([]),
 });
 
-const vlmBatchResponseSchema = z.array(vlmBatchItemSchema);
+const _vlmBatchResponseSchema = z.array(vlmBatchItemSchema);
 
 /**
  * Helper to convert Zod schema to Ollama-compatible JSON schema
  */
 function toOllamaSchema(schema: z.ZodType): object {
-  // biome-ignore lint/suspicious/noExplicitAny: needed for Zod schema conversion
   const jsonSchema = (z as any).toJSONSchema(schema);
   const { $schema, ...rest } = jsonSchema;
   return rest;
@@ -749,7 +748,6 @@ async function callOllama(
     num_predict?: number;
     images?: string[];
   }
-  // biome-ignore lint/suspicious/noExplicitAny: Ollama returns dynamic JSON or strings
 ): Promise<any> {
   const requestId = Math.random().toString(36).substring(2, 8);
   const requestStart = Date.now();

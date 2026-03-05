@@ -141,7 +141,7 @@ function extractActivityType(vlmDescription: string | null): string {
  * Parse VLM description to extract apps and topics.
  * Expects format like: "Debugging Python error in VSCode, working on escribano project"
  */
-function extractContext(vlmDescription: string | null): {
+function _extractContext(vlmDescription: string | null): {
   apps: string[];
   topics: string[];
 } {
@@ -165,7 +165,7 @@ function extractContext(vlmDescription: string | null): {
 
   for (const pattern of appPatterns) {
     const match = text.match(pattern);
-    if (match && match[1]) {
+    if (match?.[1]) {
       apps.push(match[1].toLowerCase().replace(' ', '_'));
     }
   }
@@ -179,7 +179,7 @@ function extractContext(vlmDescription: string | null): {
 
   for (const pattern of topicPatterns) {
     const match = text.match(pattern);
-    if (match && match[1]) {
+    if (match?.[1]) {
       topics.push(match[1].toLowerCase());
     }
   }

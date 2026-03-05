@@ -161,7 +161,7 @@ describe('adaptiveSampleWithScenes', () => {
     const frames = makeFrames(10); // 10 minutes, 300 frames
 
     // Low density: 5 scene changes
-    const lowDensityResult = adaptiveSampleWithScenes(
+    const _lowDensityResult = adaptiveSampleWithScenes(
       frames,
       [30, 100, 200, 400, 500],
       { baseIntervalSeconds: 10 }

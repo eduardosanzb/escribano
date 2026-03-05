@@ -106,15 +106,24 @@ export async function describeFrames(
 
   if (frames.length === 0) return results;
 
-  const images = frames.map((f) => ({
-    imagePath: f.observation.image_path!,
+  const validFrames = frames.filter(
+    (
+      f
+    ): f is typeof f & {
+      observation: typeof f.observation & { image_path: string };
+    } => f.observation.image_path !== null
+  );
+  if (validFrames.length === 0) return results;
+
+  const images = validFrames.map((f) => ({
+    imagePath: f.observation.image_path,
     clusterId: 0, // Not used in our case
     timestamp: f.observation.timestamp,
   }));
 
   const descriptions = await intelligence.describeImages(images);
 
-  for (const [index, frame] of frames.entries()) {
+  for (const [index, frame] of validFrames.entries()) {
     const desc = descriptions[index];
     if (desc?.description) {
       results.set(frame.observation.id, desc.description);

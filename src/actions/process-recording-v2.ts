@@ -16,6 +16,7 @@ import {
   failProcessing,
   type ProcessingStep,
   type Recording,
+  type RecordingStatus,
   startProcessing,
 } from '../domain/recording.js';
 import { log, step } from '../pipeline/context.js';
@@ -94,8 +95,8 @@ export async function processRecordingV2(
   // Map DB to Domain
   let recording: Recording = {
     id: dbRecording.id,
-    status: dbRecording.status as any,
-    processingStep: dbRecording.processing_step as any,
+    status: dbRecording.status as RecordingStatus,
+    processingStep: dbRecording.processing_step as ProcessingStep | null,
     errorMessage: dbRecording.error_message,
     videoPath: dbRecording.video_path,
     audioMicPath: dbRecording.audio_mic_path,
@@ -160,6 +161,7 @@ export async function processRecordingV2(
     // ============================================
 
     if (recording.videoPath) {
+      const videoPath = recording.videoPath;
       // Step: Frame Extraction
       if (!shouldSkipStep(recording.processingStep, 'frame_extraction')) {
         await step('frame-extraction', async () => {
@@ -176,7 +178,7 @@ export async function processRecordingV2(
           );
 
           const extractedFrames = await adapters.video.extractFramesAtInterval(
-            recording.videoPath!,
+            videoPath,
             0.3, // threshold
             framesDir
           );
@@ -499,35 +501,54 @@ export async function processRecordingV2(
           );
 
           if (audioClusters.length > 0 && visualClusters.length > 0) {
-            // Build cluster-with-signals for merging
-            const visualWithSignals = visualClusters.map((c) => ({
-              cluster: c,
-              signals: JSON.parse(c.classification || '{}'),
-              centroid: bufferToEmbedding(c.centroid!),
-            }));
-
-            const audioWithSignals = audioClusters.map((c) => ({
-              cluster: c,
-              signals: JSON.parse(c.classification || '{}'),
-              centroid: bufferToEmbedding(c.centroid!),
-            }));
-
-            const merges = findClusterMerges(
-              visualWithSignals,
-              audioWithSignals,
-              adapters.embedding
+            const validVisualClusters = visualClusters.filter(
+              (c): c is NonNullable<typeof c> => c.centroid !== null
+            );
+            const validAudioClusters = audioClusters.filter(
+              (c): c is NonNullable<typeof c> => c.centroid !== null
             );
 
-            for (const merge of merges) {
-              repos.clusters.saveMerge(
-                merge.visualClusterId,
-                merge.audioClusterId,
-                merge.similarityScore,
-                merge.mergeReason
+            if (
+              validVisualClusters.length === 0 ||
+              validAudioClusters.length === 0
+            ) {
+              log(
+                'info',
+                'Skipping cluster merge - no clusters with embeddings'
+              );
+            } else {
+              const visualWithSignals = validVisualClusters.map((c) => ({
+                cluster: c,
+                signals: JSON.parse(c.classification || '{}'),
+                centroid: bufferToEmbedding(c.centroid as Buffer),
+              }));
+
+              const audioWithSignals = validAudioClusters.map((c) => ({
+                cluster: c,
+                signals: JSON.parse(c.classification || '{}'),
+                centroid: bufferToEmbedding(c.centroid as Buffer),
+              }));
+
+              const merges = findClusterMerges(
+                visualWithSignals,
+                audioWithSignals,
+                adapters.embedding
+              );
+
+              for (const merge of merges) {
+                repos.clusters.saveMerge(
+                  merge.visualClusterId,
+                  merge.audioClusterId,
+                  merge.similarityScore,
+                  merge.mergeReason
+                );
+              }
+
+              log(
+                'info',
+                `Created ${merges.length} audio-visual cluster merges`
               );
             }
-
-            log('info', `Created ${merges.length} audio-visual cluster merges`);
           } else {
             log('info', 'No audio clusters to merge');
           }
@@ -767,8 +788,8 @@ async function processAudioPipeline(
 function updateRecordingInDb(repos: Repositories, recording: Recording) {
   repos.recordings.updateStatus(
     recording.id,
-    recording.status as any,
-    recording.processingStep as any,
+    recording.status,
+    recording.processingStep ?? undefined,
     recording.errorMessage
   );
 }

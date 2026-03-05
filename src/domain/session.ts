@@ -75,9 +75,15 @@ export const Session = {
     if (session.segments.length === 0) return {};
 
     const classifications = session.segments
-      .filter((s) => s.classification !== null)
+      .filter(
+        (
+          s
+        ): s is SessionSegment & {
+          classification: NonNullable<SessionSegment['classification']>;
+        } => s.classification !== null
+      )
       .map((s) => ({
-        classification: s.classification!,
+        classification: s.classification,
         weight: Segment.duration(s),
       }));
 

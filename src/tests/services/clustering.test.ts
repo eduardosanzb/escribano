@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it, vi } from 'vitest';
 import type { DbObservation, EmbeddingService } from '../../0_types.js';
 import { embeddingToBlob } from '../../db/helpers.js';

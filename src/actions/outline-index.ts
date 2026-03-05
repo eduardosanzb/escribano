@@ -257,10 +257,12 @@ function extractOutlineUrls(
 
     // Check for multiple format variants (new structure)
     if (metadata.outline_formats && Array.isArray(metadata.outline_formats)) {
-      return metadata.outline_formats.map((item: any) => ({
-        format: item.format || 'unknown',
-        url: item.url || '',
-      }));
+      return metadata.outline_formats.map(
+        (item: { format?: string; url?: string }) => ({
+          format: item.format || 'unknown',
+          url: item.url || '',
+        })
+      );
     }
 
     // Fallback to single outline URL (backward compatibility)

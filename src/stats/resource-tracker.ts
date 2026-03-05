@@ -2,7 +2,6 @@ import os from 'node:os';
 import pidusage from 'pidusage';
 import type {
   ResourceSnapshot,
-  ResourceStats,
   ResourceTrackable,
   SystemInfo,
 } from './types.js';

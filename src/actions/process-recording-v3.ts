@@ -25,12 +25,12 @@ import {
   failProcessing,
   type ProcessingStep,
   type Recording,
+  type RecordingStatus,
   startProcessing,
 } from '../domain/recording.js';
 import { log, step } from '../pipeline/context.js';
 import {
   calculateRequiredTimestamps,
-  getSamplingStats,
   type InputFrame,
 } from '../services/frame-sampling.js';
 import { describeFrames } from '../services/vlm-service.js';
@@ -103,8 +103,8 @@ export async function processRecordingV3(
   // Map DB to Domain
   let recording: Recording = {
     id: dbRecording.id,
-    status: dbRecording.status as any,
-    processingStep: dbRecording.processing_step as any,
+    status: dbRecording.status as RecordingStatus,
+    processingStep: dbRecording.processing_step as ProcessingStep | null,
     errorMessage: dbRecording.error_message,
     videoPath: dbRecording.video_path,
     audioMicPath: dbRecording.audio_mic_path,
@@ -170,8 +170,9 @@ export async function processRecordingV3(
     // VISUAL PIPELINE (V3: Smart Extraction)
     // ============================================
     if (recording.videoPath) {
+      const videoPath = recording.videoPath;
       // Step 1: Get video metadata
-      const metadata = await adapters.video.getMetadata(recording.videoPath!);
+      const metadata = await adapters.video.getMetadata(videoPath);
       log(
         'info',
         `[V3] Video: ${Math.round(metadata.duration)}s, ${metadata.width}x${metadata.height}`
@@ -189,9 +190,7 @@ export async function processRecordingV3(
         log('info', `[V3] Loaded ${sceneChanges.length} scene changes from DB`);
       } else {
         sceneChanges = await step('scene-detection', async () => {
-          const changes = await adapters.video.detectSceneChanges(
-            recording.videoPath!
-          );
+          const changes = await adapters.video.detectSceneChanges(videoPath);
           log('info', `[V3] Detected ${changes.length} scene changes`);
 
           // Save to DB for resume safety
@@ -233,7 +232,7 @@ export async function processRecordingV3(
           );
 
           const frames = await adapters.video.extractFramesAtTimestampsBatch(
-            recording.videoPath!,
+            videoPath,
             requiredTimestamps,
             framesDir
           );
@@ -633,8 +632,8 @@ async function processAudioPipeline(
 function updateRecordingInDb(repos: Repositories, recording: Recording) {
   repos.recordings.updateStatus(
     recording.id,
-    recording.status as any,
-    recording.processingStep as any,
+    recording.status,
+    recording.processingStep ?? undefined,
     recording.errorMessage
   );
 }

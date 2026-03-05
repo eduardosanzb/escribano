@@ -133,7 +133,7 @@ def signal_handler(signum: int, frame: Any) -> None:
 def load_model() -> tuple[Any, Any, Any]:
     """Load MLX-VLM model."""
     log(f"Loading model: {MODEL_NAME}")
-    log("This may take 30-60 seconds on first run or after memory clear...")
+    log("This may take 30-120 seconds on first run or after memory clear...")
     start = time.time()
 
     try:
@@ -153,7 +153,31 @@ def load_model() -> tuple[Any, Any, Any]:
         return model_obj, processor_obj, config_obj
     except ImportError as e:
         log(f"Failed to import mlx_vlm: {e}", "error")
-        log("Install with: pip install mlx-vlm", "error")
+        log(f"Python used: {sys.executable}", "error")
+        custom_python = os.environ.get("ESCRIBANO_PYTHON_PATH")
+        if custom_python:
+            log(
+                "ESCRIBANO_PYTHON_PATH is set, so Escribano does not auto-install mlx-vlm "
+                "into this Python environment.",
+                "error",
+            )
+            log(
+                f"Make sure mlx-vlm is installed for that Python "
+                f"(e.g. `{custom_python} -m pip install mlx-vlm`), "
+                "or unset ESCRIBANO_PYTHON_PATH to let Escribano manage its own Python.",
+                "error",
+            )
+        else:
+            log(
+                "mlx-vlm is missing from Escribano's managed Python environment. "
+                "It is normally installed automatically.",
+                "error",
+            )
+            log(
+                "Try restarting Escribano so it can recreate or repair its Python environment. "
+                "If the problem persists, install `mlx-vlm` into this Python or report an issue.",
+                "error",
+            )
         sys.exit(1)
     except Exception as e:
         log(f"Failed to load model: {e}", "error")

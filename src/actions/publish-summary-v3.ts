@@ -40,6 +40,17 @@ export interface OutlineMetadata {
   failedAt?: string;
 }
 
+type OutlineFormatItem = {
+  format: string;
+  url: string;
+  documentId?: string;
+  collectionId?: string;
+  publishedAt?: string;
+  contentHash?: string;
+  error?: string;
+  failedAt?: string;
+};
+
 /**
  * Publish a V3 session summary to Outline.
  *
@@ -330,7 +341,7 @@ export function updateRecordingOutlineMetadata(
 
     // Remove any existing entry for this format and add the new one
     currentMetadata.outline_formats = currentMetadata.outline_formats.filter(
-      (f: any) => f.format !== format
+      (f: OutlineFormatItem) => f.format !== format
     );
     currentMetadata.outline_formats.push({
       format,
@@ -384,7 +395,7 @@ export function getOutlineMetadataForFormat(
       Array.isArray(metadata.outline_formats)
     ) {
       const formatEntry = metadata.outline_formats.find(
-        (f: any) => f.format === format
+        (f: OutlineFormatItem) => f.format === format
       );
       if (formatEntry) {
         return {

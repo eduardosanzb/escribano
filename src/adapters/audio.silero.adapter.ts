@@ -108,7 +108,7 @@ export function createSileroPreprocessor(): AudioPreprocessor {
                 console.log(
                   `  Silero VAD stdout:\n${stdout
                     .split('\n')
-                    .map((l) => '    ' + l)
+                    .map((l) => `    ${l}`)
                     .join('\n')}`
                 );
               }
@@ -117,14 +117,14 @@ export function createSileroPreprocessor(): AudioPreprocessor {
               console.error(
                 `  Silero VAD stderr:\n${stderr
                   .split('\n')
-                  .map((l) => '    ' + l)
+                  .map((l) => `    ${l}`)
                   .join('\n')}`
               );
               if (stdout) {
                 console.error(
                   `  Silero VAD stdout:\n${stdout
                     .split('\n')
-                    .map((l) => '    ' + l)
+                    .map((l) => `    ${l}`)
                     .join('\n')}`
                 );
               }

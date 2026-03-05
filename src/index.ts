@@ -18,6 +18,7 @@ import {
   type ProcessVideoResult,
   processVideo,
 } from './batch-context.js';
+import { loadConfig, showConfig, showConfigPath } from './config.js';
 import { getDbPath } from './db/index.js';
 import {
   checkPrerequisites,
@@ -119,6 +120,9 @@ interface ParsedArgs {
   help: boolean;
   version: boolean;
   doctor: boolean;
+  config: boolean;
+  configShow: boolean;
+  configPath: boolean;
   file: string | null;
   latest: string | null;
   skipSummary: boolean;
@@ -150,6 +154,18 @@ function main(): void {
     });
     return;
   }
+
+  if (args.config) {
+    if (args.configPath) {
+      showConfigPath();
+    } else {
+      showConfig();
+    }
+    return;
+  }
+
+  // Load user config file before any adapter reads process.env
+  loadConfig();
 
   run(args).catch((error) => {
     console.error('Error:', (error as Error).message);
@@ -202,6 +218,9 @@ function parseArgs(argsArray: string[]): ParsedArgs {
     help: argsArray.includes('--help') || argsArray.includes('-h'),
     version: argsArray.includes('--version') || argsArray.includes('-v'),
     doctor: argsArray[0] === 'doctor',
+    config: argsArray[0] === 'config',
+    configShow: argsArray.includes('--show'),
+    configPath: argsArray.includes('--path'),
     file: filePath,
     latest: latestPath,
     skipSummary: argsArray.includes('--skip-summary'),
@@ -224,6 +243,8 @@ Escribano - Session Intelligence Tool
 Usage:
   npx escribano                           Process latest Cap recording
   npx escribano doctor                    Check prerequisites
+  npx escribano config                    Show current configuration
+  npx escribano config --path             Show config file path
   npx escribano --file <path>             Process video from filesystem
   npx escribano --latest <dir>            Process latest video in directory
   npx escribano --file <path> --mic-audio <wav>   Use external mic audio
@@ -244,6 +265,11 @@ Examples:
   npx escribano --file "/path/to/video.mp4" --system-audio "/path/to/system.wav"
   npx escribano --format standup --stdout
   npx escribano --format narrative --include-personal
+
+Configuration:
+  Config file: ~/.escribano/.env
+  View config: escribano config
+  Edit manually: vim ~/.escribano/.env
 
 Output: Markdown summary saved to ~/.escribano/artifacts/
 `);

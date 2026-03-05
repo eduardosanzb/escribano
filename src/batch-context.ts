@@ -46,6 +46,7 @@ import { createOllamaIntelligenceService } from './adapters/intelligence.ollama.
 import { createOutlinePublishingService } from './adapters/publishing.outline.adapter.js';
 import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
 import { createFfmpegVideoService } from './adapters/video.ffmpeg.adapter.js';
+import { createDefaultConfig } from './config.js';
 import { getDbPath, getRepositories } from './db/index.js';
 import {
   log,
@@ -109,6 +110,9 @@ export interface ProcessVideoResult {
  * All adapters are created ONCE and reused across recordings.
  */
 export async function initializeSystem(): Promise<SystemContext> {
+  // Create default config file if it doesn't exist
+  createDefaultConfig();
+
   console.log('Initializing database...');
   const repos = getRepositories();
   console.log(`Database ready: ${getDbPath()}`);

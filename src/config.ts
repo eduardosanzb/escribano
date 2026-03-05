@@ -61,7 +61,7 @@ export type Config = z.infer<typeof configSchema>;
 
 export interface ConfigSource {
   key: string;
-  source: 'env' | 'file' | 'default' | 'ram-aware';
+  source: 'env' | 'default' | 'ram-aware';
 }
 
 // =============================================================================

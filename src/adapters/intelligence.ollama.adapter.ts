@@ -219,6 +219,17 @@ export async function unloadOllamaModel(
     if (response.ok) {
       warmedModels.delete(modelName);
       debugLog(`Model ${modelName} unloaded.`);
+    } else {
+      let bodyText = '';
+      try {
+        bodyText = await response.text();
+      } catch {
+        // Ignore errors while reading response body for logging
+      }
+      debugLog(
+        `Failed to unload model ${modelName}: HTTP ${response.status} ${response.statusText}` +
+          (bodyText ? ` - Response body: ${bodyText}` : '')
+      );
     }
   } catch (error) {
     // Unload is best-effort - don't throw

@@ -1,22 +1,34 @@
-import { chmod, mkdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { access, chmod, constants, mkdir, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const VIDEO_EXTENSIONS = ['.mov', '.mp4', '.mkv', '.avi', '.webm'];
 
 function expandPath(inputPath: string): string {
+  if (!inputPath.startsWith('~')) {
+    return inputPath;
+  }
+
+  const homeDir = homedir();
+  if (!homeDir) {
+    return inputPath;
+  }
+
+  if (inputPath === '~' || inputPath === '~/') {
+    return homeDir;
+  }
+
   if (inputPath.startsWith('~/')) {
-    const homeDir = process.env.HOME || process.env.USERPROFILE || '';
     return path.join(homeDir, inputPath.slice(2));
   }
+
   return inputPath;
 }
 
 async function findLatestVideo(dirPath: string): Promise<string> {
   const resolvedPath = expandPath(dirPath);
 
-  const { readdir } = await import('node:fs/promises');
   const entries = await readdir(resolvedPath, { withFileTypes: true });
 
   const videoFiles = entries.filter(
@@ -29,27 +41,29 @@ async function findLatestVideo(dirPath: string): Promise<string> {
     throw new Error(`No video files found in: ${resolvedPath}`);
   }
 
-  const filesWithMtime = await Promise.all(
-    videoFiles.map(async (entry) => {
-      const fullPath = path.join(resolvedPath, entry.name);
-      try {
-        const fileStat = await stat(fullPath);
-        return { path: fullPath, mtime: fileStat.mtime };
-      } catch {
-        return null;
-      }
-    })
-  );
+  let latestFilePath: string | null = null;
+  let latestMtime = -Infinity;
 
-  const validFiles = filesWithMtime.filter(
-    (f): f is { path: string; mtime: Date } => f !== null
-  );
-  if (validFiles.length === 0) {
+  for (const entry of videoFiles) {
+    const fullPath = path.join(resolvedPath, entry.name);
+    try {
+      await access(fullPath, constants.R_OK);
+      const fileStat = await stat(fullPath);
+      const mtimeMs = fileStat.mtime.getTime();
+      if (mtimeMs > latestMtime) {
+        latestMtime = mtimeMs;
+        latestFilePath = fullPath;
+      }
+    } catch {
+      // Skip files that are inaccessible (permission denied, broken symlink, etc.)
+    }
+  }
+
+  if (!latestFilePath) {
     throw new Error(`No accessible video files found in: ${resolvedPath}`);
   }
 
-  validFiles.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-  return validFiles[0].path;
+  return latestFilePath;
 }
 
 describe('findLatestVideo', () => {

@@ -14,6 +14,8 @@ You are running a model evaluation for the Escribano project.
 Your goal is to compare Qwen3.5 small LLM models for summary/artifact generation quality
 across two machines: MacBook Pro M4 Max (128GB) and M1 Air (16GB).
 
+you are working in a git branch that has specifically this changes; we are evaluating the PR https://github.com/eduardosanzb/escribano/pull/13
+
 Follow every step in order. Do not skip steps.
 
 ---
@@ -70,8 +72,9 @@ Confirm each model is installed: `ollama list | grep qwen3.5`
 ## PHASE 3 — Select Test Videos
 
 Identify 3–5 representative video files from your test corpus.
-Run: `ls ~/Desktop/*.mov ~/Movies/*.mov 2>/dev/null | head -10`
-Or check the quality-test config: `cat scripts/quality-test.ts | grep -A5 'videos'`
+
+All the videos exists in ~/Desktop and they are .mov; 
+Run: `ls ~/Desktop/*.mov 2>/dev/null | head -10`
 
 Record the selected video paths as VIDEO_1, VIDEO_2, VIDEO_3, etc.
 

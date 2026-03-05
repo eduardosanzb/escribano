@@ -182,7 +182,13 @@ async function ensureEscribanoVenv(): Promise<string> {
     console.log(
       '[VLM] Installing mlx-vlm into ~/.escribano/venv (first run — this may take a few minutes)...'
     );
-    await runVisible(ESCRIBANO_VENV_PIP, ['install', 'mlx-vlm']);
+    // Ensure pip is available in the venv; ignore failures if ensurepip is disabled.
+    try {
+      await runVisible(ESCRIBANO_VENV_PYTHON, ['-m', 'ensurepip', '--upgrade']);
+    } catch {
+      // ensurepip may be unavailable; continue and rely on existing pip if present.
+    }
+    await runVisible(ESCRIBANO_VENV_PYTHON, ['-m', 'pip', 'install', 'mlx-vlm']);
     console.log('[VLM] mlx-vlm installed successfully.');
   }
 

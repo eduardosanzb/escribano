@@ -32,7 +32,7 @@
 # Nothing to do — just run escribano and it handles the rest.
 # The first run will print:
 #   [VLM] First-time setup: creating Python environment at ~/.escribano/venv
-#   [VLM] Installing mlx-vlm (first run — this may take a few minutes)...
+#   [VLM] Installing mlx-vlm into ~/.escribano/venv (first run — this may take a few minutes)...
 #   [VLM] mlx-vlm installed successfully.
 ```
 

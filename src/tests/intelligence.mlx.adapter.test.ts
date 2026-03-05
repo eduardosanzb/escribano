@@ -179,4 +179,65 @@ describe('resolvePythonPath', () => {
 
     await expect(resolvePythonPath()).resolves.toBe(venvPython);
   });
+
+  it('creates the managed venv when it does not exist', async () => {
+    // beforeEach has mockExistsSync default to false, simulating a missing venv
+    const venvDir = resolve(homedir(), '.escribano', 'venv');
+
+    const { spawn } = await import('node:child_process');
+    const mockSpawn = vi.mocked(spawn);
+
+    await resolvePythonPath();
+
+    // Expect that we attempted to create a virtual environment in the managed directory
+    expect(mockSpawn).toHaveBeenCalled();
+    const [cmd, args] = mockSpawn.mock.calls[0];
+
+    // Command can vary (python / python3), so just assert venv creation semantics
+    expect(Array.isArray(args)).toBe(true);
+    expect(args).toEqual(expect.arrayContaining(['-m', 'venv']));
+    expect(args).toContain(venvDir);
+  });
+
+  it('installs mlx-vlm when the import probe fails', async () => {
+    const venvPython = resolve(
+      homedir(),
+      '.escribano',
+      'venv',
+      'bin',
+      'python3'
+    );
+    // Simulate: managed venv python exists
+    mockExistsSync.mockImplementation((p) => p === venvPython);
+
+    const { spawn } = await import('node:child_process');
+    const mockSpawn = vi.mocked(spawn);
+
+    let callIndex = 0;
+    mockSpawn.mockImplementation((_cmd, _args, _opts) => {
+      const thisCall = callIndex++;
+      const emitter = {
+        on: vi.fn((event: string, cb: (code: number) => void) => {
+          if (event === 'exit') {
+            // First call: import probe fails (non-zero exit)
+            // Second call: installation succeeds
+            cb(thisCall === 0 ? 1 : 0);
+          }
+          return emitter;
+        }),
+        stdout: { on: vi.fn() },
+        stderr: { on: vi.fn() },
+        kill: vi.fn(),
+      };
+      return emitter as never;
+    });
+
+    await expect(resolvePythonPath()).resolves.toBe(venvPython);
+
+    expect(mockSpawn.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const installCallArgs = mockSpawn.mock.calls[1][1] as string[];
+    expect(installCallArgs).toEqual(
+      expect.arrayContaining(['-m', 'pip', 'install', 'mlx-vlm'])
+    );
+  });
 });

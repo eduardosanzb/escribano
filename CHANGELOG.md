@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-05
+
+### Added  
+- Auto-create git tags and push CHANGELOG on release  
+- Automated release workflow with LLM-generated notes  
+
+### Fixed  
+- Increased MLX bridge startup timeout to 120s  
+- Fixed shared python-utils, doctor managed-venv awareness, torch/torchvision in auto-install  
+- Biome fix  
+- Accessibility issues in mlx-vlm  
+
+### Changed  
+- Updated scripts/mlx_bridge.py  
+- Applied code review suggestions (refactor)
+
+## [0.3.0] - 2026-03-05
+
+### Added  
+- Auto-create git tags and push CHANGELOG on release  
+- Automated release workflow with LLM-generated notes  
+
+### Fixed  
+- MLX VLM accessibility issues  
+- Biome-related issues  
+- Shared Python-utils, managed-venv awareness, and torch/torchvision auto-install fixes  
+- Increased MLX bridge startup timeout to 120s  
+
+### Changed  
+- Updated MLX bridge script  
+- Applied code review suggestions (refactoring/improvements)
+
 ## [0.2.2] - 2026-03-04
 
 ### Added

@@ -5,6 +5,7 @@
  * Refactored to use batch-context for shared initialization logic
  */
 
+import { access, constants, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import pkg from '../package.json' with { type: 'json' };
@@ -29,12 +30,97 @@ const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
 const _MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
 
+const VIDEO_EXTENSIONS = ['.mov', '.mp4', '.mkv', '.avi', '.webm'];
+
+function expandPath(inputPath: string): string {
+  if (!inputPath.startsWith('~')) {
+    return inputPath;
+  }
+
+  const homeDir = homedir();
+  if (!homeDir) {
+    return inputPath;
+  }
+
+  if (inputPath === '~' || inputPath === '~/') {
+    return homeDir;
+  }
+
+  if (inputPath.startsWith('~/')) {
+    return path.join(homeDir, inputPath.slice(2));
+  }
+
+  return inputPath;
+}
+
+async function findLatestVideo(dirPath: string): Promise<string> {
+  const resolvedPath = expandPath(dirPath);
+
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await readdir(resolvedPath, { withFileTypes: true });
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err && typeof err === 'object') {
+      switch (err.code) {
+        case 'ENOENT':
+          throw new Error(`Directory not found: ${resolvedPath}`);
+        case 'ENOTDIR':
+          throw new Error(`Not a directory: ${resolvedPath}`);
+        case 'EACCES':
+        case 'EPERM':
+          throw new Error(
+            `Permission denied reading directory: ${resolvedPath}`
+          );
+        default:
+          break;
+      }
+    }
+    throw error;
+  }
+
+  const videoFiles = entries.filter(
+    (entry) =>
+      entry.isFile() &&
+      VIDEO_EXTENSIONS.some((ext) => entry.name.toLowerCase().endsWith(ext))
+  );
+
+  if (videoFiles.length === 0) {
+    throw new Error(`No video files found in: ${resolvedPath}`);
+  }
+
+  let latestFilePath: string | null = null;
+  let latestMtime = -Infinity;
+
+  for (const entry of videoFiles) {
+    const fullPath = path.join(resolvedPath, entry.name);
+    try {
+      await access(fullPath, constants.R_OK);
+      const fileStat = await stat(fullPath);
+      const mtimeMs = fileStat.mtime.getTime();
+      if (mtimeMs > latestMtime) {
+        latestMtime = mtimeMs;
+        latestFilePath = fullPath;
+      }
+    } catch {
+      // Skip files that are inaccessible (permission denied, broken symlink, etc.)
+    }
+  }
+
+  if (!latestFilePath) {
+    throw new Error(`No accessible video files found in: ${resolvedPath}`);
+  }
+
+  return latestFilePath;
+}
+
 interface ParsedArgs {
   force: boolean;
   help: boolean;
   version: boolean;
   doctor: boolean;
   file: string | null;
+  latest: string | null;
   skipSummary: boolean;
   micAudio: string | null;
   systemAudio: string | null;
@@ -84,6 +170,25 @@ async function runDoctor(): Promise<void> {
 function parseArgs(argsArray: string[]): ParsedArgs {
   const fileIndex = argsArray.indexOf('--file');
   const filePath = fileIndex !== -1 ? argsArray[fileIndex + 1] || null : null;
+  const latestIndex = argsArray.indexOf('--latest');
+  const latestPath =
+    latestIndex !== -1 ? argsArray[latestIndex + 1] || null : null;
+
+  if (filePath && latestPath) {
+    console.error('Error: Cannot use both --latest and --file');
+    process.exit(1);
+  }
+
+  if (latestIndex !== -1 && !latestPath) {
+    console.error('Error: --latest requires a directory argument');
+    process.exit(1);
+  }
+
+  if (latestIndex !== -1 && latestPath?.startsWith('-')) {
+    console.error('Error: --latest requires a directory argument');
+    process.exit(1);
+  }
+
   const micIndex = argsArray.indexOf('--mic-audio');
   const micAudio = micIndex !== -1 ? argsArray[micIndex + 1] || null : null;
   const sysIndex = argsArray.indexOf('--system-audio');
@@ -98,6 +203,7 @@ function parseArgs(argsArray: string[]): ParsedArgs {
     version: argsArray.includes('--version') || argsArray.includes('-v'),
     doctor: argsArray[0] === 'doctor',
     file: filePath,
+    latest: latestPath,
     skipSummary: argsArray.includes('--skip-summary'),
     micAudio,
     systemAudio,
@@ -119,6 +225,7 @@ Usage:
   npx escribano                           Process latest Cap recording
   npx escribano doctor                    Check prerequisites
   npx escribano --file <path>             Process video from filesystem
+  npx escribano --latest <dir>            Process latest video in directory
   npx escribano --file <path> --mic-audio <wav>   Use external mic audio
   npx escribano --file <path> --system-audio <wav>  Provide system audio
   npx escribano --force                   Reprocess from scratch
@@ -132,6 +239,7 @@ Usage:
 
 Examples:
   npx escribano --file "~/Desktop/Screen Recording.mov"
+  npx escribano --latest "~/Desktop"
   npx escribano --file "/path/to/video.mp4" --mic-audio "/path/to/mic.wav"
   npx escribano --file "/path/to/video.mp4" --system-audio "/path/to/system.wav"
   npx escribano --format standup --stdout
@@ -145,6 +253,7 @@ async function run(args: ParsedArgs): Promise<void> {
   const {
     force,
     file: filePath,
+    latest,
     skipSummary,
     micAudio,
     systemAudio,
@@ -153,6 +262,13 @@ async function run(args: ParsedArgs): Promise<void> {
     copyToClipboard,
     printToStdout,
   } = args;
+
+  // Resolve --latest to a file path
+  let resolvedFilePath = filePath;
+  if (latest) {
+    resolvedFilePath = await findLatestVideo(latest);
+    console.log(`Found latest video: ${resolvedFilePath}`);
+  }
 
   // Log environment variables if verbose mode is enabled
   logEnvironmentVariables();
@@ -176,13 +292,13 @@ async function run(args: ParsedArgs): Promise<void> {
 
   // Create appropriate capture source
   let captureSource: CaptureSource;
-  if (filePath) {
-    console.log(`Using filesystem source: ${filePath}`);
+  if (resolvedFilePath) {
+    console.log(`Using filesystem source: ${resolvedFilePath}`);
     if (micAudio) console.log(`  Mic audio: ${micAudio}`);
     if (systemAudio) console.log(`  System audio: ${systemAudio}`);
     captureSource = createFilesystemCaptureSource(
       {
-        videoPath: filePath,
+        videoPath: resolvedFilePath,
         micAudioPath: micAudio ?? undefined,
         systemAudioPath: systemAudio ?? undefined,
       },
@@ -196,8 +312,8 @@ async function run(args: ParsedArgs): Promise<void> {
   // Get recording
   const recording = await captureSource.getLatestRecording();
   if (!recording) {
-    if (filePath) {
-      console.log(`Failed to load video file: ${filePath}`);
+    if (resolvedFilePath) {
+      console.log(`Failed to load video file: ${resolvedFilePath}`);
     } else {
       console.log('No Cap recordings found.');
     }

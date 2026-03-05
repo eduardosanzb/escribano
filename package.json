@@ -11,7 +11,7 @@
     "dist",
     "migrations",
     "prompts",
-    "scripts",
+    "scripts/mlx_bridge.py",
     "src/scripts/audio_preprocessor.py",
     "src/scripts/visual_observer_base.py"
   ],

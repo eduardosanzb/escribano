@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.4] - 2026-03-05
 
 ### Added
+- Add narrative hallucination learning and artifact format architecture documentation
+
+### Fixed
+- Unify narrative generation with generate-summary-v3.ts to prevent hallucinations
+- Update CHANGELOG for v0.4.3
+
+## [0.4.4] - 2026-03-05
+
+### Added
 - Added sections on narrative hallucination learning and artifact format architecture in the documentation.
 
 ### Fixed  

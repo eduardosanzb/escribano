@@ -22,7 +22,7 @@
 - **Machine**: MacBook Pro M4 Max
 - **Unified Memory**: 128GB (Optimized for VLM inference)
 - **VLM Model**: `Qwen3-VL-2B-Instruct-4bit` (~2GB, ~0.7s per frame) via MLX-VLM
-- **LLM Model**: Auto-detected based on RAM (`qwen3.5:27b` recommended) via Ollama
+- **LLM Model**: Auto-detected based on RAM (`qwen3.5:9b` on M1 Air 16GB, `qwen3.5:27b` on MBP 128GB) via Ollama
 
 ### MLX-VLM Setup
 
@@ -85,7 +85,7 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `2` |
 | `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
 | `ESCRIBANO_LLM_MODEL` | Ollama model for text generation (summaries) | auto-detected |
-| `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3.5:27b` |
+| `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3.5:4b` |
 | `ESCRIBANO_ARTIFACT_THINK` | Enable thinking for artifact/card generation (slower, higher quality) | `false` |
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
 | `ESCRIBANO_MLX_STARTUP_TIMEOUT` | MLX bridge model loading timeout (ms) | `120000` |

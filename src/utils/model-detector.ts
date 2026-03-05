@@ -3,15 +3,24 @@
  *
  * Detects the best available LLM model from installed Ollama models
  * based on system RAM and model quality tiers.
+ *
+ * Tier ordering (first = best):
+ *   - Qwen3.5 models are preferred over Qwen3 at the same size (strictly better benchmarks).
+ *   - qwen3:14b / qwen3:8b kept as fallbacks for machines that already have them installed.
+ *   - qwen3:4b kept as last-resort fallback for users on older installations without qwen3.5.
  */
 
 import { totalmem } from 'node:os';
 
 export const LLM_MODEL_TIERS = [
-  { model: 'qwen3.5:27b', tier: 4, minRamGB: 32, label: 'best' },
-  { model: 'qwen3:14b', tier: 3, minRamGB: 20, label: 'very good' },
-  { model: 'qwen3:8b', tier: 2, minRamGB: 10, label: 'good' },
-  { model: 'qwen3:4b', tier: 1, minRamGB: 6, label: 'minimum' },
+  { model: 'qwen3.5:27b', tier: 6, minRamGB: 32, label: 'best' },
+  { model: 'qwen3:14b', tier: 5, minRamGB: 20, label: 'very good' },
+  { model: 'qwen3.5:9b', tier: 4, minRamGB: 10, label: 'great' },
+  { model: 'qwen3:8b', tier: 3, minRamGB: 10, label: 'good' },
+  { model: 'qwen3.5:4b', tier: 2, minRamGB: 6, label: 'fast' },
+  { model: 'qwen3.5:2b', tier: 1, minRamGB: 4, label: 'lightweight' },
+  // Legacy fallback: kept so users with qwen3:4b already installed get some model
+  { model: 'qwen3:4b', tier: 0, minRamGB: 6, label: 'minimum' },
 ] as const;
 
 export type LLMModelTier = (typeof LLM_MODEL_TIERS)[number];

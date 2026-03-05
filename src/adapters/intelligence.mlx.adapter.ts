@@ -78,7 +78,7 @@ const DEFAULT_CONFIG: MlxConfigWithTimeout = {
   socketPath:
     process.env.ESCRIBANO_MLX_SOCKET_PATH ?? '/tmp/escribano-mlx.sock',
   bridgeScript: resolve(__dirname, '../../scripts/mlx_bridge.py'),
-  startupTimeout: Number(process.env.ESCRIBANO_MLX_STARTUP_TIMEOUT) || 60000,
+  startupTimeout: Number(process.env.ESCRIBANO_MLX_STARTUP_TIMEOUT) || 120000,
 };
 
 /** Escribano's managed Python environment — created automatically on first use. */

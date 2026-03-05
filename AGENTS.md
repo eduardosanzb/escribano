@@ -66,7 +66,7 @@ The adapter auto-detects Python in this priority:
 | `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3.5:27b` |
 | `ESCRIBANO_ARTIFACT_THINK` | Enable thinking for artifact/card generation (slower, higher quality) | `false` |
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
-| `ESCRIBANO_MLX_STARTUP_TIMEOUT` | MLX bridge model loading timeout (ms) | `60000` |
+| `ESCRIBANO_MLX_STARTUP_TIMEOUT` | MLX bridge model loading timeout (ms) | `120000` |
 | `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-setup (`~/.escribano/venv`) |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |

@@ -133,7 +133,7 @@ def signal_handler(signum: int, frame: Any) -> None:
 def load_model() -> tuple[Any, Any, Any]:
     """Load MLX-VLM model."""
     log(f"Loading model: {MODEL_NAME}")
-    log("This may take 30-60 seconds on first run or after memory clear...")
+    log("This may take 30-120 seconds on first run or after memory clear...")
     start = time.time()
 
     try:

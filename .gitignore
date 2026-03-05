@@ -52,3 +52,4 @@ apps/landing/public/
 temp.db
 batch-run.log
 .opencode/
+debug-mbair-machine/escribano.db

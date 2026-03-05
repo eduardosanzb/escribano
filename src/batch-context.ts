@@ -27,6 +27,7 @@ import {
   type ArtifactResult,
   generateArtifactV3,
 } from './actions/generate-artifact-v3.js';
+import { generateSummaryV3 } from './actions/generate-summary-v3.js';
 import { updateGlobalIndex } from './actions/outline-index.js';
 import { processRecordingV3 } from './actions/process-recording-v3.js';
 import {
@@ -90,6 +91,7 @@ export interface ProcessVideoOptions {
   includePersonal?: boolean;
   copyToClipboard?: boolean;
   printToStdout?: boolean;
+  outputDir?: string;
 }
 
 export interface ProcessVideoResult {
@@ -283,18 +285,39 @@ export async function processVideo(
         artifactRunMetadata,
         async () => {
           console.log(`\nGenerating ${format} artifact...`);
-          const generatedArtifact = await generateArtifactV3(
-            recording.id,
-            repos,
-            llm,
-            {
-              recordingId: recording.id,
-              format,
-              includePersonal,
-              copyToClipboard,
-              printToStdout,
-            }
-          );
+          let generatedArtifact: ArtifactResult;
+
+          if (format === 'narrative') {
+            // Route narrative through the corrected path
+            generatedArtifact = await generateSummaryV3(
+              recording.id,
+              repos,
+              llm,
+              {
+                recordingId: recording.id,
+                outputDir: options.outputDir,
+                useTemplate: false,
+                includePersonal,
+                copyToClipboard,
+                printToStdout,
+              }
+            );
+          } else {
+            // Card and standup use the original path
+            generatedArtifact = await generateArtifactV3(
+              recording.id,
+              repos,
+              llm,
+              {
+                recordingId: recording.id,
+                format,
+                includePersonal,
+                copyToClipboard,
+                printToStdout,
+              }
+            );
+          }
+
           console.log(`Artifact saved: ${generatedArtifact.filePath}`);
           if (generatedArtifact.workDuration > 0) {
             const workMins = Math.round(generatedArtifact.workDuration / 60);

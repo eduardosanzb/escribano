@@ -4,20 +4,30 @@
  * Generates a work session summary from V3 processed TopicBlocks using LLM.
  */
 
+import { execSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path, { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { IntelligenceService, Repositories } from '../0_types.js';
 import { log } from '../pipeline/context.js';
+import {
+  groupTopicBlocksIntoSubjects,
+  type Subject,
+  saveSubjectsToDatabase,
+} from '../services/subject-grouping.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export interface SummaryArtifact {
   id: string;
   recordingId: string;
+  format: 'narrative';
   content: string;
   filePath: string;
+  subjects: Subject[];
+  personalDuration: number;
+  workDuration: number;
   createdAt: Date;
 }
 
@@ -28,6 +38,12 @@ export interface GenerateSummaryOptions {
   outputDir?: string;
   /** Skip LLM and use template fallback */
   useTemplate?: boolean;
+  /** Filter out personal time */
+  includePersonal?: boolean;
+  /** Copy artifact to clipboard (macOS only) */
+  copyToClipboard?: boolean;
+  /** Print artifact to stdout */
+  printToStdout?: boolean;
 }
 
 /**
@@ -47,7 +63,7 @@ export async function generateSummaryV3(
 ): Promise<SummaryArtifact> {
   log(
     'info',
-    `[Summary V3] Generating summary for recording ${recordingId}...`
+    `[Summary V3] Generating narrative for recording ${recordingId}...`
   );
 
   // Get the recording
@@ -57,14 +73,44 @@ export async function generateSummaryV3(
   }
 
   // Get TopicBlocks for this recording
-  const topicBlocks = repos.topicBlocks.findByRecording(recordingId);
-  if (topicBlocks.length === 0) {
+  const allTopicBlocks = repos.topicBlocks.findByRecording(recordingId);
+  if (allTopicBlocks.length === 0) {
     throw new Error(
       `No TopicBlocks found for recording ${recordingId}. Run process-v3 first.`
     );
   }
 
-  log('info', `[Summary V3] Found ${topicBlocks.length} TopicBlocks`);
+  log('info', `[Summary V3] Found ${allTopicBlocks.length} TopicBlocks`);
+
+  // Group TopicBlocks into subjects
+  log('info', '[Summary V3] Grouping TopicBlocks into subjects...');
+  const groupingResult = await groupTopicBlocksIntoSubjects(
+    allTopicBlocks,
+    intelligence,
+    recordingId
+  );
+
+  const { subjects } = groupingResult;
+  const { personalDuration, workDuration } = groupingResult;
+
+  // Save subjects to database
+  log('info', `[Summary V3] Saving ${subjects.length} subjects to database...`);
+  saveSubjectsToDatabase(subjects, recordingId, repos);
+
+  // Filter TopicBlocks based on personal/work classification
+  let topicBlocksToUse = allTopicBlocks;
+  if (!options.includePersonal) {
+    // Filter out blocks from personal subjects
+    const personalSubjectIds = new Set(
+      subjects.filter((s) => s.isPersonal).map((s) => s.id)
+    );
+    topicBlocksToUse = allTopicBlocks.filter((block) => {
+      const subjectForBlock = subjects.find((s) =>
+        s.topicBlockIds.includes(block.id)
+      );
+      return !subjectForBlock?.isPersonal;
+    });
+  }
 
   // Build sections from TopicBlocks
   const sections: Array<{
@@ -78,7 +124,7 @@ export async function generateSummaryV3(
     endTime: number;
   }> = [];
 
-  for (const block of topicBlocks) {
+  for (const block of topicBlocksToUse) {
     const classification = JSON.parse(block.classification || '{}');
 
     sections.push({
@@ -125,7 +171,7 @@ export async function generateSummaryV3(
 
   // Generate filename
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const fileName = `${recordingId}-summary-${timestamp}.md`;
+  const fileName = `${recordingId}-narrative-${timestamp}.md`;
   const filePath = path.join(outputDir, fileName);
 
   // Write to file
@@ -133,11 +179,49 @@ export async function generateSummaryV3(
 
   log('info', `[Summary V3] Summary saved to: ${filePath}`);
 
+  // Save to database
+  const artifactId = `artifact-${recordingId}-narrative-${Date.now()}`;
+  repos.artifacts.save({
+    id: artifactId,
+    recording_id: recordingId,
+    type: 'narrative',
+    content: summaryContent,
+    format: 'markdown',
+    source_block_ids: JSON.stringify(subjects.flatMap((s) => s.topicBlockIds)),
+    source_context_ids: null,
+  });
+  log('info', `[Summary V3] Saved to database: ${artifactId}`);
+
+  // Link subjects to artifact
+  repos.artifacts.linkSubjects(
+    artifactId,
+    subjects.map((s) => s.id)
+  );
+  log('info', `[Summary V3] Linked ${subjects.length} subjects to artifact`);
+
+  // Handle stdout/clipboard
+  if (options.printToStdout) {
+    console.log(`\n${summaryContent}\n`);
+  }
+
+  if (options.copyToClipboard && process.platform === 'darwin') {
+    try {
+      execSync('pbcopy', { input: summaryContent, encoding: 'utf-8' });
+      log('info', '[Summary V3] Copied to clipboard');
+    } catch (error) {
+      log('warn', `[Summary V3] Failed to copy to clipboard: ${error}`);
+    }
+  }
+
   return {
-    id: `summary-${recordingId}-${Date.now()}`,
+    id: artifactId,
     recordingId,
+    format: 'narrative',
     content: summaryContent,
     filePath,
+    subjects,
+    personalDuration,
+    workDuration,
     createdAt: new Date(),
   };
 }

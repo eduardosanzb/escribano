@@ -5,13 +5,13 @@
  * 1. CLI arguments
  * 2. Shell environment variables (export ESCRIBANO_*)
  * 3. ~/.escribano/.env file
- * 4. Default values
+ * 4. RAM-aware defaults (based on system memory)
  *
  * Note: Project-level .env is NOT loaded by default (only for development).
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, totalmem } from 'node:os';
 import path from 'node:path';
 import { config as dotenvConfig } from 'dotenv';
 import { z } from 'zod';
@@ -46,7 +46,7 @@ const configSchema = z.object({
   sampleGapThreshold: z.number().int().min(5).max(60).default(15),
   sampleGapFill: z.number().int().min(1).max(10).default(3),
   mlxSocketPath: z.string().default('/tmp/escribano-mlx.sock'),
-  mlxStartupTimeout: z.number().int().min(10000).default(60000),
+  mlxStartupTimeout: z.number().int().min(10000).default(120000),
   pythonPath: z.string().optional(),
   parallelTranscription: z.boolean().default(false),
   artifactThink: z.boolean().default(false),
@@ -59,11 +59,34 @@ const configSchema = z.object({
 
 export type Config = z.infer<typeof configSchema>;
 
+export interface ConfigSource {
+  key: string;
+  source: 'env' | 'default' | 'ram-aware';
+}
+
+// =============================================================================
+// RAM DETECTION
+// =============================================================================
+
+function getSystemRamGB(): number {
+  return Math.round(totalmem() / (1024 * 1024 * 1024));
+}
+
+function getRamTier(ramGB: number): { tier: string; frameWidth: number } {
+  if (ramGB >= 32) {
+    return { tier: 'high', frameWidth: 1024 };
+  }
+  if (ramGB >= 16) {
+    return { tier: 'medium', frameWidth: 1024 };
+  }
+  return { tier: 'low', frameWidth: 768 };
+}
+
 // =============================================================================
 // DEFAULT CONFIG
 // =============================================================================
 
-const DEFAULT_CONFIG: Config = {
+const BASE_DEFAULTS = {
   frameWidth: 1024,
   vlmBatchSize: 2,
   sampleInterval: 10,
@@ -78,7 +101,7 @@ const DEFAULT_CONFIG: Config = {
   sampleGapThreshold: 15,
   sampleGapFill: 3,
   mlxSocketPath: '/tmp/escribano-mlx.sock',
-  mlxStartupTimeout: 60000,
+  mlxStartupTimeout: 120000,
   parallelTranscription: false,
   artifactThink: false,
   outlineCollection: 'Escribano Sessions',
@@ -93,30 +116,30 @@ const CONFIG_TEMPLATE = `# Escribano Configuration - ~/.escribano/.env
 # Full reference: https://github.com/eduardosanzb/escribano#configuration
 
 # === PERFORMANCE ===
-ESCRIBANO_FRAME_WIDTH=1024          # Lower = faster (1920, 1280, 1024, 640)
-ESCRIBANO_VLM_BATCH_SIZE=2          # 1-4 frames (lower = more reliable)
-ESCRIBANO_SAMPLE_INTERVAL=10        # Base frame sampling (seconds)
+# ESCRIBANO_FRAME_WIDTH=1024          # Auto-adjusted based on RAM (1024 for 16GB+, 768 for <16GB)
+# ESCRIBANO_VLM_BATCH_SIZE=2          # 1-4 frames (lower = more reliable)
+ESCRIBANO_SAMPLE_INTERVAL=10          # Base frame sampling (seconds)
 
 # === QUALITY ===
-ESCRIBANO_SCENE_THRESHOLD=0.4       # Scene detection sensitivity (0.0-1.0)
-ESCRIBANO_VLM_MAX_TOKENS=2000       # Token budget per batch
+ESCRIBANO_SCENE_THRESHOLD=0.4         # Scene detection sensitivity (0.0-1.0)
+ESCRIBANO_VLM_MAX_TOKENS=2000         # Token budget per batch
 
 # === MODELS ===
-# ESCRIBANO_LLM_MODEL=qwen3.5:27b   # Summary generation (auto-detected if not set)
+# ESCRIBANO_LLM_MODEL=qwen3.5:27b     # Summary generation (auto-detected if not set)
 ESCRIBANO_VLM_MODEL=mlx-community/Qwen3-VL-2B-Instruct-4bit
 
 # === DEBUGGING ===
-ESCRIBANO_VERBOSE=false              # Enable verbose logging
-ESCRIBANO_DEBUG_VLM=false           # Debug VLM processing
+ESCRIBANO_VERBOSE=false               # Enable verbose logging
+ESCRIBANO_DEBUG_VLM=false             # Debug VLM processing
 
 # === ADVANCED ===
 ESCRIBANO_SCENE_MIN_INTERVAL=2
 ESCRIBANO_SAMPLE_GAP_THRESHOLD=15
 ESCRIBANO_SAMPLE_GAP_FILL=3
 ESCRIBANO_MLX_SOCKET_PATH=/tmp/escribano-mlx.sock
-ESCRIBANO_MLX_STARTUP_TIMEOUT=60000
-# ESCRIBANO_PYTHON_PATH=             # Auto-detected if not set
-ESCRIBANO_ARTIFACT_THINK=false      # Enable thinking for artifacts (slower)
+ESCRIBANO_MLX_STARTUP_TIMEOUT=120000
+# ESCRIBANO_PYTHON_PATH=              # Auto-detected if not set
+ESCRIBANO_ARTIFACT_THINK=false        # Enable thinking for artifacts (slower)
 
 # === OPTIONAL (Outline publishing) ===
 # ESCRIBANO_OUTLINE_URL=
@@ -129,6 +152,7 @@ ESCRIBANO_ARTIFACT_THINK=false      # Enable thinking for artifacts (slower)
 // =============================================================================
 
 let cachedConfig: Config | null = null;
+let cachedSources: ConfigSource[] = [];
 
 export function getConfigPath(): string {
   return path.join(homedir(), '.escribano', '.env');
@@ -155,138 +179,317 @@ export function createDefaultConfig(): void {
   }
 }
 
+/**
+ * Check if running in development mode.
+ * Development mode = running via tsx from source (src/index.ts)
+ * Production mode = running compiled code (dist/index.js)
+ */
+function isDevelopmentMode(): boolean {
+  // Check if running from src directory via tsx
+  const currentFile = import.meta.url;
+  return currentFile.includes('/src/');
+}
+
 export function loadConfig(): Config {
   if (cachedConfig) {
     return cachedConfig;
   }
 
-  // 1. Load from config file (if exists)
-  const configPath = getConfigPath();
-  if (existsSync(configPath)) {
-    try {
-      const result = dotenvConfig({ path: configPath });
-      if (result.error) {
+  const sources: ConfigSource[] = [];
+
+  // 1. Load from user config file (PRODUCTION MODE ONLY)
+  // In development mode, we use project .env via tsx --env-file flag
+  if (!isDevelopmentMode()) {
+    const configPath = getConfigPath();
+    if (existsSync(configPath)) {
+      try {
+        const result = dotenvConfig({ path: configPath });
+        if (result.error) {
+          console.error(
+            `Failed to parse config file ${configPath}: ${result.error.message}`
+          );
+          console.error('Using default configuration.');
+        } else if (result.parsed && Object.keys(result.parsed).length > 0) {
+          console.log(`Loaded config from ${configPath}`);
+        }
+      } catch (error) {
         console.error(
-          `Failed to parse config file ${configPath}: ${result.error.message}`
+          `Error reading config file ${configPath}: ${(error as Error).message}`
         );
         console.error('Using default configuration.');
-      } else if (result.parsed && Object.keys(result.parsed).length > 0) {
-        console.log(`Loaded config from ${configPath}`);
       }
-    } catch (error) {
-      console.error(
-        `Error reading config file ${configPath}: ${(error as Error).message}`
-      );
-      console.error('Using default configuration.');
     }
   }
 
-  // 2. Build config from environment variables
+  // 2. Get RAM-aware defaults
+  const ramGB = getSystemRamGB();
+  const ramTier = getRamTier(ramGB);
+
+  // 3. Build config with source tracking
   const config: Config = {
     // === PERFORMANCE ===
-    frameWidth: parseEnvNumber(
+    frameWidth: parseEnvNumberWithSource(
       'ESCRIBANO_FRAME_WIDTH',
-      DEFAULT_CONFIG.frameWidth
+      ramTier.frameWidth,
+      sources,
+      'frameWidth'
     ),
-    vlmBatchSize: parseEnvNumber(
+    vlmBatchSize: parseEnvNumberWithSource(
       'ESCRIBANO_VLM_BATCH_SIZE',
-      DEFAULT_CONFIG.vlmBatchSize
+      BASE_DEFAULTS.vlmBatchSize,
+      sources,
+      'vlmBatchSize'
     ),
-    sampleInterval: parseEnvNumber(
+    sampleInterval: parseEnvNumberWithSource(
       'ESCRIBANO_SAMPLE_INTERVAL',
-      DEFAULT_CONFIG.sampleInterval
+      BASE_DEFAULTS.sampleInterval,
+      sources,
+      'sampleInterval'
     ),
 
     // === QUALITY ===
-    sceneThreshold: parseEnvNumber(
+    sceneThreshold: parseEnvNumberWithSource(
       'ESCRIBANO_SCENE_THRESHOLD',
-      DEFAULT_CONFIG.sceneThreshold
+      BASE_DEFAULTS.sceneThreshold,
+      sources,
+      'sceneThreshold'
     ),
-    vlmMaxTokens: parseEnvNumber(
+    vlmMaxTokens: parseEnvNumberWithSource(
       'ESCRIBANO_VLM_MAX_TOKENS',
-      DEFAULT_CONFIG.vlmMaxTokens
+      BASE_DEFAULTS.vlmMaxTokens,
+      sources,
+      'vlmMaxTokens'
     ),
 
     // === MODELS ===
-    llmModel: process.env.ESCRIBANO_LLM_MODEL,
-    vlmModel: process.env.ESCRIBANO_VLM_MODEL || DEFAULT_CONFIG.vlmModel,
-    subjectGroupingModel: process.env.ESCRIBANO_SUBJECT_GROUPING_MODEL,
+    llmModel: parseEnvStringWithSource(
+      'ESCRIBANO_LLM_MODEL',
+      undefined,
+      sources,
+      'llmModel'
+    ),
+    vlmModel: parseEnvStringWithSource(
+      'ESCRIBANO_VLM_MODEL',
+      BASE_DEFAULTS.vlmModel,
+      sources,
+      'vlmModel'
+    ) as string,
+    subjectGroupingModel: parseEnvStringWithSource(
+      'ESCRIBANO_SUBJECT_GROUPING_MODEL',
+      undefined,
+      sources,
+      'subjectGroupingModel'
+    ),
 
     // === DEBUGGING ===
-    verbose: parseEnvBoolean('ESCRIBANO_VERBOSE', DEFAULT_CONFIG.verbose),
-    debugOllama: parseEnvBoolean(
-      'ESCRIBANO_DEBUG_OLLAMA',
-      DEFAULT_CONFIG.debugOllama
+    verbose: parseEnvBooleanWithSource(
+      'ESCRIBANO_VERBOSE',
+      BASE_DEFAULTS.verbose,
+      sources,
+      'verbose'
     ),
-    debugVlm: parseEnvBoolean('ESCRIBANO_DEBUG_VLM', DEFAULT_CONFIG.debugVlm),
-    skipLlm: parseEnvBoolean('ESCRIBANO_SKIP_LLM', DEFAULT_CONFIG.skipLlm),
+    debugOllama: parseEnvBooleanWithSource(
+      'ESCRIBANO_DEBUG_OLLAMA',
+      BASE_DEFAULTS.debugOllama,
+      sources,
+      'debugOllama'
+    ),
+    debugVlm: parseEnvBooleanWithSource(
+      'ESCRIBANO_DEBUG_VLM',
+      BASE_DEFAULTS.debugVlm,
+      sources,
+      'debugVlm'
+    ),
+    skipLlm: parseEnvBooleanWithSource(
+      'ESCRIBANO_SKIP_LLM',
+      BASE_DEFAULTS.skipLlm,
+      sources,
+      'skipLlm'
+    ),
 
     // === ADVANCED ===
-    sceneMinInterval: parseEnvNumber(
+    sceneMinInterval: parseEnvNumberWithSource(
       'ESCRIBANO_SCENE_MIN_INTERVAL',
-      DEFAULT_CONFIG.sceneMinInterval
+      BASE_DEFAULTS.sceneMinInterval,
+      sources,
+      'sceneMinInterval'
     ),
-    sampleGapThreshold: parseEnvNumber(
+    sampleGapThreshold: parseEnvNumberWithSource(
       'ESCRIBANO_SAMPLE_GAP_THRESHOLD',
-      DEFAULT_CONFIG.sampleGapThreshold
+      BASE_DEFAULTS.sampleGapThreshold,
+      sources,
+      'sampleGapThreshold'
     ),
-    sampleGapFill: parseEnvNumber(
+    sampleGapFill: parseEnvNumberWithSource(
       'ESCRIBANO_SAMPLE_GAP_FILL',
-      DEFAULT_CONFIG.sampleGapFill
+      BASE_DEFAULTS.sampleGapFill,
+      sources,
+      'sampleGapFill'
     ),
-    mlxSocketPath:
-      process.env.ESCRIBANO_MLX_SOCKET_PATH || DEFAULT_CONFIG.mlxSocketPath,
-    mlxStartupTimeout: parseEnvNumber(
+    mlxSocketPath: parseEnvStringWithSource(
+      'ESCRIBANO_MLX_SOCKET_PATH',
+      BASE_DEFAULTS.mlxSocketPath,
+      sources,
+      'mlxSocketPath'
+    ) as string,
+    mlxStartupTimeout: parseEnvNumberWithSource(
       'ESCRIBANO_MLX_STARTUP_TIMEOUT',
-      DEFAULT_CONFIG.mlxStartupTimeout
+      BASE_DEFAULTS.mlxStartupTimeout,
+      sources,
+      'mlxStartupTimeout'
     ),
-    pythonPath: process.env.ESCRIBANO_PYTHON_PATH,
-    parallelTranscription: parseEnvBoolean(
+    pythonPath: parseEnvStringWithSource(
+      'ESCRIBANO_PYTHON_PATH',
+      undefined,
+      sources,
+      'pythonPath'
+    ),
+    parallelTranscription: parseEnvBooleanWithSource(
       'ESCRIBANO_PARALLEL_TRANSCRIPTION',
-      DEFAULT_CONFIG.parallelTranscription
+      BASE_DEFAULTS.parallelTranscription,
+      sources,
+      'parallelTranscription'
     ),
-    artifactThink: parseEnvBoolean(
+    artifactThink: parseEnvBooleanWithSource(
       'ESCRIBANO_ARTIFACT_THINK',
-      DEFAULT_CONFIG.artifactThink
+      BASE_DEFAULTS.artifactThink,
+      sources,
+      'artifactThink'
     ),
 
     // === OPTIONAL ===
-    outlineUrl: process.env.ESCRIBANO_OUTLINE_URL,
-    outlineToken: process.env.ESCRIBANO_OUTLINE_TOKEN,
-    outlineCollection:
-      process.env.ESCRIBANO_OUTLINE_COLLECTION ||
-      DEFAULT_CONFIG.outlineCollection,
+    outlineUrl: parseEnvStringWithSource(
+      'ESCRIBANO_OUTLINE_URL',
+      undefined,
+      sources,
+      'outlineUrl'
+    ),
+    outlineToken: parseEnvStringWithSource(
+      'ESCRIBANO_OUTLINE_TOKEN',
+      undefined,
+      sources,
+      'outlineToken'
+    ),
+    outlineCollection: parseEnvStringWithSource(
+      'ESCRIBANO_OUTLINE_COLLECTION',
+      BASE_DEFAULTS.outlineCollection,
+      sources,
+      'outlineCollection'
+    ) as string,
   };
 
-  // 3. Validate with Zod
+  // 4. Validate with Zod
   const validated = configSchema.parse(config);
 
   cachedConfig = validated;
+  cachedSources = sources;
   return validated;
+}
+
+export function getConfigSources(): ConfigSource[] {
+  return cachedSources;
+}
+
+export function getRamInfo(): { ramGB: number; tier: string } {
+  const ramGB = getSystemRamGB();
+  const ramTier = getRamTier(ramGB);
+  return { ramGB, tier: ramTier.tier };
 }
 
 // =============================================================================
 // HELPERS
 // =============================================================================
 
-function parseEnvNumber(key: string, defaultValue: number): number {
+function parseEnvNumberWithSource(
+  key: string,
+  defaultValue: number,
+  sources: ConfigSource[],
+  configKey: string
+): number {
   const value = process.env[key];
-  if (!value) return defaultValue;
+  if (value === undefined) {
+    const isRamAware = configKey === 'frameWidth';
+    sources.push({
+      key: configKey,
+      source: isRamAware ? 'ram-aware' : 'default',
+    });
+    return defaultValue;
+  }
 
   const parsed = Number(value);
   if (Number.isNaN(parsed)) {
     console.warn(`Invalid ${key}="${value}", using default: ${defaultValue}`);
+    sources.push({ key: configKey, source: 'default' });
     return defaultValue;
   }
 
+  sources.push({ key: configKey, source: 'env' });
   return parsed;
 }
 
-function parseEnvBoolean(key: string, defaultValue: boolean): boolean {
+function parseEnvStringWithSource(
+  key: string,
+  defaultValue: string | undefined,
+  sources: ConfigSource[],
+  configKey: string
+): string | undefined {
   const value = process.env[key];
-  if (!value) return defaultValue;
+  if (value === undefined) {
+    sources.push({ key: configKey, source: 'default' });
+    return defaultValue;
+  }
 
+  sources.push({ key: configKey, source: 'env' });
+  return value;
+}
+
+function parseEnvBooleanWithSource(
+  key: string,
+  defaultValue: boolean,
+  sources: ConfigSource[],
+  configKey: string
+): boolean {
+  const value = process.env[key];
+  if (value === undefined) {
+    sources.push({ key: configKey, source: 'default' });
+    return defaultValue;
+  }
+
+  sources.push({ key: configKey, source: 'env' });
   return value === 'true';
+}
+
+// =============================================================================
+// LOGGING
+// =============================================================================
+
+export function logConfig(): void {
+  const config = loadConfig();
+  const { ramGB, tier } = getRamInfo();
+  const sources = getConfigSources();
+
+  const userSetKeys = sources.filter((s) => s.source === 'env');
+
+  // Compact one-liner per category
+  const perf = `frameWidth=${config.frameWidth} vlmBatchSize=${config.vlmBatchSize} sampleInterval=${config.sampleInterval}`;
+  const quality = `sceneThreshold=${config.sceneThreshold} vlmMaxTokens=${config.vlmMaxTokens}`;
+  const models = `vlmModel=${config.vlmModel.split('/').pop()} llmModel=${config.llmModel || 'auto'}`;
+
+  // Show dev mode indicator if applicable
+  if (isDevelopmentMode()) {
+    console.log('[Config] Mode: development (using project .env)');
+  }
+
+  console.log(`[Config] RAM: ${ramGB}GB (${tier})`);
+  console.log(`[Config] Performance: ${perf}`);
+  console.log(`[Config] Quality: ${quality}`);
+  console.log(`[Config] Models: ${models}`);
+
+  if (userSetKeys.length > 0) {
+    console.log(
+      `[Config] User overrides: ${userSetKeys.map((s) => s.key).join(', ')}`
+    );
+  }
 }
 
 // =============================================================================
@@ -296,14 +499,27 @@ function parseEnvBoolean(key: string, defaultValue: boolean): boolean {
 export function showConfig(): void {
   const configPath = getConfigPath();
 
-  // Create config file if it doesn't exist
+  // In dev mode, show that we're using project .env instead
+  if (isDevelopmentMode()) {
+    console.log(
+      'Development mode: Using project .env (not ~/.escribano/.env)\n'
+    );
+    console.log('Current configuration:');
+    const config = loadConfig();
+    console.log(JSON.stringify(config, null, 2));
+    return;
+  }
+
+  // Create config file if it doesn't exist (production mode)
   if (!existsSync(configPath)) {
     createDefaultConfig();
   }
 
   const config = loadConfig();
+  const { ramGB, tier } = getRamInfo();
 
-  console.log(`Config file: ${configPath}\n`);
+  console.log(`Config file: ${configPath}`);
+  console.log(`System RAM: ${ramGB}GB (${tier} tier)\n`);
   console.log('Current configuration:');
   console.log(JSON.stringify(config, null, 2));
 }

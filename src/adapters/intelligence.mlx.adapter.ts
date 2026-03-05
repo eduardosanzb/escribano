@@ -28,6 +28,7 @@ import type {
   TranscriptMetadata,
   VisualLog,
 } from '../0_types.js';
+import { loadConfig } from '../config.js';
 import {
   ESCRIBANO_HOME,
   ESCRIBANO_VENV,
@@ -36,10 +37,9 @@ import {
 } from '../python-utils.js';
 import type { ResourceTrackable } from '../stats/types.js';
 
-const DEBUG_MLX = process.env.ESCRIBANO_VERBOSE === 'true';
-
 function debugLog(...args: unknown[]): void {
-  if (DEBUG_MLX) {
+  const config = loadConfig();
+  if (config.verbose) {
     console.log('[VLM] [MLX]', ...args);
   }
 }
@@ -50,6 +50,7 @@ interface MlxConfig {
   maxTokens: number;
   socketPath: string;
   bridgeScript: string;
+  startupTimeout: number;
 }
 
 interface BridgeState {
@@ -69,22 +70,6 @@ interface FrameDescription {
   imagePath: string;
   raw_response?: string;
 }
-
-interface MlxConfigWithTimeout extends MlxConfig {
-  startupTimeout: number;
-}
-
-const DEFAULT_CONFIG: MlxConfigWithTimeout = {
-  model:
-    process.env.ESCRIBANO_VLM_MODEL ??
-    'mlx-community/Qwen3-VL-2B-Instruct-bf16',
-  batchSize: Number(process.env.ESCRIBANO_VLM_BATCH_SIZE) || 4,
-  maxTokens: Number(process.env.ESCRIBANO_VLM_MAX_TOKENS) || 2000,
-  socketPath:
-    process.env.ESCRIBANO_MLX_SOCKET_PATH ?? '/tmp/escribano-mlx.sock',
-  bridgeScript: resolve(__dirname, '../../scripts/mlx_bridge.py'),
-  startupTimeout: Number(process.env.ESCRIBANO_MLX_STARTUP_TIMEOUT) || 120000,
-};
 
 /** pip binary inside Escribano's managed venv. */
 const _ESCRIBANO_VENV_PIP = resolve(ESCRIBANO_VENV, 'bin', 'pip');
@@ -203,7 +188,18 @@ export function cleanupMlxBridge(): void {
 export function createMlxIntelligenceService(
   _config: Partial<IntelligenceConfig> = {}
 ): IntelligenceService & ResourceTrackable {
-  const mlxConfig = { ...DEFAULT_CONFIG };
+  // Load unified config (respects env vars, config file, and RAM-aware defaults)
+  const config = loadConfig();
+
+  const mlxConfig: MlxConfig = {
+    model: config.vlmModel,
+    batchSize: config.vlmBatchSize,
+    maxTokens: config.vlmMaxTokens,
+    socketPath: config.mlxSocketPath,
+    bridgeScript: resolve(__dirname, '../../scripts/mlx_bridge.py'),
+    startupTimeout: config.mlxStartupTimeout,
+  };
+
   const bridge: BridgeState = {
     process: null,
     socket: null,

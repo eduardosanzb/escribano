@@ -32,6 +32,8 @@ const configSchema = z.object({
 
   // === MODELS ===
   llmModel: z.string().optional(),
+  llmBackend: z.enum(['mlx', 'ollama']).default('mlx'),
+  llmMlxModel: z.string().optional(),
   vlmModel: z.string().default('mlx-community/Qwen3-VL-2B-Instruct-4bit'),
   subjectGroupingModel: z.string().optional(),
 
@@ -69,6 +71,7 @@ const DEFAULT_CONFIG: Config = {
   sampleInterval: 10,
   sceneThreshold: 0.4,
   vlmMaxTokens: 2000,
+  llmBackend: 'mlx',
   vlmModel: 'mlx-community/Qwen3-VL-2B-Instruct-4bit',
   verbose: false,
   debugOllama: false,
@@ -102,7 +105,9 @@ ESCRIBANO_SCENE_THRESHOLD=0.4       # Scene detection sensitivity (0.0-1.0)
 ESCRIBANO_VLM_MAX_TOKENS=2000       # Token budget per batch
 
 # === MODELS ===
-# ESCRIBANO_LLM_MODEL=qwen3.5:27b   # Summary generation (auto-detected if not set)
+# ESCRIBANO_LLM_BACKEND=mlx             # LLM backend: 'mlx' (default) or 'ollama'
+# ESCRIBANO_LLM_MODEL=qwen3.5:27b       # Ollama model (only used if llmBackend='ollama')
+# ESCRIBANO_LLM_MLX_MODEL=              # MLX model (only used if llmBackend='mlx', auto-detected if not set)
 ESCRIBANO_VLM_MODEL=mlx-community/Qwen3-VL-2B-Instruct-4bit
 
 # === DEBUGGING ===
@@ -209,6 +214,9 @@ export function loadConfig(): Config {
 
     // === MODELS ===
     llmModel: process.env.ESCRIBANO_LLM_MODEL,
+    llmBackend: (process.env.ESCRIBANO_LLM_BACKEND ??
+      DEFAULT_CONFIG.llmBackend) as 'mlx' | 'ollama',
+    llmMlxModel: process.env.ESCRIBANO_LLM_MLX_MODEL,
     vlmModel: process.env.ESCRIBANO_VLM_MODEL || DEFAULT_CONFIG.vlmModel,
     subjectGroupingModel: process.env.ESCRIBANO_SUBJECT_GROUPING_MODEL,
 

@@ -13,6 +13,7 @@ import type {
   DbTopicBlock,
   IntelligenceService,
 } from '../0_types.js';
+import { step } from '../pipeline/context.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -100,11 +101,13 @@ export async function groupTopicBlocksIntoSubjects(
   );
 
   try {
-    const response = await intelligence.generateText(prompt, {
-      expectJson: false,
-      model: SUBJECT_GROUPING_MODEL,
-      numPredict: 2000,
-      think: false,
+    const response = await step('llm_subject_grouping', async () => {
+      return intelligence.generateText(prompt, {
+        expectJson: false,
+        model: SUBJECT_GROUPING_MODEL,
+        numPredict: 2000,
+        think: false,
+      });
     });
 
     console.log(

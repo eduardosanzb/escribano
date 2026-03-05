@@ -10,7 +10,7 @@ import { homedir } from 'node:os';
 import path, { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { IntelligenceService, Repositories } from '../0_types.js';
-import { log } from '../pipeline/context.js';
+import { log, step } from '../pipeline/context.js';
 import {
   groupTopicBlocksIntoSubjects,
   type Subject,
@@ -336,8 +336,10 @@ ${section.transcript ? `**Audio Transcript:**\n${section.transcript}` : '*No aud
     .replace('{{URLS_LIST}}', urlsList);
 
   // Call LLM
-  const result = await intelligence.generateText(prompt, {
-    expectJson: false,
+  const result = await step('llm_artifact_generation', async () => {
+    return intelligence.generateText(prompt, {
+      expectJson: false,
+    });
   });
   return result;
 }

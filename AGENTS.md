@@ -15,14 +15,14 @@
 - **Database**: SQLite (better-sqlite3)
 - **Transcription**: whisper.cpp (whisper-cli)
 - **VLM**: MLX-VLM (local, Qwen3-VL-2B) - frame analysis (~0.7s/frame with 4bit)
-- **LLM**: Ollama (local, auto-detected based on RAM) - summary generation
+- **LLM**: MLX-LM (local, Qwen3.5) or Ollama (local, auto-detected based on RAM) - summary generation
 
 ## Development Environment
 
 - **Machine**: MacBook Pro M4 Max
 - **Unified Memory**: 128GB (Optimized for VLM inference)
 - **VLM Model**: `Qwen3-VL-2B-Instruct-4bit` (~2GB, ~0.7s per frame) via MLX-VLM
-- **LLM Model**: Auto-detected based on RAM (`qwen3.5:27b` recommended) via Ollama
+- **LLM Model**: Auto-detected based on RAM (`Qwen3.5-27B` recommended) via MLX-LM or Ollama
 
 ### MLX-VLM Setup
 
@@ -84,8 +84,10 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-4bit` |
 | `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `2` |
 | `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
-| `ESCRIBANO_LLM_MODEL` | Ollama model for text generation (summaries) | auto-detected |
-| `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3.5:27b` |
+| `ESCRIBANO_LLM_BACKEND` | LLM backend: `mlx` (default) or `ollama` | `mlx` |
+| `ESCRIBANO_LLM_MODEL` | Ollama model (only used if `llmBackend=ollama`) | auto-detected |
+| `ESCRIBANO_LLM_MLX_MODEL` | MLX model (only used if `llmBackend=mlx`) | auto-detected |
+| `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | auto-detected |
 | `ESCRIBANO_ARTIFACT_THINK` | Enable thinking for artifact/card generation (slower, higher quality) | `false` |
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
 | `ESCRIBANO_MLX_STARTUP_TIMEOUT` | MLX bridge model loading timeout (ms) | `120000` |
@@ -111,7 +113,6 @@ The config file is auto-created on first run with sensible defaults and inline c
 - **Total Pipeline**: Combined optimizations achieve 4x speedup (102 min → 25.7 min for 3-hour videos)
 
 ### Deprecated
-- `ESCRIBANO_VLM_BACKEND` — VLM is always MLX, LLM is always Ollama (explicit in index.ts)
 - `ESCRIBANO_VLM_NUM_PREDICT` — Ollama VLM no longer used
 - `ESCRIBANO_EMBED_MODEL` — Embeddings disabled in V3
 - `ESCRIBANO_EMBED_BATCH_SIZE` — Embeddings disabled in V3
@@ -139,7 +140,7 @@ src/
 │   ├── audio.silero.adapter.ts        # VAD preprocessing (Python)
 │   ├── video.ffmpeg.adapter.ts        # Frame extraction + scene detection
 │   ├── intelligence.ollama.adapter.ts # LLM inference (Ollama, for summary generation)
-│   └── intelligence.mlx.adapter.ts    # VLM inference (MLX-VLM, for frame analysis)
+│   └── intelligence.mlx.adapter.ts    # VLM & LLM inference (MLX-VLM for frames, MLX-LM for text)
 ├── services/                          # Pure business logic (no I/O)
 │   ├── frame-sampling.ts              # Adaptive frame reduction
 │   ├── vlm-service.ts                 # VLM orchestration (backend-agnostic)
@@ -220,9 +221,11 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
 
 7. Artifact Generation
    ├─ Load TopicBlocks for recording
+   ├─ Load LLM model (MLX or Ollama based on backend setting)
    ├─ Subject grouping via LLM (or reuse existing subjects)
    ├─ Build prompt from format template (card/standup/narrative)
    ├─ LLM call (auto-detected model) → formatted artifact
+   ├─ Unload LLM model (if MLX backend)
    ├─ Save markdown to ~/.escribano/artifacts/
    └─ Link artifact to subjects via artifact_subjects join table
 

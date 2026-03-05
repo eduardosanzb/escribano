@@ -94,6 +94,8 @@ Frame 2: description: ... | activity: ... | apps: [...] | topics: [...]
 model = None
 processor = None
 config = None
+llm_model = None
+llm_tokenizer = None
 server_socket = None
 
 
@@ -105,6 +107,83 @@ def log(message: str, level: str = "info") -> None:
         level, "[MLX]"
     )
     print(f"{prefix} {message}", file=sys.stderr, flush=True)
+
+
+def load_llm_model(model_name: str) -> tuple[Any, Any]:
+    """Load an MLX text-only LLM model via mlx_lm."""
+    log(f"Loading LLM model: {model_name}")
+    log("This may take 30-120 seconds on first run or after memory clear...")
+    start = time.time()
+
+    try:
+        import gc
+        import mlx.core as mx
+        
+        log("Importing mlx_lm...", "debug")
+        from mlx_lm import load
+
+        log("Loading model weights into memory (this takes the longest)...", "debug")
+        model_obj, tokenizer_obj = load(model_name)
+
+        duration = time.time() - start
+        log(f"LLM model loaded in {duration:.1f}s")
+
+        return model_obj, tokenizer_obj
+    except ImportError as e:
+        log(f"Failed to import mlx_lm: {e}", "error")
+        log(f"Python used: {sys.executable}", "error")
+        custom_python = os.environ.get("ESCRIBANO_PYTHON_PATH")
+        if custom_python:
+            log(
+                "ESCRIBANO_PYTHON_PATH is set, so Escribano does not auto-install mlx-lm "
+                "into this Python environment.",
+                "error",
+            )
+            log(
+                f"Make sure mlx-lm is installed for that Python "
+                f"(e.g. `{custom_python} -m pip install mlx-lm`), "
+                "or unset ESCRIBANO_PYTHON_PATH to let Escribano manage its own Python.",
+                "error",
+            )
+        raise
+    except Exception as e:
+        log(f"Failed to load LLM model: {e}", "error")
+        raise
+
+
+def unload_vlm() -> None:
+    """Free VLM memory before loading LLM."""
+    global model, processor, config
+    log("Unloading VLM model to free memory", "debug")
+    try:
+        import gc
+        import mlx.core as mx
+        
+        model = None
+        processor = None
+        config = None
+        gc.collect()
+        mx.metal.clear_cache()  # Apple Silicon memory cleanup
+        log("VLM unloaded successfully", "debug")
+    except Exception as e:
+        log(f"Error unloading VLM: {e}", "error")
+
+
+def unload_llm() -> None:
+    """Free LLM memory after generation."""
+    global llm_model, llm_tokenizer
+    log("Unloading LLM model to free memory", "debug")
+    try:
+        import gc
+        import mlx.core as mx
+        
+        llm_model = None
+        llm_tokenizer = None
+        gc.collect()
+        mx.metal.clear_cache()  # Apple Silicon memory cleanup
+        log("LLM unloaded successfully", "debug")
+    except Exception as e:
+        log(f"Error unloading LLM: {e}", "error")
 
 
 def cleanup() -> None:
@@ -361,6 +440,89 @@ def parse_interleaved_output(text: str, batch: list[dict]) -> list[dict]:
     return results
 
 
+def strip_thinking_tags(text: str) -> str:
+    """Remove <think>...</think> tags from thinking-mode output."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+
+def handle_generate_text(
+    conn: socket.socket, params: dict, request_id: int
+) -> None:
+    """Handle generate_text request for LLM text generation."""
+    global llm_model, llm_tokenizer
+    
+    if llm_model is None or llm_tokenizer is None:
+        send_response(conn, {"id": request_id, "error": "LLM model not loaded", "done": True})
+        return
+
+    try:
+        from mlx_lm import generate
+        
+        messages = params.get("messages", [])
+        max_tokens = params.get("maxTokens", 4000)
+        temperature = params.get("temperature", 0.7)
+        think = params.get("think", False)
+
+        if not messages:
+            send_response(conn, {"id": request_id, "error": "No messages provided", "done": True})
+            return
+
+        log(f"Generating text: max_tokens={max_tokens}, think={think}", "debug")
+        t_start = time.time()
+
+        # Apply chat template with thinking mode toggle
+        prompt = llm_tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            chat_template_kwargs={"enable_thinking": think}
+        )
+
+        # Generate response
+        output = generate(
+            llm_model,
+            llm_tokenizer,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            verbose=VERBOSE,
+        )
+
+        # Extract text from output
+        if hasattr(output, "text"):
+            response_text = output.text
+        elif isinstance(output, str):
+            response_text = output
+        else:
+            response_text = str(output)
+
+        # Strip thinking tags if present
+        if think:
+            response_text = strip_thinking_tags(response_text)
+
+        t_end = time.time()
+        generate_time = t_end - t_start
+
+        log(f"Generation completed in {generate_time:.2f}s", "debug")
+
+        send_response(conn, {
+            "id": request_id,
+            "text": response_text,
+            "stats": {
+                "prompt_tokens": getattr(output, "prompt_tokens", 0),
+                "generation_tokens": getattr(output, "generation_tokens", 0),
+                "total_tokens": getattr(output, "total_tokens", 0),
+                "generation_tps": getattr(output, "generation_tps", 0.0),
+                "generate_time_s": generate_time,
+            },
+            "done": True,
+        })
+
+    except Exception as e:
+        log(f"Text generation failed: {e}", "error")
+        send_response(conn, {"id": request_id, "error": str(e), "done": True})
+
+
 def handle_describe_images(
     conn: socket.socket, model_obj: Any, processor_obj: Any, config_obj: Any, params: dict, request_id: int
 ) -> None:
@@ -440,6 +602,27 @@ def handle_request(
 
         if method == "describe_images":
             handle_describe_images(conn, model_obj, processor_obj, config_obj, params, request_id)
+        elif method == "load_llm":
+            global llm_model, llm_tokenizer
+            try:
+                llm_model, llm_tokenizer = load_llm_model(params.get("model", ""))
+                send_response(conn, {"id": request_id, "status": "loaded", "done": True})
+            except Exception as e:
+                send_response(conn, {"id": request_id, "error": str(e), "done": True})
+        elif method == "unload_vlm":
+            try:
+                unload_vlm()
+                send_response(conn, {"id": request_id, "status": "unloaded", "done": True})
+            except Exception as e:
+                send_response(conn, {"id": request_id, "error": str(e), "done": True})
+        elif method == "unload_llm":
+            try:
+                unload_llm()
+                send_response(conn, {"id": request_id, "status": "unloaded", "done": True})
+            except Exception as e:
+                send_response(conn, {"id": request_id, "error": str(e), "done": True})
+        elif method == "generate_text":
+            handle_generate_text(conn, params, request_id)
         elif method == "shutdown":
             log("Shutdown requested")
             send_response(conn, {"id": request_id, "status": "shutting_down"})

@@ -17,6 +17,8 @@ export type PhaseName =
   | 'segmentation'
   | 'temporal_alignment'
   | 'topic_blocks'
+  | 'llm_subject_grouping'
+  | 'llm_artifact_generation'
   | 'summary';
 
 export interface RunStartEvent {

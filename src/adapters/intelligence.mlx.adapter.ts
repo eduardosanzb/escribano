@@ -633,14 +633,131 @@ export function createMlxIntelligenceService(
     },
 
     /**
-     * Generate text - NOT IMPLEMENTED for MLX backend.
+     * Generate text using MLX-LM (text-only LLM generation).
      */
     async generateText(
-      _prompt: string,
-      _options?: { model?: string; expectJson?: boolean }
+      prompt: string,
+      options?: {
+        model?: string;
+        expectJson?: boolean;
+        numPredict?: number;
+        think?: boolean;
+      }
     ): Promise<string> {
-      throw new Error(
-        'MLX adapter does not support generateText(). Use Ollama backend for this operation.'
+      const model = options?.model;
+      if (!model) {
+        throw new Error('MLX generateText() requires a model name');
+      }
+
+      const requestId = Date.now();
+
+      try {
+        // First, load the LLM model
+        await sendRequest(
+          {
+            id: requestId,
+            method: 'load_llm',
+            params: { model },
+          },
+          undefined
+        );
+
+        // Build messages for the LLM
+        const messages: Array<{ role: string; content: string }> = [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ];
+
+        // Generate text
+        const responses = await sendRequest(
+          {
+            id: requestId + 1,
+            method: 'generate_text',
+            params: {
+              messages,
+              maxTokens: options?.numPredict ?? 4000,
+              temperature: 0.7,
+              think: options?.think ?? false,
+            },
+          },
+          undefined
+        );
+
+        if (responses.length === 0) {
+          throw new Error('No response from LLM generation');
+        }
+
+        const response = responses[0] as { error?: string; text?: string };
+        if (response.error) {
+          throw new Error(`Text generation failed: ${response.error}`);
+        }
+
+        return response.text || '';
+      } finally {
+        // Always unload the LLM model after generation
+        try {
+          await sendRequest(
+            {
+              id: requestId + 2,
+              method: 'unload_llm',
+              params: {},
+            },
+            undefined
+          );
+        } catch (e) {
+          debugLog(`Warning: failed to unload LLM: ${(e as Error).message}`);
+        }
+      }
+    },
+
+    /**
+     * Load an LLM model into the bridge (for manual control).
+     */
+    async loadLlm(model: string): Promise<void> {
+      const requestId = Date.now();
+      await sendRequest(
+        {
+          id: requestId,
+          method: 'load_llm',
+          params: { model },
+        },
+        undefined
+      );
+    },
+
+    /**
+     * Unload the VLM model to free memory (for sequential VLM→LLM swap).
+     */
+    async unloadVlm(): Promise<void> {
+      const requestId = Date.now();
+      await sendRequest(
+        {
+          id: requestId,
+          method: 'unload_vlm',
+          params: {},
+        },
+        undefined
+      );
+    },
+
+    /**
+     * Unload the LLM model to free memory.
+     */
+    async unloadLlm(): Promise<void> {
+      const requestId = Date.now();
+      await sendRequest(
+        {
+          id: requestId,
+          method: 'unload_llm',
+          params: {},
+        },
+        undefined
       );
     },
 

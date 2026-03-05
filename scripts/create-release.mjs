@@ -19,12 +19,18 @@ function getCurrentTag() {
     const pkg = JSON.parse(readFileSync(join(REPO_ROOT, "package.json")));
     const tag = `v${pkg.version}`;
     
-    console.log(`⚠️  No tag found, creating ${tag}...`);
-    run(`git tag ${tag}`);
-    run(`git push origin ${tag}`);
-    console.log(`✅ Created and pushed tag: ${tag}`);
-    
-    return tag;
+    // Check if tag already exists locally
+    try {
+      run(`git rev-parse ${tag}`);
+      console.log(`✅ Tag ${tag} already exists locally`);
+      return tag;
+    } catch {
+      console.log(`⚠️  No tag found, creating ${tag}...`);
+      run(`git tag ${tag}`);
+      run(`git push origin ${tag}`);
+      console.log(`✅ Created and pushed tag: ${tag}`);
+      return tag;
+    }
   }
 }
 

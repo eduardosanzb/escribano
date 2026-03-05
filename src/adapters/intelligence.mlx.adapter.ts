@@ -13,7 +13,6 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { createConnection, type Socket } from 'node:net';
-import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,6 +29,12 @@ import type {
   VisualLog,
 } from '../0_types.js';
 import type { ResourceTrackable } from '../stats/types.js';
+import {
+  ESCRIBANO_HOME,
+  ESCRIBANO_VENV,
+  ESCRIBANO_VENV_PYTHON,
+  getPythonPath,
+} from '../python-utils.js';
 
 const DEBUG_MLX = process.env.ESCRIBANO_VERBOSE === 'true';
 
@@ -81,48 +86,8 @@ const DEFAULT_CONFIG: MlxConfigWithTimeout = {
   startupTimeout: Number(process.env.ESCRIBANO_MLX_STARTUP_TIMEOUT) || 120000,
 };
 
-/** Escribano's managed Python environment — created automatically on first use. */
-const ESCRIBANO_HOME = resolve(homedir(), '.escribano');
-const ESCRIBANO_VENV = resolve(ESCRIBANO_HOME, 'venv');
-const ESCRIBANO_VENV_PYTHON = resolve(ESCRIBANO_VENV, 'bin', 'python3');
+/** pip binary inside Escribano's managed venv. */
 const ESCRIBANO_VENV_PIP = resolve(ESCRIBANO_VENV, 'bin', 'pip');
-
-/**
- * Get explicitly configured Python path.
- * Returns null when nothing is explicitly configured — callers should
- * fall through to ensureEscribanoVenv() for zero-config auto-setup.
- *
- * Priority:
- * 1. ESCRIBANO_PYTHON_PATH env var (explicit override)
- * 2. Active virtual environment (VIRTUAL_ENV)
- * 3. UV_PROJECT_ENVIRONMENT (uv project-synced venv)
- * 4. Project-local .venv (created by `uv venv` in CWD)
- * 5. ~/.venv/bin/python3 (home-level venv)
- * 6. null — no explicit config found
- */
-export function getPythonPath(): string | null {
-  if (process.env.ESCRIBANO_PYTHON_PATH) {
-    return process.env.ESCRIBANO_PYTHON_PATH;
-  }
-  if (process.env.VIRTUAL_ENV) {
-    return resolve(process.env.VIRTUAL_ENV, 'bin', 'python3');
-  }
-  // UV_PROJECT_ENVIRONMENT: set by uv when running inside a project with `uv sync`
-  if (process.env.UV_PROJECT_ENVIRONMENT) {
-    return resolve(process.env.UV_PROJECT_ENVIRONMENT, 'bin', 'python3');
-  }
-  // Check project-local .venv (created by `uv venv` in the current working directory)
-  const localVenv = resolve(process.cwd(), '.venv', 'bin', 'python3');
-  if (existsSync(localVenv)) {
-    return localVenv;
-  }
-  // Check common home-level venv (e.g., `uv venv ~/.venv`)
-  const uvHomeVenv = resolve(homedir(), '.venv', 'bin', 'python3');
-  if (existsSync(uvHomeVenv)) {
-    return uvHomeVenv;
-  }
-  return null;
-}
 
 /**
  * Run a command, streaming stdout/stderr directly to the terminal.
@@ -169,10 +134,13 @@ async function ensureEscribanoVenv(): Promise<string> {
     await runVisible('python3', ['-m', 'venv', ESCRIBANO_VENV]);
   }
 
-  // Check whether mlx-vlm is already importable (fast probe, ~0.3 s)
+  // Check whether mlx-vlm and required runtime deps are already importable (~0.3s probe)
   let mlxReady = false;
   try {
-    await runSilent(ESCRIBANO_VENV_PYTHON, ['-c', 'import mlx_vlm']);
+    await runSilent(ESCRIBANO_VENV_PYTHON, [
+      '-c',
+      'import mlx_vlm; import torch; import torchvision',
+    ]);
     mlxReady = true;
   } catch {
     // not installed yet
@@ -188,7 +156,14 @@ async function ensureEscribanoVenv(): Promise<string> {
     } catch {
       // ensurepip may be unavailable; continue and rely on existing pip if present.
     }
-    await runVisible(ESCRIBANO_VENV_PYTHON, ['-m', 'pip', 'install', 'mlx-vlm']);
+    await runVisible(ESCRIBANO_VENV_PYTHON, [
+      '-m',
+      'pip',
+      'install',
+      'mlx-vlm',
+      'torch',
+      'torchvision',
+    ]);
     console.log('[VLM] mlx-vlm installed successfully.');
   }
 

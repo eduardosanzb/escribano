@@ -29,6 +29,8 @@ vi.mock('node:child_process', () => ({
 import { existsSync } from 'node:fs';
 import {
   getPythonPath,
+} from '../python-utils.js';
+import {
   resolvePythonPath,
 } from '../adapters/intelligence.mlx.adapter.js';
 
@@ -186,17 +188,38 @@ describe('resolvePythonPath', () => {
 
     const { spawn } = await import('node:child_process');
     const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockClear();
+
+    // Set up spawn to call exit(0) for all calls so the async function resolves.
+    mockSpawn.mockImplementation((_cmd, _args, _opts) => {
+      const emitter = {
+        on: vi.fn((event: string, cb: (code: number) => void) => {
+          if (event === 'exit') cb(0);
+          return emitter;
+        }),
+        stdout: { on: vi.fn() },
+        stderr: { on: vi.fn() },
+        kill: vi.fn(),
+      };
+      return emitter as never;
+    });
 
     await resolvePythonPath();
 
     // Expect that we attempted to create a virtual environment in the managed directory
     expect(mockSpawn).toHaveBeenCalled();
-    const [cmd, args] = mockSpawn.mock.calls[0];
 
-    // Command can vary (python / python3), so just assert venv creation semantics
-    expect(Array.isArray(args)).toBe(true);
-    expect(args).toEqual(expect.arrayContaining(['-m', 'venv']));
-    expect(args).toContain(venvDir);
+    // Find the venv-creation call: command is python3 with -m venv <dir>
+    const venvCall = mockSpawn.mock.calls.find(
+      ([cmd, args]) =>
+        typeof cmd === 'string' &&
+        (cmd === 'python3' || cmd === 'python') &&
+        Array.isArray(args) &&
+        args.includes('-m') &&
+        args.includes('venv')
+    );
+    expect(venvCall).toBeDefined();
+    expect(venvCall![1]).toContain(venvDir);
   });
 
   it('installs mlx-vlm when the import probe fails', async () => {
@@ -212,6 +235,7 @@ describe('resolvePythonPath', () => {
 
     const { spawn } = await import('node:child_process');
     const mockSpawn = vi.mocked(spawn);
+    mockSpawn.mockClear();
 
     let callIndex = 0;
     mockSpawn.mockImplementation((_cmd, _args, _opts) => {
@@ -220,7 +244,7 @@ describe('resolvePythonPath', () => {
         on: vi.fn((event: string, cb: (code: number) => void) => {
           if (event === 'exit') {
             // First call: import probe fails (non-zero exit)
-            // Second call: installation succeeds
+            // All subsequent calls (ensurepip, pip install, ...): succeed
             cb(thisCall === 0 ? 1 : 0);
           }
           return emitter;
@@ -235,9 +259,19 @@ describe('resolvePythonPath', () => {
     await expect(resolvePythonPath()).resolves.toBe(venvPython);
 
     expect(mockSpawn.mock.calls.length).toBeGreaterThanOrEqual(2);
-    const installCallArgs = mockSpawn.mock.calls[1][1] as string[];
-    expect(installCallArgs).toEqual(
-      expect.arrayContaining(['-m', 'pip', 'install', 'mlx-vlm'])
+
+    // Find the pip install call regardless of its position (robust to ensurepip being inserted)
+    const installCall = mockSpawn.mock.calls.find(
+      ([_cmd, args]) =>
+        Array.isArray(args) &&
+        args.includes('-m') &&
+        args.includes('pip') &&
+        args.includes('install') &&
+        args.includes('mlx-vlm')
+    );
+    expect(installCall).toBeDefined();
+    expect(installCall![1]).toEqual(
+      expect.arrayContaining(['-m', 'pip', 'install', 'mlx-vlm', 'torch', 'torchvision'])
     );
   });
 });

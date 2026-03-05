@@ -1,4 +1,14 @@
-import { access, chmod, constants, mkdir, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import {
+  access,
+  chmod,
+  constants,
+  mkdir,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

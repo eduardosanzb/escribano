@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-03-05
+
+### Changed
+- 0.4.5
+- Merge pull request #16 from eduardosanzb/feat/smart-ram-usage
+- Apply suggestions from code review
+- fix unique id in subjects bug
+- feat: add RAM-aware config with dev/prod mode separation
+- Merge pull request #15 from eduardosanzb/copilot/fix-4089986-1130323872-7bced2c8-6626-43f3-91c2-40d76cd6adef
+- fix: apply Biome formatting to long import in index.test.ts
+- docs: update CHANGELOG for v0.4.4
+- docs: update CHANGELOG for v0.4.4
+- fix: update findLatestVideo in test to use access() check matching real implementation
+- Initial plan
+
 ## [0.4.4] - 2026-03-05
 
 ### Added

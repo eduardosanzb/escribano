@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-05
+
+### Added
+- Config file support with `~/.escribano/.env`
+- `--latest` flag to process the most recent video in a directory
+
+### Fixed
+- Load config file at startup and improve error handling
+- Check R_OK access before stat to skip permission-denied files in `findLatestVideo`
+- Handle broken symlinks and inaccessible files in `--latest`
+- Fixed `--None` flag per PR review
+
+## [0.4.0] - 2026-03-05
+
+### Added  
+- Add config file support with `~/.escribano/.env`  
+- Add `--latest` flag to process most recent video in directory  
+
+### Fixed  
+- Load config file at startup and improve error handling  
+- Check `R_OK` access before `stat` to skip permission-denied files in `findLatestVideo`  
+- Handle broken symlinks and inaccessible files in `--latest`  
+- Fix `--latest` flag behavior per PR review  
+
+### Changed  
+- Refactor error handling for config loading and file access checks  
+
+### Removed  
+- (none)
+
+## [0.4.0] - 2026-03-05
+
+### Added
+- Config file support with `~/.escribano/.env`
+- `--latest` flag to process most recent video in directory
+
+### Fixed
+- Check `R_OK` access before `stat` to skip permission-denied files in `findLatestVideo`
+- Handle broken symlinks and inaccessible files in `--latest`
+- Fixed `--latest` flag implementation per PR review
+
+### Changed
+- Improved error handling when loading config file at startup
+
+## [0.4.0] - 2026-03-05
+
+### Added
+- Config file support with `~/.escribano/.env`
+- `--latest` flag to process most recent video in directory
+
+### Fixed
+- Load config file at startup and improve error handling
+- Check `R_OK` access before `stat` to skip permission-denied files in `findLatestVideo`
+- Handle broken symlinks and inaccessible files in `--latest`
+- Shared python-utils, doctor managed-venv awareness, torch/torchvision in auto-install
+- Increase MLX bridge startup timeout from 60s to 120s
+
 ## [0.3.0] - 2026-03-05
 
 ### Added  

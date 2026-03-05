@@ -74,9 +74,16 @@ Task tracking for Escribano development.
 
 ## Completed
 
+### 2026-03-05
+
+- [x] **Config file support** — Auto-create `~/.escribano/.env` with sensible defaults (PR #12)
+- [x] **`--latest <dir>` flag** — Find and process latest video in directory (PR #8)
+- [x] **MLX bridge timeout increase** — 60s → 120s for better stability on loaded systems (commit 9284d7f)
+- [x] **Documentation updates** — AGENTS.md, README.md, BACKLOG.md synced with latest code
+
 ### 2026-03-01
 
-- [x] **npm package published** — `escribano@0.1.0` with shebang fix
+- [x] **npm package published** — `escribano@0.4.0` with all features
 - [x] **Model auto-detection** — RAM-based tier selection (16GB→qwen3:8b, 32GB→qwen3:14b, 64GB+→qwen3.5:27b)
 - [x] **Shebang fix** — Postbuild script ensures `npx escribano` works
 - [x] **README overhaul** — Platform callout, hardware tiers, npx examples

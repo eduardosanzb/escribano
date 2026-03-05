@@ -272,17 +272,6 @@ npx escribano config --path
 
 ---
 
-## Supported inputs
-
-| Source | Command |
-|--------|---------|
-| QuickTime recording | `--file video.mov` |
-| Cap recording | Auto-detected in `~/Movies/Cap/` |
-| Any MP4/MOV | `--file /path/to/video.mp4` |
-| External audio | `--mic-audio mic.wav --system-audio system.wav` |
-
----
-
 ## Configuration
 
 Escribano auto-creates a config file on first run that persists your settings:

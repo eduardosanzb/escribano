@@ -154,8 +154,30 @@ def load_model() -> tuple[Any, Any, Any]:
     except ImportError as e:
         log(f"Failed to import mlx_vlm: {e}", "error")
         log(f"Python used: {sys.executable}", "error")
-        log("mlx-vlm should have been installed automatically. Try running escribano again.", "error")
-        log("If this persists, set ESCRIBANO_PYTHON_PATH to a Python that has mlx-vlm installed.", "error")
+        custom_python = os.environ.get("ESCRIBANO_PYTHON_PATH")
+        if custom_python:
+            log(
+                "ESCRIBANO_PYTHON_PATH is set, so Escribano does not auto-install mlx-vlm "
+                "into this Python environment.",
+                "error",
+            )
+            log(
+                f"Make sure mlx-vlm is installed for that Python "
+                f"(e.g. `{custom_python} -m pip install mlx-vlm`), "
+                "or unset ESCRIBANO_PYTHON_PATH to let Escribano manage its own Python.",
+                "error",
+            )
+        else:
+            log(
+                "mlx-vlm is missing from Escribano's managed Python environment. "
+                "It is normally installed automatically.",
+                "error",
+            )
+            log(
+                "Try restarting Escribano so it can recreate or repair its Python environment. "
+                "If the problem persists, install `mlx-vlm` into this Python or report an issue.",
+                "error",
+            )
         sys.exit(1)
     except Exception as e:
         log(f"Failed to load model: {e}", "error")

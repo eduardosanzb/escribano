@@ -24,12 +24,11 @@ import {
   hasMissingPrerequisites,
   printDoctorResults,
 } from './prerequisites.js';
-import { setupStatsObserver } from './stats/index.js';
 import { logEnvironmentVariables } from './utils/env-logger.js';
 
 const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
 const MODEL_FILE = 'ggml-large-v3.bin';
-const MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
+const _MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
 
 const VIDEO_EXTENSIONS = ['.mov', '.mp4', '.mkv', '.avi', '.webm'];
 
@@ -273,7 +272,8 @@ async function run(args: ParsedArgs): Promise<void> {
   // Initialize system (reuses batch-context for consistency)
   console.log('Initializing database...');
   const ctx = await initializeSystem();
-  const { repos } = ctx;
+  // Note: repos unused in CLI mode (only needed for batch processing)
+  void ctx;
 
   console.log(`Database ready: ${getDbPath()}`);
   console.log('');

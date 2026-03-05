@@ -6,7 +6,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
   DbSubjectInsert,
@@ -340,7 +340,7 @@ function parseGroupingResponse(
 
 function detectPersonalSubject(
   apps: Set<string>,
-  activityBreakdown: Record<string, number>
+  _activityBreakdown: Record<string, number>
 ): boolean {
   let personalAppCount = 0;
   let totalAppCount = 0;
@@ -489,7 +489,7 @@ function formatDuration(seconds: number): string {
 
 export function saveSubjectsToDatabase(
   subjects: Subject[],
-  recordingId: string,
+  _recordingId: string,
   repos: {
     subjects: {
       saveBatch: (subjects: DbSubjectInsert[]) => void;

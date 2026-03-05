@@ -1,5 +1,4 @@
 import type Database from 'better-sqlite3';
-import { nowISO } from '../db/helpers.js';
 import type {
   DbProcessingRunInsert,
   DbProcessingStatInsert,

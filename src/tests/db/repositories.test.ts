@@ -53,9 +53,9 @@ function runRecordingRepositoryTests(
 
       const found = repo.findById(id);
       expect(found).not.toBeNull();
-      expect(found!.id).toBe(id);
-      expect(found!.duration).toBe(120.5);
-      expect(found!.status).toBe('raw');
+      expect(found?.id).toBe(id);
+      expect(found?.duration).toBe(120.5);
+      expect(found?.status).toBe('raw');
     });
 
     it('returns null for non-existent recording', () => {
@@ -82,8 +82,8 @@ function runRecordingRepositoryTests(
       repo.updateStatus(id, 'processing', 'clustering');
 
       const found = repo.findById(id);
-      expect(found!.status).toBe('processing');
-      expect(found!.processing_step).toBe('clustering');
+      expect(found?.status).toBe('processing');
+      expect(found?.processing_step).toBe('clustering');
     });
 
     it('finds pending recordings', () => {
@@ -185,8 +185,8 @@ function runContextRepositoryTests(
 
       const found = contextRepo.findById(id);
       expect(found).not.toBeNull();
-      expect(found!.id).toBe(id);
-      expect(found!.name).toBe('escribano');
+      expect(found?.id).toBe(id);
+      expect(found?.name).toBe('escribano');
     });
 
     it('finds by type and name', () => {
@@ -200,7 +200,7 @@ function runContextRepositoryTests(
 
       const found = contextRepo.findByTypeAndName('app', 'vscode');
       expect(found).not.toBeNull();
-      expect(found!.id).toBe(id);
+      expect(found?.id).toBe(id);
     });
 
     it('links and unlinks observations', () => {

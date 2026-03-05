@@ -6,8 +6,10 @@
 
 import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import {
+  ESCRIBANO_VENV_PYTHON,
+  getEffectivePythonPathSync,
+} from './python-utils.js';
 
 export interface PrerequisiteResult {
   name: string;
@@ -70,8 +72,9 @@ const PREREQUISITES: PrerequisiteResult[] = [
   {
     name: 'mlx-vlm',
     found: false,
-    installCommand: 'pip install mlx-vlm',
-    notes: 'VLM library for frame analysis (Apple Silicon)',
+    installCommand: 'pip install mlx-vlm torch torchvision',
+    notes:
+      'VLM library for frame analysis (Apple Silicon) — auto-installed by escribano on first run',
   },
 ];
 
@@ -151,25 +154,11 @@ function checkLLMModels(): {
   };
 }
 
-function getPythonPath(): string {
-  if (process.env.ESCRIBANO_PYTHON_PATH) {
-    return process.env.ESCRIBANO_PYTHON_PATH;
-  }
-  if (process.env.VIRTUAL_ENV) {
-    return resolve(process.env.VIRTUAL_ENV, 'bin', 'python3');
-  }
-  const uvHomeVenv = resolve(homedir(), '.venv', 'bin', 'python3');
-  if (existsSync(uvHomeVenv)) {
-    return uvHomeVenv;
-  }
-  return 'python3';
-}
-
 function checkPythonPackage(packageName: string): {
   found: boolean;
   pythonPath?: string;
 } {
-  const pythonPath = getPythonPath();
+  const pythonPath = getEffectivePythonPathSync();
   try {
     execSync(`"${pythonPath}" -c "import ${packageName}"`, {
       encoding: 'utf-8',
@@ -272,6 +261,9 @@ export function checkPrerequisites(): PrerequisiteResult[] {
         result.found = check.found;
         if (check.found && check.pythonPath) {
           result.notes = `via ${check.pythonPath}`;
+        } else if (existsSync(ESCRIBANO_VENV_PYTHON)) {
+          // Managed venv exists but mlx-vlm is missing — auto-install will fix it on next run
+          result.installCommand = `${ESCRIBANO_VENV_PYTHON} -m pip install mlx-vlm torch torchvision`;
         } else {
           result.installCommand = detectPipCommand();
         }

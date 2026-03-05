@@ -3,6 +3,7 @@
  */
 
 import type {
+  ActivityContext,
   SessionSegment,
   TaggedTranscript,
   VisualIndexCluster,
@@ -13,12 +14,10 @@ import { Transcript } from './transcript.js';
 
 // Minimal Context logic previously in context.ts
 const Context = {
-  extractFromOCR: (text: string): any[] => {
-    // This is a stub to keep V1 compiling.
-    // V2 uses signal-extraction.ts instead.
+  extractFromOCR: (_text: string): ActivityContext[] => {
     return [];
   },
-  unique: (contexts: any[]): any[] => contexts,
+  unique: (contexts: ActivityContext[]): ActivityContext[] => contexts,
 };
 
 export const Segment = {

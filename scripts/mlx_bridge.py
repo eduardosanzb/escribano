@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """
-MLX-VLM Bridge for Escribano
+MLX Bridge for Escribano
 
-A Unix domain socket server that provides interleaved VLM batch processing.
+A Unix domain socket server that provides VLM and/or LLM inference.
 Communicates with TypeScript via NDJSON (newline-delimited JSON).
 
 Usage:
-    python3 scripts/mlx_bridge.py
+    python3 scripts/mlx_bridge.py --mode vlm   # VLM-only (frame analysis)
+    python3 scripts/mlx_bridge.py --mode llm   # LLM-only (text generation)
 
 Environment Variables:
-    ESCRIBANO_VLM_MODEL       - MLX model name (default: mlx-community/Qwen3-VL-2B-Instruct-bf16)
+    ESCRIBANO_VLM_MODEL       - MLX VLM model name (default: mlx-community/Qwen3-VL-2B-Instruct-bf16)
     ESCRIBANO_VLM_BATCH_SIZE  - Frames per batch (default: 4)
     ESCRIBANO_VLM_MAX_TOKENS  - Token budget per batch (default: 2000)
     ESCRIBANO_MLX_SOCKET_PATH - Unix socket path (default: /tmp/escribano-mlx.sock)
     ESCRIBANO_VERBOSE         - Enable verbose logging (default: false)
 """
 
+import argparse
 import json
 import os
 import re
@@ -24,7 +26,7 @@ import socket
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 # Configuration from environment
 MODEL_NAME = os.environ.get(
@@ -35,6 +37,10 @@ MAX_TOKENS = int(os.environ.get("ESCRIBANO_VLM_MAX_TOKENS", "2000"))
 SOCKET_PATH = os.environ.get("ESCRIBANO_MLX_SOCKET_PATH", "/tmp/escribano-mlx.sock")
 VERBOSE = os.environ.get("ESCRIBANO_VERBOSE", "false").lower() == "true"
 TEMPERATURE = 0.3
+
+# Bridge mode (set via --mode flag)
+BridgeMode = Literal["vlm", "llm"]
+BRIDGE_MODE: BridgeMode = "vlm"
 
 
 def find_project_root() -> Path:
@@ -441,86 +447,8 @@ def parse_interleaved_output(text: str, batch: list[dict]) -> list[dict]:
 
 
 def strip_thinking_tags(text: str) -> str:
-    """Remove <think>...</think> tags from thinking-mode output."""
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-
-
-def handle_generate_text(
-    conn: socket.socket, params: dict, request_id: int
-) -> None:
-    """Handle generate_text request for LLM text generation."""
-    global llm_model, llm_tokenizer
-    
-    if llm_model is None or llm_tokenizer is None:
-        send_response(conn, {"id": request_id, "error": "LLM model not loaded", "done": True})
-        return
-
-    try:
-        from mlx_lm import generate
-        
-        messages = params.get("messages", [])
-        max_tokens = params.get("maxTokens", 4000)
-        temperature = params.get("temperature", 0.7)
-        think = params.get("think", False)
-
-        if not messages:
-            send_response(conn, {"id": request_id, "error": "No messages provided", "done": True})
-            return
-
-        log(f"Generating text: max_tokens={max_tokens}, think={think}", "debug")
-        t_start = time.time()
-
-        # Apply chat template with thinking mode toggle
-        prompt = llm_tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            chat_template_kwargs={"enable_thinking": think}
-        )
-
-        # Generate response
-        output = generate(
-            llm_model,
-            llm_tokenizer,
-            prompt=prompt,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            verbose=VERBOSE,
-        )
-
-        # Extract text from output
-        if hasattr(output, "text"):
-            response_text = output.text
-        elif isinstance(output, str):
-            response_text = output
-        else:
-            response_text = str(output)
-
-        # Strip thinking tags if present
-        if think:
-            response_text = strip_thinking_tags(response_text)
-
-        t_end = time.time()
-        generate_time = t_end - t_start
-
-        log(f"Generation completed in {generate_time:.2f}s", "debug")
-
-        send_response(conn, {
-            "id": request_id,
-            "text": response_text,
-            "stats": {
-                "prompt_tokens": getattr(output, "prompt_tokens", 0),
-                "generation_tokens": getattr(output, "generation_tokens", 0),
-                "total_tokens": getattr(output, "total_tokens", 0),
-                "generation_tps": getattr(output, "generation_tps", 0.0),
-                "generate_time_s": generate_time,
-            },
-            "done": True,
-        })
-
-    except Exception as e:
-        log(f"Text generation failed: {e}", "error")
-        send_response(conn, {"id": request_id, "error": str(e), "done": True})
+    """Remove <thinki>...</thinki> tags from thinking-mode output."""
+    return re.sub(r"<thinki>.*?</thinki>", "", text, flags=re.DOTALL).strip()
 
 
 def handle_describe_images(
@@ -600,6 +528,29 @@ def handle_request(
 
         log(f"Received request: id={request_id} method={method}", "debug")
 
+        # Validate method compatibility with bridge mode
+        if BRIDGE_MODE == "llm" and method == "describe_images":
+            send_response(
+                conn,
+                {
+                    "id": request_id,
+                    "error": "describe_images not available in LLM-only mode",
+                    "done": True,
+                },
+            )
+            return
+
+        if BRIDGE_MODE == "vlm" and method == "generate_text":
+            send_response(
+                conn,
+                {
+                    "id": request_id,
+                    "error": "generate_text not available in VLM-only mode",
+                    "done": True,
+                },
+            )
+            return
+
         if method == "describe_images":
             handle_describe_images(conn, model_obj, processor_obj, config_obj, params, request_id)
         elif method == "load_llm":
@@ -622,7 +573,86 @@ def handle_request(
             except Exception as e:
                 send_response(conn, {"id": request_id, "error": str(e), "done": True})
         elif method == "generate_text":
-            handle_generate_text(conn, params, request_id)
+            # Inline text generation logic (was handle_generate_text)
+            if llm_model is None or llm_tokenizer is None:
+                send_response(conn, {"id": request_id, "error": "LLM model not loaded", "done": True})
+            else:
+                try:
+                    from mlx_lm import generate
+                    
+                    messages = params.get("messages", [])
+                    raw_prompt = params.get("rawPrompt")
+                    max_tokens = params.get("maxTokens", 4000)
+                    think = params.get("think", False)
+
+                    # Determine prompt source
+                    if raw_prompt:
+                        prompt = raw_prompt
+                        log(f"Using raw prompt (length: {len(prompt)} chars)", "debug")
+                    elif messages:
+                        user_message = None
+                        for msg in messages:
+                            if msg.get("role") == "user":
+                                user_message = msg.get("content", "")
+                                break
+                        
+                        if not user_message:
+                            send_response(conn, {"id": request_id, "error": "No user message in messages array", "done": True})
+                            return
+                        
+                        prompt = user_message
+                        log(f"Extracted user message from messages array (length: {len(prompt)} chars)", "debug")
+                    else:
+                        send_response(conn, {"id": request_id, "error": "No prompt provided (need 'rawPrompt' or 'messages')", "done": True})
+                        return
+
+                    if not prompt:
+                        send_response(conn, {"id": request_id, "error": "Empty prompt", "done": True})
+                        return
+
+                    log(f"Generating text: max_tokens={max_tokens}, prompt_length={len(prompt)}", "debug")
+                    log(f"Full prompt:\n{prompt}", "debug")
+                    t_start = time.time()
+
+                    output = generate(
+                        llm_model,
+                        llm_tokenizer,
+                        prompt=prompt,
+                        max_tokens=max_tokens,
+                        verbose=VERBOSE,
+                    )
+
+                    if hasattr(output, "text"):
+                        response_text = output.text
+                    elif isinstance(output, str):
+                        response_text = output
+                    else:
+                        response_text = str(output)
+
+                    if think:
+                        response_text = strip_thinking_tags(response_text)
+
+                    t_end = time.time()
+                    generate_time = t_end - t_start
+
+                    log(f"Generation completed in {generate_time:.2f}s", "debug")
+
+                    send_response(conn, {
+                        "id": request_id,
+                        "text": response_text,
+                        "stats": {
+                            "prompt_tokens": getattr(output, "prompt_tokens", 0),
+                            "generation_tokens": getattr(output, "generation_tokens", 0),
+                            "total_tokens": getattr(output, "total_tokens", 0),
+                            "generation_tps": getattr(output, "generation_tps", 0.0),
+                            "generate_time_s": generate_time,
+                        },
+                        "done": True,
+                    })
+
+                except Exception as e:
+                    log(f"Text generation failed: {e}", "error")
+                    send_response(conn, {"id": request_id, "error": str(e), "done": True})
         elif method == "shutdown":
             log("Shutdown requested")
             send_response(conn, {"id": request_id, "status": "shutting_down"})
@@ -641,7 +671,26 @@ def handle_request(
 
 def main() -> None:
     """Main entry point."""
-    global model, processor, config, server_socket
+    global model, processor, config, server_socket, BRIDGE_MODE, SOCKET_PATH
+
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="MLX Bridge for Escribano")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["vlm", "llm"],
+        default="vlm",
+        help="Bridge mode: 'vlm' for frame analysis, 'llm' for text generation",
+    )
+    args = parser.parse_args()
+    BRIDGE_MODE = args.mode
+
+    # Adjust socket path based on mode (VLM and LLM use separate sockets)
+    base_socket = SOCKET_PATH.replace(".sock", "")
+    if BRIDGE_MODE == "llm":
+        SOCKET_PATH = f"{base_socket}-llm.sock"
+    else:
+        SOCKET_PATH = f"{base_socket}-vlm.sock"
 
     # Set up signal handlers
     signal.signal(signal.SIGTERM, signal_handler)
@@ -650,18 +699,27 @@ def main() -> None:
     # Clean up any existing socket
     cleanup()
 
-    # Load model
-    model, processor, config = load_model()
+    # Load model based on mode
+    if BRIDGE_MODE == "vlm":
+        model, processor, config = load_model()
+    else:
+        # LLM mode: load model lazily on first request
+        log("LLM-only mode: model will be loaded on first request")
 
     # Create socket
     server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server_socket.bind(SOCKET_PATH)
     server_socket.listen(1)
 
-    log(f"Listening on {SOCKET_PATH}")
+    log(f"Listening on {SOCKET_PATH} (mode: {BRIDGE_MODE})")
 
     # Signal ready (for parent process to detect)
-    print(json.dumps({"status": "ready", "model": MODEL_NAME}), flush=True)
+    ready_msg = {
+        "status": "ready",
+        "model": MODEL_NAME if BRIDGE_MODE == "vlm" else "llm-lazy",
+        "mode": BRIDGE_MODE,
+    }
+    print(json.dumps(ready_msg), flush=True)
 
     # Accept connections
     while True:

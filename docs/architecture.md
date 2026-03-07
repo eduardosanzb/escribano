@@ -200,6 +200,10 @@ erDiagram
  │  ┌─────────────────────────────────────────────────────────────────────────┐│
   │  │  ARTIFACT GENERATION                                  ││
   │  │                                                      ││
+  │  │  1. [VLM] Unload model → free memory (~2GB)      ││
+  │  │  2. [LLM] Load model (Qwen3.5-27B or 9B)        ││
+  │  │  3. Subject grouping (if card/standup)               ││
+  │  │                                                      ││
   │  │  ┌──────────────────┐                                   ││
   │  │  │ format === 'narrative'?                             ││
   │  │  └────────┬─────────┘                                   ││
@@ -223,6 +227,7 @@ erDiagram
   │  │                  ▼                                             ││
   │  │           Markdown Artifact                                    ││
   │  │                                                      ││
+  │  │  4. [LLM] Unload model → free memory (~14-20GB)   ││
   │  └──────────────────────────────────────────────────────────────────────────┘│
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -316,11 +321,76 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 | `TranscriptionService` | `transcription.whisper.adapter.ts` | Audio → Text (whisper.cpp) |
 | `VideoService` | `video.ffmpeg.adapter.ts` | Frame extraction, visual indexing |
 | `AudioPreprocessor` | `audio.silero.adapter.ts` | VAD segmentation & cleanup |
-| `IntelligenceService` | `intelligence.mlx.adapter.ts` | VLM inference (MLX-VLM, frame analysis) |
-| `IntelligenceService` | `intelligence.ollama.adapter.ts` | LLM inference (summary generation) |
+| `IntelligenceService` | `intelligence.mlx.adapter.ts` | **Unified MLX adapter**: VLM (frame analysis) + LLM (text generation) |
+| `IntelligenceService` | `intelligence.ollama.adapter.ts` | **Alternative**: LLM inference for summary generation (configurable backend) |
 | `EmbeddingService` | `embedding.ollama.adapter.ts` | **(deprecated in V3, kept for future)** |
 | `PublishingService` | `publishing.outline.adapter.ts` | Outline wiki publishing |
 | `StorageService` | `storage.fs.adapter.ts` | **(deprecated in V3, V1 only)** |
+
+### MLX Intelligence Architecture
+
+The `intelligence.mlx.adapter.ts` is a **unified dual-bridge service** that internally manages two separate Python bridge processes:
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│          intelligence.mlx.adapter.ts (Unified Service)          │
+│                                                                  │
+│  ┌─────────────────────┐        ┌─────────────────────┐        │
+│  │   VLM Bridge        │        │   LLM Bridge        │        │
+│  │   (--mode vlm)      │        │   (--mode llm)      │        │
+│  │   Socket: -vlm.sock │        │   Socket: -llm.sock │        │
+│  │                     │        │                     │        │
+│  │  MLX-VLM            │        │  MLX-LM             │        │
+│  │  Qwen3-VL-2B        │        │  Qwen3.5-27B/9B     │        │
+│  │  (frame analysis)   │        │  (text generation)  │        │
+│  └─────────────────────┘        └─────────────────────┘        │
+│                                                                  │
+│  - Lazy initialization (spawn on first use)                     │
+│  - Memory isolation (unload before loading other)               │
+│  - Independent lifecycle (kill/exit handled separately)         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Features:**
+- **Caller simplicity**: External code sees a single `IntelligenceService` interface
+- **Memory safety**: VLM bridge unloads before LLM bridge loads (prevents OOM on 128GB machines)
+- **Backend flexibility**: Config can switch between MLX and Ollama for LLM backend
+- **Process isolation**: Each bridge runs in separate Python process with dedicated Unix socket
+
+### LLM Backend Selection
+
+Escribano supports two LLM backends for artifact generation:
+
+**MLX Backend** (default for Apple Silicon):
+- Models: Qwen3.5-9B (16-32GB RAM) or Qwen3.5-27B (32GB+ RAM)
+- Pros: Native Apple Silicon optimization, unified memory access
+- Cons: Smaller model selection vs Ollama
+
+**Ollama Backend** (alternative):
+- Models: qwen3:8b (16GB), qwen3:14b (32GB), qwen3.5:27b (64GB+)
+- Pros: Larger model ecosystem, server/client architecture
+- Cons: Higher memory overhead, slower inference
+
+Selection is configured via `ESCRIBANO_LLM_BACKEND` environment variable (`mlx` or `ollama`).
+
+### Model Auto-Detection
+
+When using MLX backend, the system auto-selects the best model based on available RAM:
+
+```typescript
+// src/utils/model-detector.ts
+export async function selectBestMLXModel(): Promise<ModelSelection> {
+  const totalRAM = os.totalmem();
+  const ramGB = totalRAM / (1024 ** 3);
+  
+  if (ramGB >= 64) {
+    return { model: "mlx-community/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit" };
+  } else if (ramGB >= 32) {
+    return { model: "mlx-community/Qwen3.5-9B-OptiQ-4bit" };
+  }
+  // Fallback to Ollama for lower RAM
+}
+```
 
 ---
 

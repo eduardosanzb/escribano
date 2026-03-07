@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Artifact Review - Escribano</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    :root {
+      --pico-font-size: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--pico-muted-border-color);
+      background: var(--pico-card-background-color);
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 1.25rem;
+    }
+
+    .nav-links {
+      margin-left: auto;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .nav-links a {
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: background 0.2s;
+    }
+
+    .nav-links a:hover {
+      background: var(--pico-muted-background-color);
+    }
+
+    .nav-links a.active {
+      background: var(--pico-primary-background);
+      color: var(--pico-primary-inverse);
+    }
+
+    .recording-info {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      background: var(--pico-background-color);
+      border-bottom: 1px solid var(--pico-muted-border-color);
+      font-size: 0.875rem;
+    }
+
+    .recording-title {
+      font-weight: 600;
+    }
+
+    .recording-stats {
+      display: flex;
+      gap: 1rem;
+      color: var(--pico-muted-color);
+    }
+
+    .format-selector {
+      margin-left: auto;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .format-chip {
+      padding: 0.25rem 0.75rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      border: 1px solid var(--pico-muted-border-color);
+      background: var(--pico-card-background-color);
+      transition: all 0.2s;
+    }
+
+    .format-chip:hover {
+      background: var(--pico-muted-background-color);
+    }
+
+    .format-chip.active {
+      background: var(--pico-primary-background);
+      color: var(--pico-primary-inverse);
+      border-color: var(--pico-primary-background);
+    }
+
+    .three-panel-container {
+      display: grid;
+      grid-template-columns: 40% 25% 35%;
+      height: calc(100vh - 120px);
+      overflow: hidden;
+    }
+
+    .panel {
+      overflow-y: auto;
+      border-right: 1px solid var(--pico-muted-border-color);
+      padding: 1rem;
+    }
+
+    .panel:last-child {
+      border-right: none;
+    }
+
+    .panel-header {
+      position: sticky;
+      top: 0;
+      background: var(--pico-card-background-color);
+      padding: 0.75rem 0;
+      margin: -1rem -1rem 1rem -1rem;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--pico-muted-border-color);
+      font-weight: 600;
+      font-size: 0.875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--pico-muted-color);
+      z-index: 10;
+    }
+
+    /* Artifact Panel */
+    .artifact-content {
+      font-size: 0.875rem;
+      line-height: 1.6;
+    }
+
+    .artifact-content h1 { 
+      font-size: 1.5rem; 
+      margin-top: 1rem;
+      cursor: pointer;
+      transition: background 0.2s;
+      padding: 0.25rem;
+      margin-left: -0.25rem;
+      border-radius: 4px;
+    }
+
+    .artifact-content h1:hover {
+      background: var(--pico-muted-background-color);
+    }
+
+    .artifact-content h2 { 
+      font-size: 1.25rem; 
+      margin-top: 1.5rem;
+      cursor: pointer;
+      transition: background 0.2s;
+      padding: 0.25rem;
+      margin-left: -0.25rem;
+      border-radius: 4px;
+    }
+
+    .artifact-content h2:hover {
+      background: var(--pico-muted-background-color);
+    }
+
+    .artifact-content h2.highlighted {
+      background: #dbeafe;
+      border-left: 3px solid #3b82f6;
+      padding-left: 0.5rem;
+    }
+
+    .artifact-content h3 { font-size: 1.1rem; }
+    .artifact-content ul, .artifact-content ol {
+      padding-left: 1.5rem;
+    }
+
+    .artifact-content li {
+      margin-bottom: 0.25rem;
+    }
+
+    .artifact-content strong {
+      font-weight: 600;
+    }
+
+    .artifact-content code {
+      background: var(--pico-muted-background-color);
+      padding: 0.125rem 0.375rem;
+      border-radius: 3px;
+      font-size: 0.85em;
+    }
+
+    /* Subject Tree Panel */
+    .subject-tree {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .subject-node {
+      background: var(--pico-card-background-color);
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--pico-muted-border-color);
+      transition: all 0.2s;
+    }
+
+    .subject-node:hover {
+      border-color: var(--pico-primary);
+    }
+
+    .subject-node.selected {
+      border-color: var(--pico-primary);
+      border-width: 2px;
+    }
+
+    .subject-header {
+      padding: 0.75rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: background 0.2s;
+    }
+
+    .subject-header:hover {
+      background: var(--pico-muted-background-color);
+    }
+
+    .subject-expand-icon {
+      font-size: 0.75rem;
+      transition: transform 0.2s;
+    }
+
+    .subject-node.expanded .subject-expand-icon {
+      transform: rotate(90deg);
+    }
+
+    .subject-icon {
+      font-size: 1rem;
+    }
+
+    .subject-label {
+      flex: 1;
+      font-weight: 500;
+      font-size: 0.875rem;
+    }
+
+    .subject-duration {
+      font-size: 0.75rem;
+      color: var(--pico-muted-color);
+    }
+
+    .subject-details {
+      display: none;
+      padding: 0.75rem;
+      border-top: 1px solid var(--pico-muted-border-color);
+      background: var(--pico-background-color);
+      font-size: 0.8rem;
+    }
+
+    .subject-node.expanded .subject-details {
+      display: block;
+    }
+
+    .subject-activities {
+      margin-bottom: 0.5rem;
+    }
+
+    .subject-activities-label {
+      color: var(--pico-muted-color);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      margin-bottom: 0.25rem;
+    }
+
+    .activity-bar {
+      display: flex;
+      height: 6px;
+      border-radius: 3px;
+      overflow: hidden;
+      background: var(--pico-muted-background-color);
+      margin-bottom: 0.5rem;
+    }
+
+    .activity-segment {
+      transition: all 0.2s;
+    }
+
+    .activity-segment:hover {
+      opacity: 0.8;
+    }
+
+    .activity-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      font-size: 0.7rem;
+    }
+
+    .activity-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .activity-legend-color {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+    }
+
+    .subject-meta {
+      display: flex;
+      gap: 1rem;
+      margin-top: 0.5rem;
+      color: var(--pico-muted-color);
+      font-size: 0.75rem;
+    }
+
+    .subject-apps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      margin-top: 0.5rem;
+    }
+
+    .app-tag {
+      padding: 0.125rem 0.375rem;
+      border-radius: 3px;
+      background: var(--pico-muted-background-color);
+      font-size: 0.7rem;
+    }
+
+    /* Timeline */
+    .timeline-container {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: var(--pico-card-background-color);
+      border-radius: 6px;
+      border: 1px solid var(--pico-muted-border-color);
+    }
+
+    .timeline-header {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      color: var(--pico-muted-color);
+      margin-bottom: 0.5rem;
+    }
+
+    .timeline {
+      position: relative;
+      height: 40px;
+      background: var(--pico-muted-background-color);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .timeline-bar {
+      position: absolute;
+      height: 100%;
+      transition: all 0.2s;
+      cursor: pointer;
+      opacity: 0.8;
+    }
+
+    .timeline-bar:hover {
+      opacity: 1;
+    }
+
+    .timeline-bar.selected {
+      border: 2px solid #000;
+      opacity: 1;
+    }
+
+    .timeline-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 0.25rem;
+      font-size: 0.65rem;
+      color: var(--pico-muted-color);
+    }
+
+    /* Frames Panel */
+    .frames-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .frame-card {
+      background: var(--pico-card-background-color);
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--pico-muted-border-color);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .frame-card:hover {
+      border-color: var(--pico-primary);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .frame-card.selected {
+      border-color: var(--pico-primary);
+      border-width: 2px;
+    }
+
+    .frame-image {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      background: var(--pico-muted-background-color);
+    }
+
+    .frame-content {
+      padding: 0.5rem;
+    }
+
+    .frame-timestamp {
+      font-weight: 600;
+      font-size: 0.75rem;
+      color: var(--pico-primary);
+      margin-bottom: 0.25rem;
+    }
+
+    .frame-activity {
+      display: inline-flex;
+      padding: 0.125rem 0.375rem;
+      border-radius: 3px;
+      font-size: 0.65rem;
+      background: #e0e7ff;
+      color: #3730a3;
+      margin-bottom: 0.25rem;
+    }
+
+    .frame-description {
+      font-size: 0.7rem;
+      color: var(--pico-muted-color);
+      line-height: 1.4;
+      max-height: 2.8rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .frame-apps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      margin-top: 0.25rem;
+    }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+      z-index: 1000;
+      padding: 2rem;
+      overflow: auto;
+    }
+
+    .modal.active {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+    }
+
+    .modal-content {
+      background: var(--pico-card-background-color);
+      border-radius: 8px;
+      max-width: 1200px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-image {
+      width: 100%;
+      max-height: 60vh;
+      object-fit: contain;
+      background: var(--pico-muted-background-color);
+    }
+
+    .modal-info {
+      padding: 1.5rem;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .modal-timestamp {
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0;
+      width: 2rem;
+      height: 2rem;
+      line-height: 1;
+    }
+
+    .modal-activity {
+      display: inline-flex;
+      padding: 0.25rem 0.75rem;
+      border-radius: 4px;
+      font-size: 0.875rem;
+      background: #e0e7ff;
+      color: #3730a3;
+      margin-bottom: 1rem;
+    }
+
+    .modal-description {
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+
+    .modal-section {
+      margin-bottom: 1rem;
+    }
+
+    .modal-section-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--pico-muted-color);
+      margin-bottom: 0.5rem;
+    }
+
+    .modal-apps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .modal-topics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .modal-topic {
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 0.875rem;
+    }
+
+    .modal-raw-response {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
+      color: #991b1b;
+    }
+
+    /* Loading and Empty States */
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: var(--pico-muted-color);
+    }
+
+    .error {
+      color: #991b1b;
+      background: #fee2e2;
+      padding: 1rem;
+      border-radius: 6px;
+      margin: 1rem;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: var(--pico-muted-color);
+    }
+
+    .empty-state-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      opacity: 0.5;
+    }
+
+    /* Activity Colors */
+    .activity-debugging { background: #ef4444; }
+    .activity-coding { background: #3b82f6; }
+    .activity-review { background: #8b5cf6; }
+    .activity-meeting { background: #f59e0b; }
+    .activity-research { background: #10b981; }
+    .activity-reading { background: #06b6d4; }
+    .activity-terminal { background: #6366f1; }
+    .activity-other { background: #6b7280; }
+
+    .legend-debugging { background: #ef4444; }
+    .legend-coding { background: #3b82f6; }
+    .legend-review { background: #8b5cf6; }
+    .legend-meeting { background: #f59e0b; }
+    .legend-research { background: #10b981; }
+    .legend-reading { background: #06b6d4; }
+    .legend-terminal { background: #6366f1; }
+    .legend-other { background: #6b7280; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🔍 Artifact Review</h1>
+    <div class="nav-links">
+      <a href="overview.html">Overview</a>
+      <a href="debug.html">Debug</a>
+      <a href="stats.html">Stats</a>
+      <a href="review.html" class="active">Review</a>
+    </div>
+  </div>
+
+  <div class="recording-info" id="recording-info" style="display: none;">
+    <span class="recording-title" id="recording-title">Loading...</span>
+    <div class="recording-stats">
+      <span id="recording-duration">--</span>
+      <span id="recording-frames">-- frames</span>
+      <span id="recording-subjects">-- subjects</span>
+    </div>
+    <div class="format-selector">
+      <span class="format-chip active" data-format="card" onclick="selectFormat('card')">Card</span>
+      <span class="format-chip" data-format="standup" onclick="selectFormat('standup')">Standup</span>
+      <span class="format-chip" data-format="narrative" onclick="selectFormat('narrative')">Narrative</span>
+    </div>
+  </div>
+
+  <div class="three-panel-container" id="main-container" style="display: none;">
+    <div class="panel" id="artifact-panel">
+      <div class="panel-header">📄 Artifact</div>
+      <div id="artifact-content" class="artifact-content">
+        <div class="loading">Loading artifact...</div>
+      </div>
+    </div>
+
+    <div class="panel" id="subjects-panel">
+      <div class="panel-header">🏷️ Subjects</div>
+      <div id="subject-tree" class="subject-tree">
+        <div class="loading">Loading subjects...</div>
+      </div>
+      <div id="timeline-container" class="timeline-container" style="display: none;">
+        <div class="timeline-header">Timeline</div>
+        <div class="timeline" id="timeline"></div>
+        <div class="timeline-labels">
+          <span id="timeline-start">0:00</span>
+          <span id="timeline-end">--:--</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="frames-panel">
+      <div class="panel-header">🖼️ Frames</div>
+      <div id="frames-grid" class="frames-grid">
+        <div class="loading">Loading frames...</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="empty-state" class="empty-state" style="display: none;">
+    <div class="empty-state-icon">📹</div>
+    <p>No recording selected</p>
+    <p><a href="overview.html">Go to Overview</a> to select a recording</p>
+  </div>
+
+  <!-- Frame Modal -->
+  <div id="frame-modal" class="modal" onclick="closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <img id="modal-image" class="modal-image" src="" alt="Frame">
+      <div class="modal-info">
+        <div class="modal-header">
+          <div class="modal-timestamp" id="modal-timestamp">--:--</div>
+          <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-activity" id="modal-activity">--</div>
+        <div class="modal-description" id="modal-description">Loading...</div>
+        
+        <div class="modal-section">
+          <div class="modal-section-title">Apps</div>
+          <div class="modal-apps" id="modal-apps">--</div>
+        </div>
+
+        <div class="modal-section">
+          <div class="modal-section-title">Topics</div>
+          <div class="modal-topics" id="modal-topics">--</div>
+        </div>
+
+        <div class="modal-section">
+          <div class="modal-section-title">Subject</div>
+          <div id="modal-subject">--</div>
+        </div>
+
+        <div class="modal-section">
+          <div class="modal-section-title">TopicBlock</div>
+          <div id="modal-topicblock" style="font-size: 0.75rem; color: var(--pico-muted-color);">--</div>
+        </div>
+
+        <div class="modal-section">
+          <button onclick="toggleRawResponse()" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">Show Raw VLM Response</button>
+          <div id="modal-raw-response" class="modal-raw-response" style="display: none;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentRecordingId = null;
+    let currentFormat = 'card';
+    let currentArtifact = null;
+    let allSubjects = [];
+    let allFrames = [];
+    let allTopicBlocks = [];
+    let selectedSubjectId = null;
+    let subjectFrameMap = {};
+
+    // Initialize
+    async function init() {
+      const params = new URLSearchParams(window.location.search);
+      currentRecordingId = params.get('recording');
+
+      if (!currentRecordingId) {
+        document.getElementById('empty-state').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('recording-info').style.display = 'flex';
+      document.getElementById('main-container').style.display = 'grid';
+
+      await loadArtifactReview();
+    }
+
+    // Load all data
+    async function loadArtifactReview() {
+      try {
+        const res = await fetch(`/api/recording/${currentRecordingId}/artifact-review?format=${currentFormat}`);
+        const data = await res.json();
+
+        // Update recording info
+        document.getElementById('recording-title').textContent = formatRecordingName(data.recording.id);
+        document.getElementById('recording-duration').textContent = formatDuration(data.recording.duration);
+        document.getElementById('recording-frames').textContent = `${data.frames.length} frames`;
+        document.getElementById('recording-subjects').textContent = `${data.subjects.length} subjects`;
+
+        currentArtifact = data.artifact;
+        allSubjects = data.subjects;
+        allFrames = data.frames;
+        allTopicBlocks = data.topic_blocks;
+        subjectFrameMap = data.subject_frame_map;
+
+        renderArtifact();
+        renderSubjectTree();
+        renderTimeline();
+        renderFrames();
+      } catch (err) {
+        console.error('Failed to load artifact review:', err);
+        document.getElementById('artifact-content').innerHTML = `<div class="error">Failed to load: ${err.message}</div>`;
+      }
+    }
+
+    // Render artifact markdown
+    function renderArtifact() {
+      const container = document.getElementById('artifact-content');
+
+      if (!currentArtifact || !currentArtifact.content) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📄</div><p>No artifact found for this format</p></div>';
+        return;
+      }
+
+      const html = renderMarkdown(currentArtifact.content);
+      container.innerHTML = html;
+
+      // Add click handlers to h2 headers
+      container.querySelectorAll('h2').forEach(h2 => {
+        h2.addEventListener('click', () => {
+          const subjectLabel = h2.textContent.trim();
+          const subject = allSubjects.find(s => s.label === subjectLabel);
+          if (subject) {
+            selectSubject(subject.id);
+          }
+        });
+      });
+    }
+
+    // Render subject tree
+    function renderSubjectTree() {
+      const container = document.getElementById('subject-tree');
+
+      if (!allSubjects || allSubjects.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>No subjects found</p></div>';
+        return;
+      }
+
+      const workSubjects = allSubjects.filter(s => !s.is_personal);
+      const personalSubjects = allSubjects.filter(s => s.is_personal);
+
+      let html = '';
+
+      if (workSubjects.length > 0) {
+        html += '<div style="font-size: 0.7rem; text-transform: uppercase; color: var(--pico-muted-color); margin-bottom: 0.5rem;">Work</div>';
+        html += workSubjects.map(s => renderSubjectNode(s)).join('');
+      }
+
+      if (personalSubjects.length > 0) {
+        html += '<div style="font-size: 0.7rem; text-transform: uppercase; color: var(--pico-muted-color); margin: 1rem 0 0.5rem 0;">Personal</div>';
+        html += personalSubjects.map(s => renderSubjectNode(s)).join('');
+      }
+
+      container.innerHTML = html;
+    }
+
+    function renderSubjectNode(subject) {
+      const frameCount = subjectFrameMap[subject.id]?.length || 0;
+      const activities = subject.activity_breakdown || {};
+
+      const activityColors = {
+        debugging: '#ef4444',
+        coding: '#3b82f6',
+        review: '#8b5cf6',
+        meeting: '#f59e0b',
+        research: '#10b981',
+        reading: '#06b6d4',
+        terminal: '#6366f1',
+        other: '#6b7280'
+      };
+
+      // Build activity bar
+      const totalDuration = Object.values(activities).reduce((sum, d) => sum + d, 0);
+      let barHtml = '';
+      let legendHtml = '';
+
+      Object.entries(activities).forEach(([activity, duration]) => {
+        if (duration > 0) {
+          const pct = (duration / totalDuration) * 100;
+          const color = activityColors[activity] || '#6b7280';
+          barHtml += `<div class="activity-segment" style="width: ${pct}%; background: ${color};" title="${activity}: ${formatDuration(duration)}"></div>`;
+          legendHtml += `
+            <div class="activity-legend-item">
+              <div class="activity-legend-color" style="background: ${color};"></div>
+              <span>${activity} ${formatDuration(duration)}</span>
+            </div>
+          `;
+        }
+      });
+
+      return `
+        <div class="subject-node" id="subject-${subject.id}" onclick="toggleSubject('${subject.id}')">
+          <div class="subject-header">
+            <span class="subject-expand-icon">▶</span>
+            <span class="subject-icon">${subject.is_personal ? '🏠' : '💼'}</span>
+            <span class="subject-label">${escapeHtml(subject.label)}</span>
+            <span class="subject-duration">${formatDuration(subject.duration)}</span>
+          </div>
+          <div class="subject-details">
+            <div class="subject-activities">
+              <div class="subject-activities-label">Activity Breakdown</div>
+              <div class="activity-bar">${barHtml}</div>
+              <div class="activity-legend">${legendHtml}</div>
+            </div>
+            <div class="subject-meta">
+              <span>${frameCount} frames</span>
+              <span>${subject.apps?.length || 0} apps</span>
+            </div>
+            ${subject.apps && subject.apps.length > 0 ? `
+              <div class="subject-apps">
+                ${subject.apps.map(app => `<span class="app-tag">${escapeHtml(app)}</span>`).join('')}
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    // Render timeline
+    function renderTimeline() {
+      const container = document.getElementById('timeline-container');
+      const timelineEl = document.getElementById('timeline');
+
+      if (!allSubjects || allSubjects.length === 0) {
+        container.style.display = 'none';
+        return;
+      }
+
+      container.style.display = 'block';
+
+      const totalDuration = allSubjects.reduce((sum, s) => sum + s.duration, 0);
+      const recordingDuration = allFrames.length > 0 ? allFrames[allFrames.length - 1].timestamp : totalDuration;
+
+      document.getElementById('timeline-start').textContent = '0:00';
+      document.getElementById('timeline-end').textContent = formatDuration(recordingDuration);
+
+      let barsHtml = '';
+      let currentOffset = 0;
+
+      // Sort subjects by first frame timestamp
+      const sortedSubjects = [...allSubjects].sort((a, b) => {
+        const aFrames = subjectFrameMap[a.id] || [];
+        const bFrames = subjectFrameMap[b.id] || [];
+        const aStart = aFrames.length > 0 ? aFrames[0].timestamp : Infinity;
+        const bStart = bFrames.length > 0 ? bFrames[0].timestamp : Infinity;
+        return aStart - bStart;
+      });
+
+      const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#6366f1', '#ec4899'];
+
+      sortedSubjects.forEach((subject, i) => {
+        const pct = (subject.duration / recordingDuration) * 100;
+        const color = subject.is_personal ? '#6b7280' : colors[i % colors.length];
+        const left = (currentOffset / recordingDuration) * 100;
+        currentOffset += subject.duration;
+
+        barsHtml += `
+          <div class="timeline-bar" 
+               style="left: ${left}%; width: ${pct}%; background: ${color};"
+               onclick="selectSubject('${subject.id}')"
+               title="${subject.label}: ${formatDuration(subject.duration)}"
+               data-subject-id="${subject.id}">
+          </div>
+        `;
+      });
+
+      timelineEl.innerHTML = barsHtml;
+    }
+
+    // Render frames
+    function renderFrames(filterSubjectId = null) {
+      const container = document.getElementById('frames-grid');
+
+      let frames = allFrames;
+      if (filterSubjectId) {
+        frames = subjectFrameMap[filterSubjectId] || [];
+      }
+
+      if (!frames || frames.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>No frames found</p></div>';
+        return;
+      }
+
+      container.innerHTML = frames.map(f => `
+        <div class="frame-card" onclick="openFrameModal('${f.id}')" data-frame-id="${f.id}">
+          <img class="frame-image" 
+               src="${getImageUrl(f.image_path)}"
+               alt="Frame at ${formatDuration(f.timestamp)}"
+               onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 60%22><rect fill=%22%23ddd%22 width=%22100%22 height=%2260%22/><text x=%2250%22 y=%2235%22 text-anchor=%22middle%22 fill=%22%23999%22>No Image</text></svg>'">
+          <div class="frame-content">
+            <div class="frame-timestamp">${formatDuration(f.timestamp)}</div>
+            <div class="frame-activity">${f.activity_type || 'unknown'}</div>
+            <div class="frame-description">${escapeHtml(f.vlm_description) || 'No description'}</div>
+            ${f.apps && f.apps.length > 0 ? `
+              <div class="frame-apps">
+                ${f.apps.slice(0, 2).map(app => `<span class="app-tag">${escapeHtml(app)}</span>`).join('')}
+                ${f.apps.length > 2 ? `<span class="app-tag">+${f.apps.length - 2}</span>` : ''}
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Select subject
+    function selectSubject(subjectId) {
+      // Update selection
+      selectedSubjectId = subjectId;
+
+      // Update UI
+      document.querySelectorAll('.subject-node').forEach(node => {
+        node.classList.toggle('selected', node.id === `subject-${subjectId}`);
+      });
+
+      document.querySelectorAll('.timeline-bar').forEach(bar => {
+        bar.classList.toggle('selected', bar.dataset.subjectId === subjectId);
+      });
+
+      // Highlight artifact section
+      const subject = allSubjects.find(s => s.id === subjectId);
+      if (subject) {
+        document.querySelectorAll('.artifact-content h2').forEach(h2 => {
+          h2.classList.toggle('highlighted', h2.textContent.trim() === subject.label);
+          if (h2.classList.contains('highlighted')) {
+            h2.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        });
+      }
+
+      // Filter frames
+      renderFrames(subjectId);
+    }
+
+    // Toggle subject expansion
+    function toggleSubject(subjectId) {
+      const node = document.getElementById(`subject-${subjectId}`);
+      const wasExpanded = node.classList.contains('expanded');
+
+      // Collapse all
+      document.querySelectorAll('.subject-node.expanded').forEach(n => {
+        n.classList.remove('expanded');
+      });
+
+      // Expand clicked if it wasn't already expanded
+      if (!wasExpanded) {
+        node.classList.add('expanded');
+      }
+
+      // Select subject
+      selectSubject(subjectId);
+    }
+
+    // Format selector
+    function selectFormat(format) {
+      currentFormat = format;
+
+      document.querySelectorAll('.format-chip').forEach(chip => {
+        chip.classList.toggle('active', chip.dataset.format === format);
+      });
+
+      loadArtifactReview();
+    }
+
+    // Frame modal
+    function openFrameModal(frameId) {
+      const frame = allFrames.find(f => f.id === frameId);
+      if (!frame) return;
+
+      const modal = document.getElementById('frame-modal');
+      const img = document.getElementById('modal-image');
+      const ts = document.getElementById('modal-timestamp');
+      const act = document.getElementById('modal-activity');
+      const desc = document.getElementById('modal-description');
+      const apps = document.getElementById('modal-apps');
+      const topics = document.getElementById('modal-topics');
+      const subjectEl = document.getElementById('modal-subject');
+      const topicblockEl = document.getElementById('modal-topicblock');
+      const rawResponse = document.getElementById('modal-raw-response');
+
+      img.src = getImageUrl(frame.image_path);
+      ts.textContent = formatDuration(frame.timestamp);
+      act.textContent = frame.activity_type || 'unknown';
+      desc.textContent = frame.vlm_description || 'No description';
+
+      apps.innerHTML = frame.apps && frame.apps.length > 0
+        ? frame.apps.map(app => `<span class="app-tag">${escapeHtml(app)}</span>`).join('')
+        : '<span style="color: var(--pico-muted-color);">None</span>';
+
+      topics.innerHTML = frame.topics && frame.topics.length > 0
+        ? frame.topics.map(topic => `<span class="modal-topic">${escapeHtml(topic)}</span>`).join('')
+        : '<span style="color: var(--pico-muted-color);">None</span>';
+
+      // Find subject
+      let subjectName = 'Unknown';
+      for (const [subjectId, frames] of Object.entries(subjectFrameMap)) {
+        if (frames.find(f => f.id === frameId)) {
+          const subject = allSubjects.find(s => s.id === subjectId);
+          if (subject) subjectName = subject.label;
+          break;
+        }
+      }
+      subjectEl.textContent = subjectName;
+
+      // Find TopicBlock
+      const topicBlock = allTopicBlocks.find(tb => {
+        const cls = JSON.parse(tb.classification);
+        return frame.timestamp >= cls.start_time && frame.timestamp <= cls.end_time;
+      });
+
+      if (topicBlock) {
+        const cls = JSON.parse(topicBlock.classification);
+        topicblockEl.innerHTML = `
+          <div><strong>ID:</strong> ${topicBlock.id}</div>
+          <div><strong>Duration:</strong> ${formatDuration(topicBlock.duration)}</div>
+          <div><strong>Activity:</strong> ${cls.activity_type}</div>
+          <div><strong>Apps:</strong> ${cls.apps?.join(', ') || 'None'}</div>
+          <div><strong>Topics:</strong> ${cls.topics?.join(', ') || 'None'}</div>
+        `;
+      } else {
+        topicblockEl.textContent = 'Not found';
+      }
+
+      rawResponse.textContent = frame.vlm_raw_response || 'No raw response';
+      rawResponse.style.display = 'none';
+
+      modal.classList.add('active');
+    }
+
+    function closeModal(event) {
+      if (event && event.target.id !== 'frame-modal') return;
+      document.getElementById('frame-modal').classList.remove('active');
+    }
+
+    function toggleRawResponse() {
+      const el = document.getElementById('modal-raw-response');
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // Helpers
+    function formatDuration(seconds) {
+      if (!seconds) return '0:00';
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      if (h > 0) {
+        return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      }
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+
+    function formatRecordingName(id) {
+      const match = id.match(/(\d{4})-(\d{2})-(\d{2}).*?(\d{2})[:-]?(\d{2})/i);
+      if (match) {
+        return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}`;
+      }
+      return id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function getImageUrl(imagePath) {
+      if (!imagePath) return '';
+      if (imagePath.startsWith('/var/folders/')) {
+        return '/frames-temp' + imagePath.substring('/var/folders'.length);
+      }
+      const parts = imagePath.split('/');
+      return '/frames/' + parts.slice(-3).join('/');
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;')
+        .replace(/\n/g, ' ');
+    }
+
+    function renderMarkdown(text) {
+      if (!text) return '';
+      return text
+        .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+        .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+        .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/^- (.*$)/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+        .replace(/^\d+\. (.*$)/gm, '<li>$1</li>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/^([^<].*)$/gm, '<p>$1</p>')
+        .replace(/<p><\/p>/g, '')
+        .replace(/<p>(<[hul])/g, '$1')
+        .replace(/(<\/[hul][^>]*>)<\/p>/g, '$1');
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeModal();
+      }
+    });
+
+    // Initialize on load
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

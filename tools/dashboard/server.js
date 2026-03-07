@@ -285,6 +285,27 @@ app.get('/api/recordings/overview', (req, res) => {
         )
         .get(rec.id, rec.id);
 
+      // Get LLM backend info from latest run metadata
+      const llmBackendInfo = db
+        .prepare(
+          `SELECT metadata 
+           FROM processing_runs 
+           WHERE recording_id = ? AND status = 'completed'
+           ORDER BY started_at DESC 
+           LIMIT 1`
+        )
+        .get(rec.id);
+
+      let llmBackend = null;
+      let llmModel = null;
+      if (llmBackendInfo?.metadata) {
+        try {
+          const meta = JSON.parse(llmBackendInfo.metadata);
+          llmBackend = meta.llm_backend || null;
+          llmModel = meta.llm_model || null;
+        } catch {}
+      }
+
       // Get outline URL from metadata
       let outlineUrl = null;
       if (rec.source_metadata) {
@@ -344,6 +365,8 @@ app.get('/api/recordings/overview', (req, res) => {
         status: rec.status,
         source_type: rec.source_type,
         video_path: rec.video_path,
+        llm_backend: llmBackend,
+        llm_model: llmModel,
         stats: {
           frames: vlmStats?.frames || 0,
           vlm_fps: vlmStats?.fps ? parseFloat(vlmStats.fps.toFixed(2)) : null,
@@ -596,6 +619,185 @@ app.get('/api/recording/:id/detail', (req, res) => {
       artifact_counts: artifactCounts,
       summary_present: summaryPresent,
       outline_url: outlineUrl
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// ARTIFACT REVIEW API
+// ============================================
+
+app.get('/api/recording/:id/artifact-review', (req, res) => {
+  try {
+    const { id } = req.params;
+    const format = req.query.format || 'card';
+
+    // Get recording
+    const recording = db
+      .prepare(
+        `SELECT id, captured_at, duration, status, source_type, video_path, source_metadata
+         FROM recordings 
+         WHERE id = ?`
+      )
+      .get(id);
+
+    if (!recording) {
+      return res.status(404).json({ error: 'Recording not found' });
+    }
+
+    // Get artifact for this type (card, standup, narrative)
+    const artifact = db
+      .prepare(
+        `SELECT id, type, format, content, created_at
+         FROM artifacts 
+         WHERE recording_id = ? AND type = ?
+         ORDER BY created_at DESC
+         LIMIT 1`
+      )
+      .get(id, format);
+
+    // Get subjects with activity breakdown
+    const subjects = db
+      .prepare(
+        `SELECT 
+           id,
+           label,
+           is_personal,
+           duration,
+           activity_breakdown,
+           metadata
+         FROM subjects 
+         WHERE recording_id = ?
+         ORDER BY created_at ASC`
+      )
+      .all(id);
+
+    const parsedSubjects = subjects.map(s => {
+      let activityBreakdown = {};
+      let apps = [];
+      try {
+        activityBreakdown = s.activity_breakdown ? JSON.parse(s.activity_breakdown) : {};
+      } catch {}
+      try {
+        const meta = s.metadata ? JSON.parse(s.metadata) : {};
+        apps = meta.apps || [];
+      } catch {}
+      return {
+        id: s.id,
+        label: s.label,
+        is_personal: s.is_personal === 1,
+        duration: s.duration,
+        activity_breakdown: activityBreakdown,
+        apps: apps
+      };
+    });
+
+    // Get all frames (visual observations)
+    const frames = db
+      .prepare(
+        `SELECT 
+           id,
+           timestamp,
+           image_path,
+           vlm_description,
+           vlm_raw_response,
+           activity_type,
+           apps,
+           topics
+         FROM observations 
+         WHERE recording_id = ? AND type = 'visual'
+         ORDER BY timestamp ASC`
+      )
+      .all(id);
+
+    const parsedFrames = frames.map(f => ({
+      id: f.id,
+      timestamp: f.timestamp,
+      image_path: f.image_path,
+      vlm_description: f.vlm_description,
+      vlm_raw_response: f.vlm_raw_response,
+      activity_type: f.activity_type,
+      apps: f.apps ? JSON.parse(f.apps) : [],
+      topics: f.topics ? JSON.parse(f.topics) : []
+    }));
+
+    // Get TopicBlocks
+    const topicBlocks = db
+      .prepare(
+        `SELECT 
+           id,
+           recording_id,
+           context_ids,
+           classification,
+           duration,
+           created_at
+         FROM topic_blocks 
+         WHERE recording_id = ?
+         ORDER BY created_at ASC`
+      )
+      .all(id);
+
+    // Build subject -> frames mapping
+    const subjectFrameMap = {};
+
+    // Get subject -> topic_block mapping
+    const subjectTopicBlocks = {};
+    for (const subject of parsedSubjects) {
+      const links = db
+        .prepare(
+          `SELECT topic_block_id 
+           FROM subject_topic_blocks 
+           WHERE subject_id = ?`
+        )
+        .all(subject.id);
+
+      subjectTopicBlocks[subject.id] = links.map(l => l.topic_block_id);
+    }
+
+    // Map frames to subjects via TopicBlocks
+    for (const subject of parsedSubjects) {
+      const topicBlockIds = subjectTopicBlocks[subject.id] || [];
+      const subjectFrames = [];
+
+      for (const frame of parsedFrames) {
+        // Find which TopicBlock this frame belongs to
+        const matchingTopicBlock = topicBlocks.find(tb => {
+          let cls;
+          try {
+            cls = JSON.parse(tb.classification);
+          } catch {
+            return false;
+          }
+          const startTime = cls.start_time || 0;
+          const endTime = cls.end_time || Infinity;
+          return frame.timestamp >= startTime && frame.timestamp <= endTime;
+        });
+
+        // Check if this TopicBlock belongs to this subject
+        if (matchingTopicBlock && topicBlockIds.includes(matchingTopicBlock.id)) {
+          subjectFrames.push(frame);
+        }
+      }
+
+      subjectFrameMap[subject.id] = subjectFrames;
+    }
+
+    res.json({
+      recording: {
+        id: recording.id,
+        captured_at: recording.captured_at,
+        duration: recording.duration,
+        status: recording.status,
+        source_type: recording.source_type,
+        video_path: recording.video_path
+      },
+      artifact: artifact || null,
+      subjects: parsedSubjects,
+      frames: parsedFrames,
+      topic_blocks: topicBlocks,
+      subject_frame_map: subjectFrameMap
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

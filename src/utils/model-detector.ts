@@ -3,6 +3,11 @@
  *
  * Detects the best available LLM model from installed Ollama models
  * based on system RAM and model quality tiers.
+ *
+ * MLX Models Note:
+ * Qwen3.5 models are technically VLMs but support text-only loading
+ * via mlx-lm v0.30.7+ (merged PR #869, Feb 2026). This allows using
+ * the same models for both vision (mlx-vlm) and text generation (mlx-lm).
  */
 
 import { totalmem } from 'node:os';
@@ -16,30 +21,20 @@ export const LLM_MODEL_TIERS = [
 
 export const MLX_LLM_MODEL_TIERS = [
   {
-    model: 'mlx-community/Qwen3.5-27B-Instruct-4bit',
-    tier: 4,
+    model: 'mlx-community/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit',
+    tier: 2,
     minRamGB: 32,
     label: 'best',
   },
   {
-    model: 'mlx-community/Qwen3.5-9B-Instruct-4bit',
-    tier: 3,
-    minRamGB: 20,
-    label: 'very good',
-  },
-  {
-    model: 'mlx-community/Qwen3.5-4B-Instruct-4bit',
-    tier: 2,
-    minRamGB: 10,
+    model: 'mlx-community/Qwen3.5-9B-OptiQ-4bit',
+    tier: 1,
+    minRamGB: 16,
     label: 'good',
   },
-  {
-    model: 'mlx-community/Qwen3.5-1B-Instruct-4bit',
-    tier: 1,
-    minRamGB: 6,
-    label: 'minimum',
-  },
 ] as const;
+
+// Tier 4 (Best - 32GB+ RAM)
 
 export type LLMModelTier = (typeof LLM_MODEL_TIERS)[number];
 export type MLXLLMModelTier = (typeof MLX_LLM_MODEL_TIERS)[number];
@@ -309,11 +304,11 @@ export function formatModelSelection(selection: ModelSelection): string {
   lines.push(`Using ${selection.model} ${sourceLabel}`);
 
   if (selection.warning) {
-    lines.push(`  ⚠ ${selection.warning}`);
+    lines.push(`  ! ${selection.warning}`);
   }
 
   if (selection.recommendation) {
-    lines.push(`  ℹ ${selection.recommendation}`);
+    lines.push(`  i ${selection.recommendation}`);
   }
 
   return lines.join('\n');

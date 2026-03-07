@@ -257,7 +257,9 @@ Enabled via `ESCRIBANO_ARTIFACT_THINK=true` (disabled by default for speed).
 - [x] Build: TypeScript compiles without errors
 - [x] Linting: Biome passes all checks
 - [ ] **Benchmarks: MLX-LM vs Ollama comparison** (future task)
-- [ ] Thinking mode: enabled/disabled correctly
+- [x] Thinking mode: enabled/disabled correctly (fixed 2026-03-07)
+- [x] Chat template: properly applied with `enable_thinking` control (fixed 2026-03-07)
+- [x] Temperature: passed to `mlx_lm.generate()` (fixed 2026-03-07)
 
 ## Alternatives Considered
 

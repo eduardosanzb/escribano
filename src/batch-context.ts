@@ -284,8 +284,9 @@ export async function processVideo(
     let vlm: IntelligenceService | null = null;
     if (!skipProcessing) {
       // Reuse the same MLX service instance for VLM (unified adapter handles both)
-      if (mlxService) {
-        vlm = mlxService;
+      // Check if LLM is MLX backend - if so, it's already a unified VLM+LLM service
+      if (ctx.config.llmBackend === 'mlx' && llm) {
+        vlm = llm;
       } else {
         console.log('[VLM] Initializing MLX-VLM for frame analysis...');
         vlm = createMlxIntelligenceService();

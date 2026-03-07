@@ -16,6 +16,7 @@
 - **Transcription**: whisper.cpp (whisper-cli)
 - **VLM**: MLX-VLM (local, Qwen3-VL-2B) - frame analysis (~0.7s/frame with 4bit)
 - **LLM**: MLX-LM (local, Qwen3.5) or Ollama (local, auto-detected based on RAM) - summary generation
+- **Package Manager**: `uv` for Python dependencies (fast, reliable lockfiles)
 
 ## Development Environment
 
@@ -36,24 +37,35 @@
 #   [VLM] mlx-vlm installed successfully.
 ```
 
-If you prefer to manage your own environment, install mlx-vlm into it and point escribano at it:
+### Python Environment Resolution
+
+The MLX bridge auto-detects the best Python environment using this priority order:
+
+1. **`ESCRIBANO_PYTHON_PATH`** — Explicit override (environment variable)
+2. **`VIRTUAL_ENV`** — Active virtual environment (set by venv activation or `uv run`)
+3. **`UV_PROJECT_ENVIRONMENT`** — uv project environment (set by `uv sync`)
+4. **Project-local `.venv/bin/python3`** — Created by `uv venv` in current directory
+5. **`~/.venv/bin/python3`** — Home-level venv (created by `uv venv ~/.venv`)
+6. **Auto-setup** — Creates `~/.escribano/venv` and installs `mlx-vlm` automatically
+
+This means if you use `uv` to manage Python environments, escribano will automatically pick it up — no configuration needed.
+
+If you prefer to manage your own environment explicitly:
 
 ```bash
-# Option A: activate your venv before running
-source /path/to/your/venv/bin/activate
+# Option A: activate your venv before running (sets VIRTUAL_ENV)
+uv venv my_env
+source my_env/bin/activate
 npx escribano ...
 
-# Option B: tell escribano which Python to use
+# Option B: use uv sync (sets UV_PROJECT_ENVIRONMENT)
+cd my_project
+uv sync
+npx escribano ...
+
+# Option C: tell escribano which Python to use
 ESCRIBANO_PYTHON_PATH=/path/to/your/venv/bin/python3 npx escribano ...
 ```
-
-The adapter auto-detects Python in this priority:
-1. `ESCRIBANO_PYTHON_PATH` environment variable
-2. Active virtual environment (`VIRTUAL_ENV`)
-3. `UV_PROJECT_ENVIRONMENT` (set by `uv sync` in a project)
-4. Project-local `.venv/bin/python3` (created by `uv venv` in current directory)
-5. `~/.venv/bin/python3` (home-level venv)
-6. **Auto-setup** — creates `~/.escribano/venv` and installs `mlx-vlm` automatically
 
 ## Configuration
 

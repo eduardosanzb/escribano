@@ -130,12 +130,14 @@ def load_llm_model(model_name: str) -> tuple[Any, Any]:
         
         log("Importing mlx_lm...", "debug")
         from mlx_lm import load
+        import mlx_lm
 
         log("Loading model weights into memory (this takes the longest)...", "debug")
         model_obj, tokenizer_obj = load(model_name)
 
         duration = time.time() - start
         log(f"LLM model loaded in {duration:.1f}s")
+        log(f"mlx_lm version: {mlx_lm.__version__}")
 
         return model_obj, tokenizer_obj
     except ImportError as e:
@@ -452,8 +454,8 @@ def parse_interleaved_output(text: str, batch: list[dict]) -> list[dict]:
 
 
 def strip_thinking_tags(text: str) -> str:
-    """Remove <thinki>...</thinki> tags from thinking-mode output."""
-    return re.sub(r"<thinki>.*?</thinki>", "", text, flags=re.DOTALL).strip()
+    """Remove <think>...</think> tags from thinking-mode output."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
 def handle_describe_images(
@@ -578,52 +580,60 @@ def handle_request(
             except Exception as e:
                 send_response(conn, {"id": request_id, "error": str(e), "done": True})
         elif method == "generate_text":
-            # Inline text generation logic (was handle_generate_text)
             if llm_model is None or llm_tokenizer is None:
                 send_response(conn, {"id": request_id, "error": "LLM model not loaded", "done": True})
             else:
                 try:
                     from mlx_lm import generate
+                    from mlx_lm.sample_utils import make_sampler
                     
                     messages = params.get("messages", [])
                     raw_prompt = params.get("rawPrompt")
                     max_tokens = params.get("maxTokens", 4000)
                     think = params.get("think", False)
+                    temperature = params.get("temperature", 0.7)
 
-                    # Determine prompt source
+                    # Determine prompt source and apply chat template
                     if raw_prompt:
-                        prompt = raw_prompt
-                        log(f"Using raw prompt (length: {len(prompt)} chars)", "debug")
+                        # Apply chat template to raw prompt
+                        chat_messages = [{"role": "user", "content": raw_prompt}]
+                        prompt = llm_tokenizer.apply_chat_template(
+                            chat_messages,
+                            tokenize=False,
+                            add_generation_prompt=True,
+                            chat_template_kwargs={"enable_thinking": think}
+                        )
+                        log(f"Applied chat template to raw prompt (think={think}, temp={temperature})", "debug")
                     elif messages:
-                        user_message = None
-                        for msg in messages:
-                            if msg.get("role") == "user":
-                                user_message = msg.get("content", "")
-                                break
-                        
-                        if not user_message:
-                            send_response(conn, {"id": request_id, "error": "No user message in messages array", "done": True})
-                            return
-                        
-                        prompt = user_message
-                        log(f"Extracted user message from messages array (length: {len(prompt)} chars)", "debug")
+                        # Apply chat template to messages array
+                        prompt = llm_tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True,
+                            chat_template_kwargs={"enable_thinking": think}
+                        )
+                        log(f"Applied chat template to messages (think={think}, temp={temperature})", "debug")
                     else:
                         send_response(conn, {"id": request_id, "error": "No prompt provided (need 'rawPrompt' or 'messages')", "done": True})
                         return
 
                     if not prompt:
-                        send_response(conn, {"id": request_id, "error": "Empty prompt", "done": True})
+                        send_response(conn, {"id": request_id, "error": "Empty prompt after template", "done": True})
                         return
 
-                    log(f"Generating text: max_tokens={max_tokens}, prompt_length={len(prompt)}", "debug")
-                    log(f"Full prompt:\n{prompt}", "debug")
+                    log(f"Generating text: max_tokens={max_tokens}, think={think}, temp={temperature}", "debug")
+                    log(f"Prompt length: {len(prompt)} chars", "debug")
                     t_start = time.time()
+
+                    # Create sampler with temperature (mlx_lm 0.30.7+ API)
+                    sampler = make_sampler(temp=temperature)
 
                     output = generate(
                         llm_model,
                         llm_tokenizer,
                         prompt=prompt,
                         max_tokens=max_tokens,
+                        sampler=sampler,
                         verbose=VERBOSE,
                     )
 
@@ -634,6 +644,7 @@ def handle_request(
                     else:
                         response_text = str(output)
 
+                    # Strip thinking tags when think=True
                     if think:
                         response_text = strip_thinking_tags(response_text)
 
@@ -761,7 +772,6 @@ def main() -> None:
 
         except Exception as e:
             if shutting_down:
-                log("Shutting down accept loop", "debug")
                 break
             log(f"Accept error: {e}", "error")
             continue

@@ -1,0 +1,7 @@
+[project]
+name = "poc-qwen35-mlx"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "mlx-lm>=0.30.7",
+]

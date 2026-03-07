@@ -13,6 +13,7 @@ import type {
   DbTopicBlock,
   IntelligenceService,
 } from '../0_types.js';
+import { step } from '../pipeline/context.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -75,8 +76,7 @@ const PERSONAL_APPS = new Set([
 
 const PERSONAL_APP_THRESHOLD = 0.5;
 
-const SUBJECT_GROUPING_MODEL =
-  process.env.ESCRIBANO_SUBJECT_GROUPING_MODEL || 'qwen3.5:27b';
+const SUBJECT_GROUPING_MODEL = process.env.ESCRIBANO_SUBJECT_GROUPING_MODEL;
 
 export async function groupTopicBlocksIntoSubjects(
   topicBlocks: DbTopicBlock[],
@@ -95,16 +95,21 @@ export async function groupTopicBlocksIntoSubjects(
 
   const prompt = buildGroupingPrompt(blocksForGrouping);
 
+  const modelInfo = SUBJECT_GROUPING_MODEL
+    ? ` (model: ${SUBJECT_GROUPING_MODEL})`
+    : ' (auto-detected)';
   console.log(
-    `[subject-grouping] Grouping ${topicBlocks.length} blocks into subjects (model: ${SUBJECT_GROUPING_MODEL})`
+    `[subject-grouping] Grouping ${topicBlocks.length} blocks into subjects${modelInfo}`
   );
 
   try {
-    const response = await intelligence.generateText(prompt, {
-      expectJson: false,
-      model: SUBJECT_GROUPING_MODEL,
-      numPredict: 2000,
-      think: false,
+    const response = await step('llm_subject_grouping', async () => {
+      return intelligence.generateText(prompt, {
+        expectJson: false,
+        model: SUBJECT_GROUPING_MODEL || undefined,
+        numPredict: 2000,
+        think: false,
+      });
     });
 
     console.log(

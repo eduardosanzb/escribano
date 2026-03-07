@@ -3,6 +3,11 @@
  *
  * Detects the best available LLM model from installed Ollama models
  * based on system RAM and model quality tiers.
+ *
+ * MLX Models Note:
+ * Qwen3.5 models are technically VLMs but support text-only loading
+ * via mlx-lm v0.30.7+ (merged PR #869, Feb 2026). This allows using
+ * the same models for both vision (mlx-vlm) and text generation (mlx-lm).
  */
 
 import { totalmem } from 'node:os';
@@ -14,7 +19,25 @@ export const LLM_MODEL_TIERS = [
   { model: 'qwen3:4b', tier: 1, minRamGB: 6, label: 'minimum' },
 ] as const;
 
+export const MLX_LLM_MODEL_TIERS = [
+  {
+    model: 'mlx-community/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit',
+    tier: 2,
+    minRamGB: 32,
+    label: 'best',
+  },
+  {
+    model: 'mlx-community/Qwen3.5-9B-OptiQ-4bit',
+    tier: 1,
+    minRamGB: 16,
+    label: 'good',
+  },
+] as const;
+
+// Tier 4 (Best - 32GB+ RAM)
+
 export type LLMModelTier = (typeof LLM_MODEL_TIERS)[number];
+export type MLXLLMModelTier = (typeof MLX_LLM_MODEL_TIERS)[number];
 
 export interface ModelSelection {
   model: string;
@@ -176,6 +199,99 @@ export async function selectBestLLMModel(): Promise<ModelSelection> {
 }
 
 /**
+ * Select the best MLX LLM model based on system RAM.
+ *
+ * If ESCRIBANO_LLM_MLX_MODEL is set, uses that but still validates and warns.
+ * Otherwise, auto-selects the best available model that fits in RAM.
+ */
+export async function selectBestMLXModel(): Promise<ModelSelection> {
+  const ramGB = getSystemRamGB();
+  const envModel = process.env.ESCRIBANO_LLM_MLX_MODEL;
+
+  // If env var is set, use it but validate
+  if (envModel) {
+    const tier = MLX_LLM_MODEL_TIERS.find(
+      (t) => t.model.toLowerCase() === envModel.toLowerCase()
+    );
+
+    if (!tier) {
+      return {
+        model: envModel,
+        source: 'env',
+        tier: 0,
+        label: 'unknown',
+        ramGB,
+        warning: `${envModel} is not a recognized MLX model.`,
+        recommendation: `Consider using one of: ${MLX_LLM_MODEL_TIERS.map((t) => t.model).join(', ')}`,
+      };
+    }
+
+    if (tier.minRamGB > ramGB) {
+      const recommended = MLX_LLM_MODEL_TIERS.find((t) => t.minRamGB <= ramGB);
+      return {
+        model: envModel,
+        source: 'env',
+        tier: tier.tier,
+        label: tier.label,
+        ramGB,
+        warning: `${envModel} may be too large for your ${ramGB}GB RAM.`,
+        recommendation: recommended
+          ? `Consider ${recommended.model} for stability`
+          : undefined,
+      };
+    }
+
+    // Check if there's a better model available for this RAM
+    const betterTier = MLX_LLM_MODEL_TIERS.find(
+      (t) => t.tier > tier.tier && t.minRamGB <= ramGB
+    );
+
+    return {
+      model: envModel,
+      source: 'env',
+      tier: tier.tier,
+      label: tier.label,
+      ramGB,
+      recommendation: betterTier
+        ? `${betterTier.model} would give better quality for your ${ramGB}GB RAM`
+        : undefined,
+    };
+  }
+
+  // Auto-select: find best model that fits in RAM
+  for (const tier of MLX_LLM_MODEL_TIERS) {
+    if (tier.minRamGB > ramGB) continue;
+
+    // Check if there's a better model NOT selected
+    const betterTier = MLX_LLM_MODEL_TIERS.find(
+      (t) => t.tier > tier.tier && t.minRamGB <= ramGB
+    );
+
+    return {
+      model: tier.model,
+      source: 'auto',
+      tier: tier.tier,
+      label: tier.label,
+      ramGB,
+      recommendation: betterTier
+        ? `For better quality, consider ${betterTier.model} (install via mlx-vlm)`
+        : undefined,
+    };
+  }
+
+  // Nothing found - return lowest tier
+  const lowest = MLX_LLM_MODEL_TIERS[MLX_LLM_MODEL_TIERS.length - 1];
+  return {
+    model: lowest.model,
+    source: 'auto',
+    tier: 0,
+    label: 'minimum',
+    ramGB,
+    warning: `Selected minimum MLX model for ${ramGB}GB RAM.`,
+  };
+}
+
+/**
  * Format model selection for console output
  */
 export function formatModelSelection(selection: ModelSelection): string {
@@ -188,11 +304,11 @@ export function formatModelSelection(selection: ModelSelection): string {
   lines.push(`Using ${selection.model} ${sourceLabel}`);
 
   if (selection.warning) {
-    lines.push(`  ⚠ ${selection.warning}`);
+    lines.push(`  ! ${selection.warning}`);
   }
 
   if (selection.recommendation) {
-    lines.push(`  ℹ ${selection.recommendation}`);
+    lines.push(`  i ${selection.recommendation}`);
   }
 
   return lines.join('\n');

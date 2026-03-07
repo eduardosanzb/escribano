@@ -141,7 +141,7 @@ Screen recording
 Activity segmentation → temporal audio alignment → TopicBlocks
      │
      ▼
-LLM summary (Ollama, auto-detected) → Markdown artifact
+LLM summary (MLX-LM, auto-detected) → Markdown artifact
 ```
 
 Uses VLM-first visual understanding, not OCR + text clustering. OCR fails for developer work because all code screens produce similar tokens. VLMs understand the *activity*, not just the text.
@@ -154,32 +154,22 @@ Uses VLM-first visual understanding, not OCR + text clustering. OCR fails for de
 
 ```bash
 # macOS (Homebrew)
-brew install ollama whisper-cpp ffmpeg
+brew install whisper-cpp ffmpeg
 
-# MLX-VLM for frame analysis (Apple Silicon)
-# Using uv (recommended, faster)
-uv pip install mlx-vlm
-
-# Or using pip
-pip install mlx-vlm
+# MLX for inference (Apple Silicon) - auto-installed on first run
+# Or pre-install with:
+pip install mlx-vlm mlx-lm
 ```
 
-### LLM Model Setup
+That's it. No external daemons required. MLX-VLM and MLX-LM run in-process.
 
-Escribano auto-detects the best model for your hardware:
+### (Optional) Ollama Backend
 
-| Your RAM | Auto-selected | Install command |
-|----------|---------------|-----------------|
-| 16GB | `qwen3:8b` | `ollama pull qwen3:8b` |
-| 32GB | `qwen3:14b` | `ollama pull qwen3:14b` |
-| 64GB+ | `qwen3.5:27b` | `ollama pull qwen3.5:27b` |
+If you prefer Ollama, set `ESCRIBANO_LLM_BACKEND=ollama`:
 
 ```bash
-# Minimum (16GB)
-ollama pull qwen3:8b
-
-# Or best quality (64GB+)
-ollama pull qwen3.5:27b
+brew install ollama
+ollama pull qwen3:8b  # or qwen3.5:27b for 64GB+ RAM
 ```
 
 ### Run

@@ -15,14 +15,15 @@
 - **Database**: SQLite (better-sqlite3)
 - **Transcription**: whisper.cpp (whisper-cli)
 - **VLM**: MLX-VLM (local, Qwen3-VL-2B) - frame analysis (~0.7s/frame with 4bit)
-- **LLM**: Ollama (local, auto-detected based on RAM) - summary generation
+- **LLM**: MLX-LM (local, Qwen3.5) or Ollama (local, auto-detected based on RAM) - summary generation
+- **Package Manager**: `uv` for Python dependencies (fast, reliable lockfiles)
 
 ## Development Environment
 
 - **Machine**: MacBook Pro M4 Max
 - **Unified Memory**: 128GB (Optimized for VLM inference)
 - **VLM Model**: `Qwen3-VL-2B-Instruct-4bit` (~2GB, ~0.7s per frame) via MLX-VLM
-- **LLM Model**: Auto-detected based on RAM (`qwen3.5:27b` recommended) via Ollama
+- **LLM Model**: Auto-detected based on RAM (`Qwen3.5-27B` recommended) via MLX-LM or Ollama
 
 ### MLX-VLM Setup
 
@@ -36,24 +37,36 @@
 #   [VLM] mlx-vlm installed successfully.
 ```
 
-If you prefer to manage your own environment, install mlx-vlm into it and point escribano at it:
+### Python Environment Resolution
+
+The MLX bridge auto-detects the best Python environment using this priority order:
+
+1. **`ESCRIBANO_PYTHON_PATH`** — Explicit override (environment variable)
+2. **`~/.escribano/venv`** — Managed venv (preferred once created)
+3. **`VIRTUAL_ENV`** — Active virtual environment (skipped if inside project directory)
+4. **`UV_PROJECT_ENVIRONMENT`** — uv project environment (skipped if inside project directory)
+5. **Project-local `.venv/bin/python3`** — Created by `uv venv` in current directory
+6. **`~/.venv/bin/python3`** — Home-level venv (created by `uv venv ~/.venv`)
+7. **Auto-setup** — Creates `~/.escribano/venv` and installs `mlx-vlm` automatically
+
+**Note:** Project-local venvs (inside the current working directory) are skipped for steps 3-4 to avoid using dev environments that may not have `mlx-vlm` installed. Once the managed `~/.escribano/venv` exists, it's always preferred.
+
+If you prefer to manage your own environment explicitly:
 
 ```bash
-# Option A: activate your venv before running
-source /path/to/your/venv/bin/activate
+# Option A: activate your venv before running (sets VIRTUAL_ENV)
+uv venv my_env
+source my_env/bin/activate
 npx escribano ...
 
-# Option B: tell escribano which Python to use
+# Option B: use uv sync (sets UV_PROJECT_ENVIRONMENT)
+cd my_project
+uv sync
+npx escribano ...
+
+# Option C: tell escribano which Python to use
 ESCRIBANO_PYTHON_PATH=/path/to/your/venv/bin/python3 npx escribano ...
 ```
-
-The adapter auto-detects Python in this priority:
-1. `ESCRIBANO_PYTHON_PATH` environment variable
-2. Active virtual environment (`VIRTUAL_ENV`)
-3. `UV_PROJECT_ENVIRONMENT` (set by `uv sync` in a project)
-4. Project-local `.venv/bin/python3` (created by `uv venv` in current directory)
-5. `~/.venv/bin/python3` (home-level venv)
-6. **Auto-setup** — creates `~/.escribano/venv` and installs `mlx-vlm` automatically
 
 ## Configuration
 
@@ -84,11 +97,13 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-4bit` |
 | `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `2` |
 | `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
-| `ESCRIBANO_LLM_MODEL` | Ollama model for text generation (summaries) | auto-detected |
-| `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | `qwen3.5:27b` |
+| `ESCRIBANO_LLM_BACKEND` | LLM backend: `mlx` (default) or `ollama` | `mlx` |
+| `ESCRIBANO_LLM_MODEL` | Ollama model (only used if `llmBackend=ollama`) | auto-detected |
+| `ESCRIBANO_LLM_MLX_MODEL` | MLX model (only used if `llmBackend=mlx`) | auto-detected |
+| `ESCRIBANO_SUBJECT_GROUPING_MODEL` | LLM model for subject grouping (thinking disabled) | auto-detected |
 | `ESCRIBANO_ARTIFACT_THINK` | Enable thinking for artifact/card generation (slower, higher quality) | `false` |
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
-| `ESCRIBANO_MLX_STARTUP_TIMEOUT` | MLX bridge model loading timeout (ms) | `120000` |
+| `ESCRIBANO_MLX_TIMEOUT` | MLX bridge startup & generation timeout (ms) | `120000` |
 | `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-setup (`~/.escribano/venv`) |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
@@ -111,7 +126,6 @@ The config file is auto-created on first run with sensible defaults and inline c
 - **Total Pipeline**: Combined optimizations achieve 4x speedup (102 min → 25.7 min for 3-hour videos)
 
 ### Deprecated
-- `ESCRIBANO_VLM_BACKEND` — VLM is always MLX, LLM is always Ollama (explicit in index.ts)
 - `ESCRIBANO_VLM_NUM_PREDICT` — Ollama VLM no longer used
 - `ESCRIBANO_EMBED_MODEL` — Embeddings disabled in V3
 - `ESCRIBANO_EMBED_BATCH_SIZE` — Embeddings disabled in V3
@@ -139,7 +153,7 @@ src/
 │   ├── audio.silero.adapter.ts        # VAD preprocessing (Python)
 │   ├── video.ffmpeg.adapter.ts        # Frame extraction + scene detection
 │   ├── intelligence.ollama.adapter.ts # LLM inference (Ollama, for summary generation)
-│   └── intelligence.mlx.adapter.ts    # VLM inference (MLX-VLM, for frame analysis)
+│   └── intelligence.mlx.adapter.ts    # VLM & LLM inference (MLX-VLM for frames, MLX-LM for text)
 ├── services/                          # Pure business logic (no I/O)
 │   ├── frame-sampling.ts              # Adaptive frame reduction
 │   ├── vlm-service.ts                 # VLM orchestration (backend-agnostic)
@@ -220,9 +234,11 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
 
 7. Artifact Generation
    ├─ Load TopicBlocks for recording
+   ├─ Load LLM model (MLX or Ollama based on backend setting)
    ├─ Subject grouping via LLM (or reuse existing subjects)
    ├─ Build prompt from format template (card/standup/narrative)
    ├─ LLM call (auto-detected model) → formatted artifact
+   ├─ Unload LLM model (if MLX backend)
    ├─ Save markdown to ~/.escribano/artifacts/
    └─ Link artifact to subjects via artifact_subjects join table
 

@@ -366,6 +366,18 @@ export interface CaptureSource {
   listRecordings(limit?: number): Promise<Recording[]>;
 }
 
+/**
+ * Result from LLM text generation with optional token metadata for benchmarking
+ */
+export interface GenerateTextResult {
+  text: string;
+  tokenMetadata?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  };
+}
+
 export interface IntelligenceService {
   classify(
     transcript: Transcript,
@@ -434,6 +446,12 @@ export interface IntelligenceService {
       think?: boolean;
     }
   ): Promise<string>;
+  /** Load LLM model into the bridge (MLX adapter only). */
+  loadLlm?(model: string): Promise<void>;
+  /** Unload VLM model to free memory (MLX adapter only). */
+  unloadVlm?(): Promise<void>;
+  /** Unload LLM model to free memory (MLX adapter only). */
+  unloadLlm?(): Promise<void>;
 }
 
 export interface StorageService {

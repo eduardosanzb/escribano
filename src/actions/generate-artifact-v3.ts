@@ -401,9 +401,11 @@ async function generateLlmArtifact(
     .replace('{{SUBJECTS_DATA}}', subjectsData)
     .replace('{{WORK_SUBJECTS}}', subjectsData);
 
-  return intelligence.generateText(prompt, {
-    expectJson: false,
-    think: ARTIFACT_THINK,
+  return step('llm_artifact_generation', async () => {
+    return intelligence.generateText(prompt, {
+      expectJson: false,
+      think: ARTIFACT_THINK,
+    });
   });
 }
 

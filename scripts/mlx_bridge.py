@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """
-MLX-VLM Bridge for Escribano
+MLX Bridge for Escribano
 
-A Unix domain socket server that provides interleaved VLM batch processing.
+A Unix domain socket server that provides VLM and/or LLM inference.
 Communicates with TypeScript via NDJSON (newline-delimited JSON).
 
 Usage:
-    python3 scripts/mlx_bridge.py
+    python3 scripts/mlx_bridge.py --mode vlm   # VLM-only (frame analysis)
+    python3 scripts/mlx_bridge.py --mode llm   # LLM-only (text generation)
 
 Environment Variables:
-    ESCRIBANO_VLM_MODEL       - MLX model name (default: mlx-community/Qwen3-VL-2B-Instruct-4bit)
+    ESCRIBANO_VLM_MODEL       - MLX VLM model name (default: mlx-community/Qwen3-VL-2B-Instruct-4bit)
     ESCRIBANO_VLM_BATCH_SIZE  - Frames per batch (default: 2)
     ESCRIBANO_VLM_MAX_TOKENS  - Token budget per batch (default: 2000)
     ESCRIBANO_MLX_SOCKET_PATH - Unix socket path (default: /tmp/escribano-mlx.sock)
     ESCRIBANO_VERBOSE         - Enable verbose logging (default: false)
 """
 
+import argparse
 import json
 import os
 import re
@@ -24,7 +26,7 @@ import socket
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 # Configuration from environment (all defaults come from TypeScript config.ts)
 MODEL_NAME = os.environ.get(
@@ -35,6 +37,13 @@ MAX_TOKENS = int(os.environ.get("ESCRIBANO_VLM_MAX_TOKENS", "2000"))
 SOCKET_PATH = os.environ.get("ESCRIBANO_MLX_SOCKET_PATH", "/tmp/escribano-mlx.sock")
 VERBOSE = os.environ.get("ESCRIBANO_VERBOSE", "false").lower() == "true"
 TEMPERATURE = 0.3
+
+# Bridge mode (set via --mode flag)
+BridgeMode = Literal["vlm", "llm"]
+BRIDGE_MODE: BridgeMode = "vlm"
+
+# Shutdown flag for graceful exit
+shutting_down = False
 
 
 def find_project_root() -> Path:
@@ -94,6 +103,8 @@ Frame 2: description: ... | activity: ... | apps: [...] | topics: [...]
 model = None
 processor = None
 config = None
+llm_model = None
+llm_tokenizer = None
 server_socket = None
 
 
@@ -105,6 +116,85 @@ def log(message: str, level: str = "info") -> None:
         level, "[MLX]"
     )
     print(f"{prefix} {message}", file=sys.stderr, flush=True)
+
+
+def load_llm_model(model_name: str) -> tuple[Any, Any]:
+    """Load an MLX text-only LLM model via mlx_lm."""
+    log(f"Loading LLM model: {model_name}")
+    log("This may take 30-120 seconds on first run or after memory clear...")
+    start = time.time()
+
+    try:
+        import gc
+        import mlx.core as mx
+        
+        log("Importing mlx_lm...", "debug")
+        from mlx_lm import load
+        import mlx_lm
+
+        log("Loading model weights into memory (this takes the longest)...", "debug")
+        model_obj, tokenizer_obj = load(model_name)
+
+        duration = time.time() - start
+        log(f"LLM model loaded in {duration:.1f}s")
+        log(f"mlx_lm version: {mlx_lm.__version__}")
+
+        return model_obj, tokenizer_obj
+    except ImportError as e:
+        log(f"Failed to import mlx_lm: {e}", "error")
+        log(f"Python used: {sys.executable}", "error")
+        custom_python = os.environ.get("ESCRIBANO_PYTHON_PATH")
+        if custom_python:
+            log(
+                "ESCRIBANO_PYTHON_PATH is set, so Escribano does not auto-install mlx-lm "
+                "into this Python environment.",
+                "error",
+            )
+            log(
+                f"Make sure mlx-lm is installed for that Python "
+                f"(e.g. `{custom_python} -m pip install mlx-lm`), "
+                "or unset ESCRIBANO_PYTHON_PATH to let Escribano manage its own Python.",
+                "error",
+            )
+        raise
+    except Exception as e:
+        log(f"Failed to load LLM model: {e}", "error")
+        raise
+
+
+def unload_vlm() -> None:
+    """Free VLM memory before loading LLM."""
+    global model, processor, config
+    log("Unloading VLM model to free memory", "debug")
+    try:
+        import gc
+        import mlx.core as mx
+        
+        model = None
+        processor = None
+        config = None
+        gc.collect()
+        mx.metal.clear_cache()  # Apple Silicon memory cleanup
+        log("VLM unloaded successfully", "debug")
+    except Exception as e:
+        log(f"Error unloading VLM: {e}", "error")
+
+
+def unload_llm() -> None:
+    """Free LLM memory after generation."""
+    global llm_model, llm_tokenizer
+    log("Unloading LLM model to free memory", "debug")
+    try:
+        import gc
+        import mlx.core as mx
+        
+        llm_model = None
+        llm_tokenizer = None
+        gc.collect()
+        mx.metal.clear_cache()  # Apple Silicon memory cleanup
+        log("LLM unloaded successfully", "debug")
+    except Exception as e:
+        log(f"Error unloading LLM: {e}", "error")
 
 
 def cleanup() -> None:
@@ -125,7 +215,9 @@ def cleanup() -> None:
 
 def signal_handler(signum: int, frame: Any) -> None:
     """Handle shutdown signals."""
+    global shutting_down
     log(f"Received signal {signum}, shutting down...")
+    shutting_down = True
     cleanup()
     sys.exit(0)
 
@@ -361,6 +453,11 @@ def parse_interleaved_output(text: str, batch: list[dict]) -> list[dict]:
     return results
 
 
+def strip_thinking_tags(text: str) -> str:
+    """Remove <think>...</think> tags from thinking-mode output."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+
 def handle_describe_images(
     conn: socket.socket, model_obj: Any, processor_obj: Any, config_obj: Any, params: dict, request_id: int
 ) -> None:
@@ -438,11 +535,145 @@ def handle_request(
 
         log(f"Received request: id={request_id} method={method}", "debug")
 
+        # Validate method compatibility with bridge mode
+        if BRIDGE_MODE == "llm" and method == "describe_images":
+            send_response(
+                conn,
+                {
+                    "id": request_id,
+                    "error": "describe_images not available in LLM-only mode",
+                    "done": True,
+                },
+            )
+            return
+
+        if BRIDGE_MODE == "vlm" and method == "generate_text":
+            send_response(
+                conn,
+                {
+                    "id": request_id,
+                    "error": "generate_text not available in VLM-only mode",
+                    "done": True,
+                },
+            )
+            return
+
         if method == "describe_images":
             handle_describe_images(conn, model_obj, processor_obj, config_obj, params, request_id)
+        elif method == "load_llm":
+            global llm_model, llm_tokenizer
+            try:
+                llm_model, llm_tokenizer = load_llm_model(params.get("model", ""))
+                send_response(conn, {"id": request_id, "status": "loaded", "done": True})
+            except Exception as e:
+                send_response(conn, {"id": request_id, "error": str(e), "done": True})
+        elif method == "unload_vlm":
+            try:
+                unload_vlm()
+                send_response(conn, {"id": request_id, "status": "unloaded", "done": True})
+            except Exception as e:
+                send_response(conn, {"id": request_id, "error": str(e), "done": True})
+        elif method == "unload_llm":
+            try:
+                unload_llm()
+                send_response(conn, {"id": request_id, "status": "unloaded", "done": True})
+            except Exception as e:
+                send_response(conn, {"id": request_id, "error": str(e), "done": True})
+        elif method == "generate_text":
+            if llm_model is None or llm_tokenizer is None:
+                send_response(conn, {"id": request_id, "error": "LLM model not loaded", "done": True})
+            else:
+                try:
+                    from mlx_lm import generate
+                    from mlx_lm.sample_utils import make_sampler
+                    
+                    messages = params.get("messages", [])
+                    raw_prompt = params.get("rawPrompt")
+                    max_tokens = params.get("maxTokens", 4000)
+                    think = params.get("think", False)
+                    temperature = params.get("temperature", 0.7)
+
+                    # Determine prompt source and apply chat template
+                    if raw_prompt:
+                        # Apply chat template to raw prompt
+                        chat_messages = [{"role": "user", "content": raw_prompt}]
+                        prompt = llm_tokenizer.apply_chat_template(
+                            chat_messages,
+                            tokenize=False,
+                            add_generation_prompt=True,
+                            chat_template_kwargs={"enable_thinking": think}
+                        )
+                        log(f"Applied chat template to raw prompt (think={think}, temp={temperature})", "debug")
+                    elif messages:
+                        # Apply chat template to messages array
+                        prompt = llm_tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True,
+                            chat_template_kwargs={"enable_thinking": think}
+                        )
+                        log(f"Applied chat template to messages (think={think}, temp={temperature})", "debug")
+                    else:
+                        send_response(conn, {"id": request_id, "error": "No prompt provided (need 'rawPrompt' or 'messages')", "done": True})
+                        return
+
+                    if not prompt:
+                        send_response(conn, {"id": request_id, "error": "Empty prompt after template", "done": True})
+                        return
+
+                    log(f"Generating text: max_tokens={max_tokens}, think={think}, temp={temperature}", "debug")
+                    log(f"Prompt length: {len(prompt)} chars", "debug")
+                    t_start = time.time()
+
+                    # Create sampler with temperature (mlx_lm 0.30.7+ API)
+                    sampler = make_sampler(temp=temperature)
+
+                    output = generate(
+                        llm_model,
+                        llm_tokenizer,
+                        prompt=prompt,
+                        max_tokens=max_tokens,
+                        sampler=sampler,
+                        verbose=VERBOSE,
+                    )
+
+                    if hasattr(output, "text"):
+                        response_text = output.text
+                    elif isinstance(output, str):
+                        response_text = output
+                    else:
+                        response_text = str(output)
+
+                    # Strip thinking tags when think=True
+                    if think:
+                        response_text = strip_thinking_tags(response_text)
+
+                    t_end = time.time()
+                    generate_time = t_end - t_start
+
+                    log(f"Generation completed in {generate_time:.2f}s", "debug")
+
+                    send_response(conn, {
+                        "id": request_id,
+                        "text": response_text,
+                        "stats": {
+                            "prompt_tokens": getattr(output, "prompt_tokens", 0),
+                            "generation_tokens": getattr(output, "generation_tokens", 0),
+                            "total_tokens": getattr(output, "total_tokens", 0),
+                            "generation_tps": getattr(output, "generation_tps", 0.0),
+                            "generate_time_s": generate_time,
+                        },
+                        "done": True,
+                    })
+
+                except Exception as e:
+                    log(f"Text generation failed: {e}", "error")
+                    send_response(conn, {"id": request_id, "error": str(e), "done": True})
         elif method == "shutdown":
+            global shutting_down
             log("Shutdown requested")
             send_response(conn, {"id": request_id, "status": "shutting_down"})
+            shutting_down = True
             cleanup()
             sys.exit(0)
         else:
@@ -458,7 +689,26 @@ def handle_request(
 
 def main() -> None:
     """Main entry point."""
-    global model, processor, config, server_socket
+    global model, processor, config, server_socket, BRIDGE_MODE, SOCKET_PATH, shutting_down
+
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="MLX Bridge for Escribano")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["vlm", "llm"],
+        default="vlm",
+        help="Bridge mode: 'vlm' for frame analysis, 'llm' for text generation",
+    )
+    args = parser.parse_args()
+    BRIDGE_MODE = args.mode
+
+    # Adjust socket path based on mode (VLM and LLM use separate sockets)
+    base_socket = SOCKET_PATH.replace(".sock", "")
+    if BRIDGE_MODE == "llm":
+        SOCKET_PATH = f"{base_socket}-llm.sock"
+    else:
+        SOCKET_PATH = f"{base_socket}-vlm.sock"
 
     # Set up signal handlers
     signal.signal(signal.SIGTERM, signal_handler)
@@ -467,21 +717,30 @@ def main() -> None:
     # Clean up any existing socket
     cleanup()
 
-    # Load model
-    model, processor, config = load_model()
+    # Load model based on mode
+    if BRIDGE_MODE == "vlm":
+        model, processor, config = load_model()
+    else:
+        # LLM mode: load model lazily on first request
+        log("LLM-only mode: model will be loaded on first request")
 
     # Create socket
     server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server_socket.bind(SOCKET_PATH)
     server_socket.listen(1)
 
-    log(f"Listening on {SOCKET_PATH}")
+    log(f"Listening on {SOCKET_PATH} (mode: {BRIDGE_MODE})")
 
     # Signal ready (for parent process to detect)
-    print(json.dumps({"status": "ready", "model": MODEL_NAME}), flush=True)
+    ready_msg = {
+        "status": "ready",
+        "model": MODEL_NAME if BRIDGE_MODE == "vlm" else "llm-lazy",
+        "mode": BRIDGE_MODE,
+    }
+    print(json.dumps(ready_msg), flush=True)
 
     # Accept connections
-    while True:
+    while not shutting_down:
         try:
             conn, _ = server_socket.accept()
             log("Client connected", "debug")
@@ -512,6 +771,8 @@ def main() -> None:
             log("Client disconnected", "debug")
 
         except Exception as e:
+            if shutting_down:
+                break
             log(f"Accept error: {e}", "error")
             continue
 

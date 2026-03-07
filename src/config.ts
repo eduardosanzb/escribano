@@ -48,7 +48,7 @@ const configSchema = z.object({
   sampleGapThreshold: z.number().int().min(5).max(60).default(15),
   sampleGapFill: z.number().int().min(1).max(10).default(3),
   mlxSocketPath: z.string().default('/tmp/escribano-mlx.sock'),
-  mlxStartupTimeout: z.number().int().min(10000).default(60000),
+  mlxTimeout: z.number().int().min(10000).default(60000),
   pythonPath: z.string().optional(),
   parallelTranscription: z.boolean().default(false),
   artifactThink: z.boolean().default(false),
@@ -81,7 +81,7 @@ const DEFAULT_CONFIG: Config = {
   sampleGapThreshold: 15,
   sampleGapFill: 3,
   mlxSocketPath: '/tmp/escribano-mlx.sock',
-  mlxStartupTimeout: 60000,
+  mlxTimeout: 60000,
   parallelTranscription: false,
   artifactThink: false,
   outlineCollection: 'Escribano Sessions',
@@ -119,7 +119,7 @@ ESCRIBANO_SCENE_MIN_INTERVAL=2
 ESCRIBANO_SAMPLE_GAP_THRESHOLD=15
 ESCRIBANO_SAMPLE_GAP_FILL=3
 ESCRIBANO_MLX_SOCKET_PATH=/tmp/escribano-mlx.sock
-ESCRIBANO_MLX_STARTUP_TIMEOUT=60000
+ESCRIBANO_MLX_TIMEOUT=60000
 # ESCRIBANO_PYTHON_PATH=             # Auto-detected if not set
 ESCRIBANO_ARTIFACT_THINK=false      # Enable thinking for artifacts (slower)
 
@@ -244,9 +244,9 @@ export function loadConfig(): Config {
     ),
     mlxSocketPath:
       process.env.ESCRIBANO_MLX_SOCKET_PATH || DEFAULT_CONFIG.mlxSocketPath,
-    mlxStartupTimeout: parseEnvNumber(
-      'ESCRIBANO_MLX_STARTUP_TIMEOUT',
-      DEFAULT_CONFIG.mlxStartupTimeout
+    mlxTimeout: parseEnvNumber(
+      'ESCRIBANO_MLX_TIMEOUT',
+      DEFAULT_CONFIG.mlxTimeout
     ),
     pythonPath: process.env.ESCRIBANO_PYTHON_PATH,
     parallelTranscription: parseEnvBoolean(

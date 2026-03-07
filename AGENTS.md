@@ -42,13 +42,14 @@
 The MLX bridge auto-detects the best Python environment using this priority order:
 
 1. **`ESCRIBANO_PYTHON_PATH`** — Explicit override (environment variable)
-2. **`VIRTUAL_ENV`** — Active virtual environment (set by venv activation or `uv run`)
-3. **`UV_PROJECT_ENVIRONMENT`** — uv project environment (set by `uv sync`)
-4. **Project-local `.venv/bin/python3`** — Created by `uv venv` in current directory
-5. **`~/.venv/bin/python3`** — Home-level venv (created by `uv venv ~/.venv`)
-6. **Auto-setup** — Creates `~/.escribano/venv` and installs `mlx-vlm` automatically
+2. **`~/.escribano/venv`** — Managed venv (preferred once created)
+3. **`VIRTUAL_ENV`** — Active virtual environment (skipped if inside project directory)
+4. **`UV_PROJECT_ENVIRONMENT`** — uv project environment (skipped if inside project directory)
+5. **Project-local `.venv/bin/python3`** — Created by `uv venv` in current directory
+6. **`~/.venv/bin/python3`** — Home-level venv (created by `uv venv ~/.venv`)
+7. **Auto-setup** — Creates `~/.escribano/venv` and installs `mlx-vlm` automatically
 
-This means if you use `uv` to manage Python environments, escribano will automatically pick it up — no configuration needed.
+**Note:** Project-local venvs (inside the current working directory) are skipped for steps 3-4 to avoid using dev environments that may not have `mlx-vlm` installed. Once the managed `~/.escribano/venv` exists, it's always preferred.
 
 If you prefer to manage your own environment explicitly:
 

@@ -42,6 +42,9 @@ TEMPERATURE = 0.3
 BridgeMode = Literal["vlm", "llm"]
 BRIDGE_MODE: BridgeMode = "vlm"
 
+# Shutdown flag for graceful exit
+shutting_down = False
+
 
 def find_project_root() -> Path:
     """Find the project root by walking up from the script location."""
@@ -210,7 +213,9 @@ def cleanup() -> None:
 
 def signal_handler(signum: int, frame: Any) -> None:
     """Handle shutdown signals."""
+    global shutting_down
     log(f"Received signal {signum}, shutting down...")
+    shutting_down = True
     cleanup()
     sys.exit(0)
 
@@ -654,8 +659,10 @@ def handle_request(
                     log(f"Text generation failed: {e}", "error")
                     send_response(conn, {"id": request_id, "error": str(e), "done": True})
         elif method == "shutdown":
+            global shutting_down
             log("Shutdown requested")
             send_response(conn, {"id": request_id, "status": "shutting_down"})
+            shutting_down = True
             cleanup()
             sys.exit(0)
         else:
@@ -671,7 +678,7 @@ def handle_request(
 
 def main() -> None:
     """Main entry point."""
-    global model, processor, config, server_socket, BRIDGE_MODE, SOCKET_PATH
+    global model, processor, config, server_socket, BRIDGE_MODE, SOCKET_PATH, shutting_down
 
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="MLX Bridge for Escribano")
@@ -722,7 +729,7 @@ def main() -> None:
     print(json.dumps(ready_msg), flush=True)
 
     # Accept connections
-    while True:
+    while not shutting_down:
         try:
             conn, _ = server_socket.accept()
             log("Client connected", "debug")
@@ -753,6 +760,9 @@ def main() -> None:
             log("Client disconnected", "debug")
 
         except Exception as e:
+            if shutting_down:
+                log("Shutting down accept loop", "debug")
+                break
             log(f"Accept error: {e}", "error")
             continue
 

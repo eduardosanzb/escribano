@@ -93,8 +93,60 @@ Extend the existing MLX bridge to support LLM operations alongside VLM:
 | 10GB+ | `mlx-community/Qwen3.5-4B-Instruct-4bit` | ~2.5GB | Good |
 | 6GB+ | `mlx-community/Qwen3.5-1B-Instruct-4bit` | ~0.8GB | Minimum |
 
-### Configuration
+### Model Tiers (MLX)
 
+| System RAM | Model | Size | Speed | Quality Tier |
+|------------|-------|------|-------|--------------|
+| 32GB+ | `mlx-community/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit` | ~14GB | 25 tok/s | Best |
+| 16-32GB | `mlx-community/Qwen3.5-9B-OptiQ-4bit` | ~6GB | 45 tok/s | Good |
+
+| 
+| **Validated:** These models passed both subject grouping (Prompt A) and card generation (Prompt B) in POC testing (March 2026).
+| 
+| **Rejected models:**
+- `Qwen3.5-4B-OptiQ-4bit` - Failed subject grouping prompt (insufficient reasoning capacity)
+- `Qwen3.5-27B-4bit-mlx` - Failed subject grouping prompt
+- `mlx-community/Qwen3.5-27B-4bit` (unqualified) - VLM model with vision_tower weights (incompatible with text-only loading)
+
+| 
+| **Note:** Benchmark comparison (MLX-LM vs Ollama latency/quality) will be added in future update.
+| 
+### Critical Learnings (March 2026 POC)
+
+| 
+| #### Chat Template Bug
+| 
+| **Problem:** Using `tokenizer.apply_chat_template()` with `enable_thinking=False` still triggers thinking mode in Qwen3.5 models, causing them to output "Thinking Process:" sections instead of the required format.
+| 
+    **Root Cause:** Chat templates in Qwen3.5 models have hardcoded thinking mode logic that doesn't respect the `enable_thinking` parameter reliably
+    
+    **Solution:** Use raw prompts directly (bypass chat templates entirely). The bridge handler now supports both `rawPrompt` (new, recommended) and `messages` (legacy, backward compatible)
+    
+    **Impact:** Raw prompts produce correct output format 100% of the time in testing
+| 
+    #### Memory Contention Bug
+| 
+    **Problem:** When regenerating artifacts for already-processed recordings, the VLM bridge remained loaded while the LLM bridge loaded, causing memory contention and potential OOM/hang on 128GB machines
+    
+    **Root Cause:** VLM adapter was created unconditionally in `batch-context.ts`, even for artifact-only runs
+    
+    **Solution:** 
+    1. Lazy VLM initialization (only created for new recordings)
+    2. Explicit guard before LLM generation to ensure VLM is unloaded
+    3. Sequential model lifecycle: VLM → unload → LLM -> unload
+| 
+    **Impact:** Memory usage now stays within limits (<80% of RAM) for all scenarios
+| 
+    #### Token Limits
+| 
+    Production uses:
+    - **Prompt A (subject grouping):** 2000 tokens
+    - **Prompt B (card generation):** 4000 tokens
+| 
+    Initial POC used 500/800 tokens, causing truncation failures. These limits provide sufficient headroom for complex sessions
+| 
+### Configuration
+| 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `ESCRIBANO_LLM_BACKEND` | `mlx` | Backend: `mlx` or `ollama` |

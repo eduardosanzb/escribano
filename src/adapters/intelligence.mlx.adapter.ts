@@ -1,11 +1,16 @@
 /**
- * Escribano - Intelligence Adapter (MLX-VLM)
+ * Escribano - Intelligence Adapter (MLX)
  *
- * Implements IntelligenceService using MLX-VLM via Unix domain socket.
- * Uses interleaved batching for 4.7x speedup over Ollama sequential processing.
+ * Implements IntelligenceService using MLX-VLM and MLX-LM via Unix domain sockets.
+ * Uses separate bridge processes for VLM (frame analysis) and LLM (text generation).
  *
  * Architecture:
- *   TypeScript (this file) <--Unix Socket--> Python (mlx_bridge.py)
+ *   TypeScript (this file) <--Unix Socket--> Python (mlx_bridge.py --mode vlm)
+ *   TypeScript (this file) <--Unix Socket--> Python (mlx_bridge.py --mode llm)
+ *
+ * The caller only sees a single IntelligenceService. Internally, we manage:
+ * - VLM bridge: spawns lazily on describeImages(), uses -vlm.sock
+ * - LLM bridge: spawns lazily on generateText(), uses -llm.sock
  *
  * See docs/adr/006-mlx-vlm-adapter.md for full design.
  */
@@ -30,17 +35,17 @@ import type {
 } from '../0_types.js';
 import {
   ESCRIBANO_HOME,
-  ESCRIBANO_VENV,
   ESCRIBANO_VENV_PYTHON,
   getPythonPath,
 } from '../python-utils.js';
 import type { ResourceTrackable } from '../stats/types.js';
+import { selectBestMLXModel } from '../utils/model-detector.js';
 
 const DEBUG_MLX = process.env.ESCRIBANO_VERBOSE === 'true';
 
 function debugLog(...args: unknown[]): void {
   if (DEBUG_MLX) {
-    console.log('[VLM] [MLX]', ...args);
+    console.log('[MLX]', ...args);
   }
 }
 
@@ -57,6 +62,7 @@ interface BridgeState {
   socket: Socket | null;
   ready: boolean;
   connecting: boolean;
+  loadedModel?: string | null;
 }
 
 interface FrameDescription {
@@ -71,7 +77,7 @@ interface FrameDescription {
 }
 
 interface MlxConfigWithTimeout extends MlxConfig {
-  startupTimeout: number;
+  timeout: number;
 }
 
 const DEFAULT_CONFIG: MlxConfigWithTimeout = {
@@ -83,17 +89,9 @@ const DEFAULT_CONFIG: MlxConfigWithTimeout = {
   socketPath:
     process.env.ESCRIBANO_MLX_SOCKET_PATH ?? '/tmp/escribano-mlx.sock',
   bridgeScript: resolve(__dirname, '../../scripts/mlx_bridge.py'),
-  startupTimeout: Number(process.env.ESCRIBANO_MLX_STARTUP_TIMEOUT) || 120000,
+  timeout: Number(process.env.ESCRIBANO_MLX_TIMEOUT) || 120000,
 };
 
-/** pip binary inside Escribano's managed venv. */
-const _ESCRIBANO_VENV_PIP = resolve(ESCRIBANO_VENV, 'bin', 'pip');
-
-/**
- * Run a command, streaming stdout/stderr directly to the terminal.
- * Used for long-running setup tasks (venv creation, pip install) so the
- * user can see progress in real time.
- */
 function runVisible(cmd: string, args: string[]): Promise<void> {
   return new Promise((res, rej) => {
     const proc = spawn(cmd, args, { stdio: 'inherit' });
@@ -104,9 +102,6 @@ function runVisible(cmd: string, args: string[]): Promise<void> {
   });
 }
 
-/**
- * Run a command silently (discard output). Used for quick probe checks.
- */
 function runSilent(cmd: string, args: string[]): Promise<void> {
   return new Promise((res, rej) => {
     const proc = spawn(cmd, args, { stdio: 'ignore' });
@@ -117,11 +112,6 @@ function runSilent(cmd: string, args: string[]): Promise<void> {
   });
 }
 
-/**
- * Ensure ~/.escribano/venv exists and has mlx-vlm installed.
- * Uses plain `python3 -m venv` — no uv, no pip flags, no fuss.
- * On first run this takes a few minutes; subsequent runs are instant.
- */
 async function ensureEscribanoVenv(): Promise<string> {
   if (!existsSync(ESCRIBANO_HOME)) {
     mkdirSync(ESCRIBANO_HOME, { recursive: true });
@@ -129,12 +119,11 @@ async function ensureEscribanoVenv(): Promise<string> {
 
   if (!existsSync(ESCRIBANO_VENV_PYTHON)) {
     console.log(
-      '[VLM] First-time setup: creating Python environment at ~/.escribano/venv'
+      '[MLX] First-time setup: creating Python environment at ~/.escribano/venv'
     );
-    await runVisible('python3', ['-m', 'venv', ESCRIBANO_VENV]);
+    await runVisible('python3', ['-m', 'venv', ESCRIBANO_HOME + '/venv']);
   }
 
-  // Check whether mlx-vlm and required runtime deps are already importable (~0.3s probe)
   let mlxReady = false;
   try {
     await runSilent(ESCRIBANO_VENV_PYTHON, [
@@ -148,13 +137,12 @@ async function ensureEscribanoVenv(): Promise<string> {
 
   if (!mlxReady) {
     console.log(
-      '[VLM] Installing mlx-vlm into ~/.escribano/venv (first run — this may take a few minutes)...'
+      '[MLX] Installing mlx-vlm into ~/.escribano/venv (first run — this may take a few minutes)...'
     );
-    // Ensure pip is available in the venv; ignore failures if ensurepip is disabled.
     try {
       await runVisible(ESCRIBANO_VENV_PYTHON, ['-m', 'ensurepip', '--upgrade']);
     } catch {
-      // ensurepip may be unavailable; continue and rely on existing pip if present.
+      // ensurepip may be unavailable
     }
     await runVisible(ESCRIBANO_VENV_PYTHON, [
       '-m',
@@ -163,29 +151,20 @@ async function ensureEscribanoVenv(): Promise<string> {
       'mlx-vlm',
       'torch',
       'torchvision',
+      'mlx-lm',
     ]);
-    console.log('[VLM] mlx-vlm installed successfully.');
+    console.log('[MLX] mlx-vlm and mlx-lm installed successfully.');
   }
 
   return ESCRIBANO_VENV_PYTHON;
 }
 
-/**
- * Resolve the Python executable to use for the MLX bridge.
- * If the user has configured an explicit environment, use it.
- * Otherwise, transparently create and populate ~/.escribano/venv.
- */
 export async function resolvePythonPath(): Promise<string> {
   return getPythonPath() ?? ensureEscribanoVenv();
 }
 
-// Global cleanup function to track the current bridge instance
 let globalCleanup: (() => void) | null = null;
 
-/**
- * Cleanup the MLX bridge process.
- * Should be called explicitly before process exit.
- */
 export function cleanupMlxBridge(): void {
   if (globalCleanup) {
     debugLog('Explicit cleanup called');
@@ -194,96 +173,118 @@ export function cleanupMlxBridge(): void {
   }
 }
 
-/**
- * Create MLX-VLM intelligence service.
- *
- * Note: This adapter only implements describeImages() for VLM processing.
- * Other methods (classify, generate, etc.) are not implemented and will throw.
- */
 export function createMlxIntelligenceService(
   _config: Partial<IntelligenceConfig> = {}
 ): IntelligenceService & ResourceTrackable {
   const mlxConfig = { ...DEFAULT_CONFIG };
-  const bridge: BridgeState = {
+
+  const vlmBridge: BridgeState = {
     process: null,
     socket: null,
     ready: false,
     connecting: false,
   };
 
-  // Cleanup on process exit
-  const cleanup = (): void => {
-    if (bridge.socket) {
-      try {
-        bridge.socket.destroy();
-      } catch {
-        // Ignore
-      }
-      bridge.socket = null;
-    }
-    if (bridge.process) {
-      try {
-        bridge.process.kill('SIGTERM');
-      } catch {
-        // Ignore
-      }
-      bridge.process = null;
-    }
-    // Clean up socket file if it exists
-    if (existsSync(mlxConfig.socketPath)) {
-      try {
-        unlinkSync(mlxConfig.socketPath);
-      } catch {
-        // Ignore
-      }
-    }
-    bridge.ready = false;
+  const llmBridge: BridgeState = {
+    process: null,
+    socket: null,
+    ready: false,
+    connecting: false,
+    loadedModel: null,
   };
 
-  // Register global cleanup
-  globalCleanup = cleanup;
+  const getVlmSocketPath = (): string =>
+    mlxConfig.socketPath.replace('.sock', '-vlm.sock');
+  const getLlmSocketPath = (): string =>
+    mlxConfig.socketPath.replace('.sock', '-llm.sock');
 
-  // Also cleanup on process signals
+  const cleanup = (): void => {
+    if (vlmBridge.socket) {
+      try {
+        vlmBridge.socket.destroy();
+      } catch {}
+      vlmBridge.socket = null;
+    }
+    if (vlmBridge.process) {
+      try {
+        vlmBridge.process.kill('SIGTERM');
+      } catch {}
+      vlmBridge.process = null;
+    }
+    const vlmSock = getVlmSocketPath();
+    if (existsSync(vlmSock)) {
+      try {
+        unlinkSync(vlmSock);
+      } catch {}
+    }
+    vlmBridge.ready = false;
+
+    if (llmBridge.socket) {
+      try {
+        llmBridge.socket.destroy();
+      } catch {}
+      llmBridge.socket = null;
+    }
+    if (llmBridge.process) {
+      try {
+        llmBridge.process.kill('SIGTERM');
+      } catch {}
+      llmBridge.process = null;
+    }
+    const llmSock = getLlmSocketPath();
+    if (existsSync(llmSock)) {
+      try {
+        unlinkSync(llmSock);
+      } catch {}
+    }
+    llmBridge.ready = false;
+    llmBridge.loadedModel = null;
+  };
+
+  globalCleanup = cleanup;
   process.on('SIGTERM', cleanup);
   process.on('SIGINT', cleanup);
-
-  // Cleanup on beforeExit to ensure it runs before process.exit
   process.on('beforeExit', cleanup);
 
-  /**
-   * Start the Python bridge process.
-   */
-  const startBridge = async (): Promise<void> => {
-    if (bridge.process && bridge.ready) {
-      return;
-    }
+  const startBridge = async (
+    bridgeState: BridgeState,
+    mode: 'vlm' | 'llm',
+    socketPath: string
+  ): Promise<void> => {
+    if (bridgeState.process && bridgeState.ready) return;
 
-    debugLog('Starting MLX bridge...');
-
-    // Resolve (and if needed, auto-create) the Python environment before spawning.
+    debugLog(`Starting ${mode.toUpperCase()} bridge...`);
     const pythonPath = await resolvePythonPath();
     debugLog(`Using Python: ${pythonPath}`);
 
-    return new Promise((resolve, reject) => {
-      bridge.process = spawn(pythonPath, [mlxConfig.bridgeScript], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          ESCRIBANO_VLM_MODEL: mlxConfig.model,
-          ESCRIBANO_VLM_BATCH_SIZE: String(mlxConfig.batchSize),
-          ESCRIBANO_VLM_MAX_TOKENS: String(mlxConfig.maxTokens),
-          ESCRIBANO_MLX_SOCKET_PATH: mlxConfig.socketPath,
-        },
-      });
+    return new Promise((resolvePromise, rejectPromise) => {
+      const env: Record<string, string> = {
+        ...process.env,
+        ESCRIBANO_MLX_SOCKET_PATH: mlxConfig.socketPath,
+      } as Record<string, string>;
 
-      if (!bridge.process.stdout || !bridge.process.stderr) {
-        reject(new Error('Failed to create bridge process streams'));
+      if (mode === 'vlm') {
+        env.ESCRIBANO_VLM_MODEL = mlxConfig.model;
+        env.ESCRIBANO_VLM_BATCH_SIZE = String(mlxConfig.batchSize);
+        env.ESCRIBANO_VLM_MAX_TOKENS = String(mlxConfig.maxTokens);
+      }
+
+      bridgeState.process = spawn(
+        pythonPath,
+        [mlxConfig.bridgeScript, '--mode', mode],
+        {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env,
+        }
+      );
+
+      if (!bridgeState.process.stdout || !bridgeState.process.stderr) {
+        rejectPromise(new Error('Failed to create bridge process streams'));
         return;
       }
 
-      // Handle stdout (ready signal is JSON on first line)
       let readyReceived = false;
-      bridge.process.stdout.on('data', (data: Buffer) => {
+      bridgeState.process.stdout.on('data', (data: Buffer) => {
         const lines = data.toString().trim().split('\n');
         for (const line of lines) {
           if (!readyReceived && line.startsWith('{')) {
@@ -291,115 +292,116 @@ export function createMlxIntelligenceService(
               const msg = JSON.parse(line);
               if (msg.status === 'ready') {
                 readyReceived = true;
-                bridge.ready = true;
-                debugLog(`Bridge ready: ${msg.model}`);
-                resolve();
+                bridgeState.ready = true;
+                debugLog(
+                  `${mode.toUpperCase()} bridge ready: ${msg.model || msg.mode}`
+                );
+                resolvePromise();
               }
-            } catch {
-              // Not JSON, ignore
-            }
+            } catch {}
           }
         }
       });
 
-      // Handle stderr (logs from Python)
-      bridge.process.stderr.on('data', (data: Buffer) => {
+      bridgeState.process.stderr.on('data', (data: Buffer) => {
         const text = data.toString().trim();
-        if (text) {
-          console.log(text);
-        }
+        if (text) console.log(text);
       });
 
-      // Handle process exit
-      bridge.process.on('exit', (code, signal) => {
-        debugLog(`Bridge exited: code=${code} signal=${signal}`);
-        bridge.process = null;
-        bridge.ready = false;
+      bridgeState.process.on('exit', (code, signal) => {
+        debugLog(
+          `${mode.toUpperCase()} bridge exited: code=${code} signal=${signal}`
+        );
+        bridgeState.process = null;
+        bridgeState.ready = false;
         if (!readyReceived) {
-          reject(new Error(`Bridge failed to start: exit code ${code}`));
-        }
-      });
-
-      bridge.process.on('error', (err) => {
-        debugLog(`Bridge error: ${err.message}`);
-        if (!readyReceived) {
-          reject(new Error(`Failed to start bridge: ${err.message}`));
-        }
-      });
-
-      // Timeout for ready signal
-      setTimeout(() => {
-        if (!readyReceived) {
-          reject(
+          rejectPromise(
             new Error(
-              `Bridge startup timeout (${mlxConfig.startupTimeout / 1000}s)`
+              `${mode.toUpperCase()} bridge failed to start: exit code ${code}`
             )
           );
         }
-      }, mlxConfig.startupTimeout);
+      });
+
+      bridgeState.process.on('error', (err) => {
+        debugLog(`${mode.toUpperCase()} bridge error: ${err.message}`);
+        if (!readyReceived) {
+          rejectPromise(
+            new Error(
+              `Failed to start ${mode.toUpperCase()} bridge: ${err.message}`
+            )
+          );
+        }
+      });
+
+      setTimeout(() => {
+        if (!readyReceived) {
+          rejectPromise(
+            new Error(
+              `${mode.toUpperCase()} bridge startup timeout (${mlxConfig.timeout / 1000}s)`
+            )
+          );
+        }
+      }, mlxConfig.timeout);
     });
   };
 
-  /**
-   * Connect to the Unix socket.
-   */
-  const connect = (): Promise<Socket> => {
-    return new Promise((resolve, reject) => {
-      if (bridge.socket && !bridge.socket.destroyed) {
-        resolve(bridge.socket);
+  const connect = (
+    bridgeState: BridgeState,
+    socketPath: string
+  ): Promise<Socket> => {
+    return new Promise((resolvePromise, rejectPromise) => {
+      if (bridgeState.socket && !bridgeState.socket.destroyed) {
+        resolvePromise(bridgeState.socket);
         return;
       }
 
-      debugLog(`Connecting to socket: ${mlxConfig.socketPath}`);
-
-      const client = createConnection(mlxConfig.socketPath);
+      debugLog(`Connecting to socket: ${socketPath}`);
+      const client = createConnection(socketPath);
 
       client.on('connect', () => {
         debugLog('Socket connected');
-        bridge.socket = client;
-        resolve(client);
+        bridgeState.socket = client;
+        resolvePromise(client);
       });
 
       client.on('error', (err) => {
         debugLog(`Socket error: ${err.message}`);
-        bridge.socket = null;
-        reject(new Error(`Socket connection failed: ${err.message}`));
+        bridgeState.socket = null;
+        rejectPromise(new Error(`Socket connection failed: ${err.message}`));
       });
 
       client.on('close', () => {
         debugLog('Socket closed');
-        bridge.socket = null;
+        bridgeState.socket = null;
       });
 
-      // Timeout
       setTimeout(() => {
-        if (!bridge.socket) {
+        if (!bridgeState.socket) {
           client.destroy();
-          reject(new Error('Socket connection timeout'));
+          rejectPromise(new Error('Socket connection timeout'));
         }
       }, 5000);
     });
   };
 
-  /**
-   * Send request and receive streaming NDJSON responses.
-   */
   const sendRequest = async <T>(
+    bridgeState: BridgeState,
+    socketPath: string,
+    mode: 'vlm' | 'llm',
     request: { id: number; method: string; params: Record<string, unknown> },
     onBatch?: (
       response: T,
       progress: { current: number; total: number }
     ) => void
   ): Promise<T[]> => {
-    // Ensure bridge is running
-    if (!bridge.ready) {
-      await startBridge();
+    if (!bridgeState.ready) {
+      await startBridge(bridgeState, mode, socketPath);
     }
 
-    // Connect to socket
-    const socket = await connect();
+    const socket = await connect(bridgeState, socketPath);
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolvePromise, rejectPromise) => {
       const responses: T[] = [];
       let buffer = '';
 
@@ -420,21 +422,18 @@ export function createMlxIntelligenceService(
             };
 
             if ('error' in response && response.error) {
-              // Error response
-              reject(new Error(response.error));
+              rejectPromise(new Error(response.error));
               socket.off('data', onData);
               return;
             }
+
+            responses.push(response);
 
             if ('done' in response && response.done) {
-              // Final response
               socket.off('data', onData);
-              resolve(responses);
+              resolvePromise(responses);
               return;
             }
-
-            // Batch response
-            responses.push(response);
             if (onBatch && 'progress' in response) {
               const resp = response as T & {
                 progress: { current: number; total: number };
@@ -443,7 +442,6 @@ export function createMlxIntelligenceService(
             }
           } catch {
             debugLog(`Failed to parse response: ${line}`);
-            // Continue processing, might be partial
           }
         }
       };
@@ -451,58 +449,44 @@ export function createMlxIntelligenceService(
       socket.on('data', onData);
       socket.on('error', (err) => {
         socket.off('data', onData);
-        reject(new Error(`Socket error: ${err.message}`));
+        rejectPromise(new Error(`Socket error: ${err.message}`));
       });
 
-      // Send request
       const requestJson = `${JSON.stringify(request)}\n`;
       debugLog(`Sending request: id=${request.id} method=${request.method}`);
       socket.write(requestJson);
     });
   };
 
-  // Return IntelligenceService implementation
   return {
-    /**
-     * Classify transcript - NOT IMPLEMENTED for MLX backend.
-     */
     async classify(
       _transcript: Transcript,
       _visualLogs?: VisualLog[]
     ): Promise<Classification> {
       throw new Error(
-        'MLX adapter does not support classify(). Use Ollama backend for this operation.'
+        'MLX adapter does not support classify(). Use Ollama backend.'
       );
     },
 
-    /**
-     * Classify segment - NOT IMPLEMENTED for MLX backend.
-     */
     async classifySegment(
       _segment: unknown,
       _transcript?: Transcript
     ): Promise<Classification> {
       throw new Error(
-        'MLX adapter does not support classifySegment(). Use Ollama backend for this operation.'
+        'MLX adapter does not support classifySegment(). Use Ollama backend.'
       );
     },
 
-    /**
-     * Extract metadata - NOT IMPLEMENTED for MLX backend.
-     */
     async extractMetadata(
       _transcript: Transcript,
       _classification: Classification,
       _visualLogs?: VisualLog[]
     ): Promise<TranscriptMetadata> {
       throw new Error(
-        'MLX adapter does not support extractMetadata(). Use Ollama backend for this operation.'
+        'MLX adapter does not support extractMetadata(). Use Ollama backend.'
       );
     },
 
-    /**
-     * Generate artifact - NOT IMPLEMENTED for MLX backend.
-     */
     async generate(
       _artifactType: ArtifactType,
       _context: {
@@ -513,15 +497,10 @@ export function createMlxIntelligenceService(
       }
     ): Promise<string> {
       throw new Error(
-        'MLX adapter does not support generate(). Use Ollama backend for this operation.'
+        'MLX adapter does not support generate(). Use Ollama backend.'
       );
     },
 
-    /**
-     * Describe images using MLX-VLM with interleaved batching.
-     *
-     * This is the primary method for VLM frame processing.
-     */
     async describeImages(
       images: Array<{ imagePath: string; timestamp: number }>,
       options: {
@@ -534,7 +513,6 @@ export function createMlxIntelligenceService(
       } = {}
     ): Promise<FrameDescription[]> {
       const total = images.length;
-
       if (total === 0) {
         debugLog('No images to process');
         return [];
@@ -547,7 +525,6 @@ export function createMlxIntelligenceService(
 
       const startTime = Date.now();
       const allResults: FrameDescription[] = [];
-
       const requestId = Date.now();
 
       const handleBatch = (
@@ -560,14 +537,11 @@ export function createMlxIntelligenceService(
         if (response.results) {
           for (const result of response.results) {
             allResults.push(result);
-
-            // Fire callback for each frame
             if (options.onImageProcessed) {
               options.onImageProcessed(result, progress);
             }
           }
 
-          // Log progress every 10 frames
           if (
             progress.current % 10 === 0 ||
             progress.current === progress.total
@@ -581,6 +555,9 @@ export function createMlxIntelligenceService(
 
       try {
         await sendRequest(
+          vlmBridge,
+          getVlmSocketPath(),
+          'vlm',
           {
             id: requestId,
             method: 'describe_images',
@@ -611,30 +588,21 @@ export function createMlxIntelligenceService(
       }
     },
 
-    /**
-     * Embed text - NOT IMPLEMENTED for MLX backend.
-     */
     async embedText(
       _texts: string[],
       _options?: { batchSize?: number }
     ): Promise<number[][]> {
       throw new Error(
-        'MLX adapter does not support embedText(). Use Ollama backend for this operation.'
+        'MLX adapter does not support embedText(). Use Ollama backend.'
       );
     },
 
-    /**
-     * Extract topics - NOT IMPLEMENTED for MLX backend.
-     */
     async extractTopics(_observations: DbObservation[]): Promise<string[]> {
       throw new Error(
-        'MLX adapter does not support extractTopics(). Use Ollama backend for this operation.'
+        'MLX adapter does not support extractTopics(). Use Ollama backend.'
       );
     },
 
-    /**
-     * Generate text using MLX-LM (text-only LLM generation).
-     */
     async generateText(
       prompt: string,
       options?: {
@@ -644,50 +612,44 @@ export function createMlxIntelligenceService(
         think?: boolean;
       }
     ): Promise<string> {
-      const model = options?.model;
-      if (!model) {
-        throw new Error('MLX generateText() requires a model name');
-      }
-
+      const modelSelection = await selectBestMLXModel();
+      const resolvedModel = options?.model ?? modelSelection.model;
       const requestId = Date.now();
+      const llmSocketPath = getLlmSocketPath();
 
       try {
-        // First, load the LLM model
-        await sendRequest(
-          {
-            id: requestId,
-            method: 'load_llm',
-            params: { model },
-          },
-          undefined
-        );
+        if (llmBridge.loadedModel !== resolvedModel) {
+          if (llmBridge.loadedModel) {
+            debugLog(`Unloading previous LLM model: ${llmBridge.loadedModel}`);
+            await sendRequest(llmBridge, llmSocketPath, 'llm', {
+              id: requestId,
+              method: 'unload_llm',
+              params: {},
+            });
+          }
 
-        // Build messages for the LLM
-        const messages: Array<{ role: string; content: string }> = [
-          {
-            role: 'system',
-            content: 'You are a helpful assistant.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ];
-
-        // Generate text
-        const responses = await sendRequest(
-          {
+          debugLog(`Loading LLM model: ${resolvedModel}`);
+          console.log(`[LLM] Loading model: ${resolvedModel}`);
+          await sendRequest(llmBridge, llmSocketPath, 'llm', {
             id: requestId + 1,
-            method: 'generate_text',
-            params: {
-              messages,
-              maxTokens: options?.numPredict ?? 4000,
-              temperature: 0.7,
-              think: options?.think ?? false,
-            },
+            method: 'load_llm',
+            params: { model: resolvedModel },
+          });
+          llmBridge.loadedModel = resolvedModel;
+          console.log('[LLM] Model loaded');
+        }
+
+        debugLog(`Generating text (${prompt.length} chars)...`);
+        const responses = await sendRequest(llmBridge, llmSocketPath, 'llm', {
+          id: requestId + 2,
+          method: 'generate_text',
+          params: {
+            rawPrompt: prompt,
+            maxTokens: options?.numPredict ?? 4000,
+            temperature: 0.7,
+            think: options?.think ?? false,
           },
-          undefined
-        );
+        });
 
         if (responses.length === 0) {
           throw new Error('No response from LLM generation');
@@ -698,67 +660,54 @@ export function createMlxIntelligenceService(
           throw new Error(`Text generation failed: ${response.error}`);
         }
 
+        debugLog(`Generated ${response.text?.length || 0} chars`);
         return response.text || '';
-      } finally {
-        // Always unload the LLM model after generation
-        try {
-          await sendRequest(
-            {
-              id: requestId + 2,
-              method: 'unload_llm',
-              params: {},
-            },
-            undefined
-          );
-        } catch (e) {
-          debugLog(`Warning: failed to unload LLM: ${(e as Error).message}`);
-        }
+      } catch (error) {
+        const message = (error as Error).message;
+        console.error(`[LLM] ERROR: ${message}`);
+        throw error;
       }
     },
 
-    /**
-     * Load an LLM model into the bridge (for manual control).
-     */
     async loadLlm(model: string): Promise<void> {
       const requestId = Date.now();
-      await sendRequest(
-        {
-          id: requestId,
-          method: 'load_llm',
-          params: { model },
-        },
-        undefined
-      );
-    },
+      const llmSocketPath = getLlmSocketPath();
 
-    /**
-     * Unload the VLM model to free memory (for sequential VLM→LLM swap).
-     */
-    async unloadVlm(): Promise<void> {
-      const requestId = Date.now();
-      await sendRequest(
-        {
-          id: requestId,
-          method: 'unload_vlm',
-          params: {},
-        },
-        undefined
-      );
-    },
-
-    /**
-     * Unload the LLM model to free memory.
-     */
-    async unloadLlm(): Promise<void> {
-      const requestId = Date.now();
-      await sendRequest(
-        {
+      if (llmBridge.loadedModel && llmBridge.loadedModel !== model) {
+        await sendRequest(llmBridge, llmSocketPath, 'llm', {
           id: requestId,
           method: 'unload_llm',
           params: {},
-        },
-        undefined
-      );
+        });
+      }
+
+      await sendRequest(llmBridge, llmSocketPath, 'llm', {
+        id: requestId + 1,
+        method: 'load_llm',
+        params: { model },
+      });
+      llmBridge.loadedModel = model;
+    },
+
+    async unloadVlm(): Promise<void> {
+      if (!vlmBridge.ready) return;
+      const requestId = Date.now();
+      await sendRequest(vlmBridge, getVlmSocketPath(), 'vlm', {
+        id: requestId,
+        method: 'unload_vlm',
+        params: {},
+      });
+    },
+
+    async unloadLlm(): Promise<void> {
+      if (!llmBridge.ready) return;
+      const requestId = Date.now();
+      await sendRequest(llmBridge, getLlmSocketPath(), 'llm', {
+        id: requestId,
+        method: 'unload_llm',
+        params: {},
+      });
+      llmBridge.loadedModel = null;
     },
 
     getResourceName(): string {
@@ -766,7 +715,7 @@ export function createMlxIntelligenceService(
     },
 
     getPid(): number | null {
-      return bridge.process?.pid ?? null;
+      return vlmBridge.process?.pid ?? llmBridge.process?.pid ?? null;
     },
   };
 }

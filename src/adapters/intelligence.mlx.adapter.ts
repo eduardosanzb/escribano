@@ -33,18 +33,19 @@ import type {
   TranscriptMetadata,
   VisualLog,
 } from '../0_types.js';
+import { loadConfig } from '../config.js';
 import {
   ESCRIBANO_HOME,
+  ESCRIBANO_VENV,
   ESCRIBANO_VENV_PYTHON,
   getPythonPath,
 } from '../python-utils.js';
 import type { ResourceTrackable } from '../stats/types.js';
 import { selectBestMLXModel } from '../utils/model-detector.js';
 
-const DEBUG_MLX = process.env.ESCRIBANO_VERBOSE === 'true';
-
 function debugLog(...args: unknown[]): void {
-  if (DEBUG_MLX) {
+  const config = loadConfig();
+  if (config.verbose) {
     console.log('[MLX]', ...args);
   }
 }
@@ -55,6 +56,7 @@ interface MlxConfig {
   maxTokens: number;
   socketPath: string;
   bridgeScript: string;
+  startupTimeout: number;
 }
 
 interface BridgeState {
@@ -76,21 +78,8 @@ interface FrameDescription {
   raw_response?: string;
 }
 
-interface MlxConfigWithTimeout extends MlxConfig {
-  timeout: number;
-}
-
-const DEFAULT_CONFIG: MlxConfigWithTimeout = {
-  model:
-    process.env.ESCRIBANO_VLM_MODEL ??
-    'mlx-community/Qwen3-VL-2B-Instruct-bf16',
-  batchSize: Number(process.env.ESCRIBANO_VLM_BATCH_SIZE) || 4,
-  maxTokens: Number(process.env.ESCRIBANO_VLM_MAX_TOKENS) || 2000,
-  socketPath:
-    process.env.ESCRIBANO_MLX_SOCKET_PATH ?? '/tmp/escribano-mlx.sock',
-  bridgeScript: resolve(__dirname, '../../scripts/mlx_bridge.py'),
-  timeout: Number(process.env.ESCRIBANO_MLX_TIMEOUT) || 120000,
-};
+/** pip binary inside Escribano's managed venv. */
+const _ESCRIBANO_VENV_PIP = resolve(ESCRIBANO_VENV, 'bin', 'pip');
 
 function runVisible(cmd: string, args: string[]): Promise<void> {
   return new Promise((res, rej) => {
@@ -176,7 +165,17 @@ export function cleanupMlxBridge(): void {
 export function createMlxIntelligenceService(
   _config: Partial<IntelligenceConfig> = {}
 ): IntelligenceService & ResourceTrackable {
-  const mlxConfig = { ...DEFAULT_CONFIG };
+  // Load unified config (respects env vars, config file, and RAM-aware defaults)
+  const config = loadConfig();
+
+  const mlxConfig: MlxConfig = {
+    model: config.vlmModel,
+    batchSize: config.vlmBatchSize,
+    maxTokens: config.vlmMaxTokens,
+    socketPath: config.mlxSocketPath,
+    bridgeScript: resolve(__dirname, '../../scripts/mlx_bridge.py'),
+    startupTimeout: config.mlxStartupTimeout,
+  };
 
   const vlmBridge: BridgeState = {
     process: null,
@@ -351,11 +350,11 @@ export function createMlxIntelligenceService(
           startupTimer = null;
           rejectPromise(
             new Error(
-              `${mode.toUpperCase()} bridge startup timeout (${mlxConfig.timeout / 1000}s)`
+              `${mode.toUpperCase()} bridge startup timeout (${mlxConfig.startupTimeout / 1000}s)`
             )
           );
         }
-      }, mlxConfig.timeout);
+      }, mlxConfig.startupTimeout);
     });
   };
 

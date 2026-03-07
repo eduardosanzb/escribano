@@ -16,6 +16,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import type {
   CaptureSource,
+  IntelligenceConfig,
   IntelligenceService,
   OutlineConfig,
   Repositories,
@@ -43,11 +44,14 @@ import {
   cleanupMlxBridge,
   createMlxIntelligenceService,
 } from './adapters/intelligence.mlx.adapter.js';
-import { createOllamaIntelligenceService } from './adapters/intelligence.ollama.adapter.js';
+import {
+  createOllamaIntelligenceService,
+  unloadOllamaModel,
+} from './adapters/intelligence.ollama.adapter.js';
 import { createOutlinePublishingService } from './adapters/publishing.outline.adapter.js';
 import { createWhisperTranscriptionService } from './adapters/transcription.whisper.adapter.js';
 import { createFfmpegVideoService } from './adapters/video.ffmpeg.adapter.js';
-import { createDefaultConfig, loadConfig } from './config.js';
+import { createDefaultConfig, loadConfig, logConfig } from './config.js';
 import { getDbPath, getRepositories } from './db/index.js';
 import {
   log,
@@ -117,6 +121,11 @@ export async function initializeSystem(): Promise<SystemContext> {
   // Create default config file if it doesn't exist
   createDefaultConfig();
 
+  // Load and log unified configuration
+  const config = loadConfig();
+  logConfig();
+  console.log('');
+
   console.log('Initializing database...');
   const repos = getRepositories();
   console.log(`Database ready: ${getDbPath()}`);
@@ -125,20 +134,15 @@ export async function initializeSystem(): Promise<SystemContext> {
   // Setup stats observer to capture pipeline events
   setupStatsObserver(repos.stats);
 
-  // Load config
-  const config = loadConfig();
-
   // Detect best LLM model based on configured backend
   let llm: IntelligenceService;
   let mlxService: ReturnType<typeof createMlxIntelligenceService> | null = null;
-  let selectedMlxModel: string | null = null;
 
   if (config.llmBackend === 'mlx') {
     console.log('[LLM] Using MLX for text generation');
     const mlxModelSelection = await selectBestMLXModel();
     console.log(formatModelSelection(mlxModelSelection));
     console.log('');
-    selectedMlxModel = mlxModelSelection.model;
     mlxService = createMlxIntelligenceService();
     llm = mlxService;
   } else {
@@ -221,6 +225,9 @@ export async function processVideo(
   } = options;
   const { repos, adapters, outlineConfig } = ctx;
   const { llm, video, preprocessor, transcription } = adapters;
+
+  // Load unified config for lifecycle management
+  const config = loadConfig();
 
   try {
     // Create capture source for this specific file
@@ -523,6 +530,27 @@ export async function processVideo(
       );
       artifact = pipelineResult.artifact;
       outlineUrl = pipelineResult.outlineUrl;
+
+      // Unload LLM after artifact generation to free memory (good hygiene for all RAM tiers)
+      if (config.llmModel) {
+        console.log('[LLM] Unloading model to free memory...');
+        const intelConfig: IntelligenceConfig = {
+          provider: 'ollama',
+          endpoint: 'http://localhost:11434/api/chat',
+          model: config.llmModel,
+          generationModel: config.llmModel,
+          visionModel: config.vlmModel,
+          maxRetries: 3,
+          timeout: 600000,
+          keepAlive: '10m',
+          maxContextSize: 131072,
+          embedding: { model: 'nomic-embed-text', similarityThreshold: 0.75 },
+          vlmBatchSize: config.vlmBatchSize,
+          vlmMaxTokens: config.vlmMaxTokens,
+          mlxSocketPath: config.mlxSocketPath,
+        };
+        await unloadOllamaModel(config.llmModel, intelConfig);
+      }
     }
 
     console.log('\n✓ Complete!');

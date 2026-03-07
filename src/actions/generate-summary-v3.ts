@@ -82,20 +82,41 @@ export async function generateSummaryV3(
 
   log('info', `[Summary V3] Found ${allTopicBlocks.length} TopicBlocks`);
 
-  // Group TopicBlocks into subjects
-  log('info', '[Summary V3] Grouping TopicBlocks into subjects...');
-  const groupingResult = await groupTopicBlocksIntoSubjects(
-    allTopicBlocks,
-    intelligence,
-    recordingId
-  );
+  // Check if subjects already exist for this recording
+  const existingSubjects = repos.subjects.findByRecording(recordingId);
 
-  const { subjects } = groupingResult;
-  const { personalDuration, workDuration } = groupingResult;
+  let subjects: Subject[];
+  let personalDuration: number;
+  let workDuration: number;
 
-  // Save subjects to database
-  log('info', `[Summary V3] Saving ${subjects.length} subjects to database...`);
-  saveSubjectsToDatabase(subjects, recordingId, repos);
+  if (existingSubjects.length > 0) {
+    log(
+      'info',
+      `[Summary V3] Reusing ${existingSubjects.length} existing subjects (no re-grouping needed)`
+    );
+    const loaded = loadExistingSubjects(existingSubjects, repos);
+    subjects = loaded.subjects;
+    personalDuration = loaded.personalDuration;
+    workDuration = loaded.workDuration;
+  } else {
+    // Group TopicBlocks into subjects
+    log('info', '[Summary V3] Grouping TopicBlocks into subjects...');
+    const groupingResult = await groupTopicBlocksIntoSubjects(
+      allTopicBlocks,
+      intelligence,
+      recordingId
+    );
+
+    log(
+      'info',
+      `[Summary V3] Saving ${groupingResult.subjects.length} subjects to database...`
+    );
+    saveSubjectsToDatabase(groupingResult.subjects, recordingId, repos);
+
+    subjects = groupingResult.subjects;
+    personalDuration = groupingResult.personalDuration;
+    workDuration = groupingResult.workDuration;
+  }
 
   // Filter TopicBlocks based on personal/work classification
   let topicBlocksToUse = allTopicBlocks;
@@ -108,7 +129,8 @@ export async function generateSummaryV3(
       const subjectForBlock = subjects.find((s) =>
         s.topicBlockIds.includes(block.id)
       );
-      return !subjectForBlock?.isPersonal;
+      // Use the collected personalSubjectIds set for filtering
+      return !personalSubjectIds.has(subjectForBlock?.id ?? '');
     });
   }
 
@@ -464,4 +486,49 @@ ${section.transcript}
 `;
 
   return summary;
+}
+
+function loadExistingSubjects(
+  existingSubjects: Array<{
+    id: string;
+    label: string;
+    is_personal: number;
+    duration: number;
+    activity_breakdown: string | null;
+    metadata: string | null;
+  }>,
+  repos: Repositories
+): { subjects: Subject[]; personalDuration: number; workDuration: number } {
+  const subjects: Subject[] = [];
+
+  for (const dbSubject of existingSubjects) {
+    const topicBlocks = repos.subjects.getTopicBlocks(dbSubject.id);
+    const activityBreakdown = dbSubject.activity_breakdown
+      ? JSON.parse(dbSubject.activity_breakdown)
+      : {};
+
+    const metadata = dbSubject.metadata ? JSON.parse(dbSubject.metadata) : {};
+    const apps = metadata.apps || [];
+
+    subjects.push({
+      id: dbSubject.id,
+      recordingId: topicBlocks[0]?.recording_id || '',
+      label: dbSubject.label,
+      topicBlockIds: topicBlocks.map((b) => b.id),
+      totalDuration: dbSubject.duration,
+      activityBreakdown,
+      apps,
+      isPersonal: dbSubject.is_personal === 1,
+    });
+  }
+
+  const personalDuration = subjects
+    .filter((s) => s.isPersonal)
+    .reduce((sum, s) => sum + s.totalDuration, 0);
+
+  const workDuration = subjects
+    .filter((s) => !s.isPersonal)
+    .reduce((sum, s) => sum + s.totalDuration, 0);
+
+  return { subjects, personalDuration, workDuration };
 }

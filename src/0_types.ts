@@ -529,7 +529,7 @@ export const intelligenceConfigSchema = z.object({
     similarityThreshold: 0.75,
   }),
   // MLX-VLM specific config
-  vlmBatchSize: z.number().default(4),
+  vlmBatchSize: z.number().default(2),
   vlmMaxTokens: z.number().default(2000),
   mlxSocketPath: z.string().default('/tmp/escribano-mlx.sock'),
 });

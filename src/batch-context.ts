@@ -73,7 +73,7 @@ const MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
 export interface SystemContext {
   repos: Repositories;
   adapters: {
-    vlm: IntelligenceService;
+    vlm: IntelligenceService | null;
     llm: IntelligenceService;
     video: VideoService;
     preprocessor: AudioPreprocessor;
@@ -128,18 +128,19 @@ export async function initializeSystem(): Promise<SystemContext> {
   // Load config
   const config = loadConfig();
 
-  // Initialize adapters ONCE
-  console.log('[VLM] Using MLX-VLM for image processing');
-  const vlm = createMlxIntelligenceService();
-
   // Detect best LLM model based on configured backend
   let llm: IntelligenceService;
+  let mlxService: ReturnType<typeof createMlxIntelligenceService> | null = null;
+  let selectedMlxModel: string | null = null;
+
   if (config.llmBackend === 'mlx') {
     console.log('[LLM] Using MLX for text generation');
     const mlxModelSelection = await selectBestMLXModel();
     console.log(formatModelSelection(mlxModelSelection));
     console.log('');
-    llm = createMlxIntelligenceService();
+    selectedMlxModel = mlxModelSelection.model;
+    mlxService = createMlxIntelligenceService();
+    llm = mlxService;
   } else {
     console.log('[LLM] Using Ollama for text generation');
     const ollamaModelSelection = await selectBestLLMModel();
@@ -157,13 +158,10 @@ export async function initializeSystem(): Promise<SystemContext> {
     outputFormat: 'json',
   });
 
-  // Setup resource tracking
   const resourceTracker = new ResourceTracker();
-  resourceTracker.register(vlm as ResourceTrackable);
   resourceTracker.register(video as ResourceTrackable);
   resourceTracker.register(preprocessor as ResourceTrackable);
 
-  // Only register Ollama if it's the LLM backend
   if (config.llmBackend === 'ollama') {
     resourceTracker.register({
       getResourceName: () => 'ollama',
@@ -177,6 +175,8 @@ export async function initializeSystem(): Promise<SystemContext> {
         }
       },
     });
+  } else if (mlxService) {
+    resourceTracker.register(mlxService as unknown as ResourceTrackable);
   }
   setResourceTracker(resourceTracker);
 
@@ -184,7 +184,13 @@ export async function initializeSystem(): Promise<SystemContext> {
 
   return {
     repos,
-    adapters: { vlm, llm, video, preprocessor, transcription },
+    adapters: {
+      vlm: null as any, // Will be created lazily
+      llm,
+      video,
+      preprocessor,
+      transcription,
+    },
     resourceTracker,
     outlineConfig,
     config,
@@ -214,7 +220,7 @@ export async function processVideo(
     printToStdout = false,
   } = options;
   const { repos, adapters, outlineConfig } = ctx;
-  const { vlm, llm, video, preprocessor, transcription } = adapters;
+  const { llm, video, preprocessor, transcription } = adapters;
 
   try {
     // Create capture source for this specific file
@@ -273,6 +279,21 @@ export async function processVideo(
       dbRec &&
       (dbRec.status === 'processed' || dbRec.status === 'published') &&
       !force;
+
+    // Create VLM adapter lazily (only if needed)
+    let vlm: IntelligenceService | null = null;
+    if (!skipProcessing) {
+      // Reuse the same MLX service instance for VLM (unified adapter handles both)
+      if (mlxService) {
+        vlm = mlxService;
+      } else {
+        console.log('[VLM] Initializing MLX-VLM for frame analysis...');
+        vlm = createMlxIntelligenceService();
+        ctx.resourceTracker.register(vlm as unknown as ResourceTrackable);
+      }
+      ctx.adapters.vlm = vlm;
+    }
+
     if (!skipProcessing) {
       const runType = force
         ? 'force'
@@ -282,6 +303,10 @@ export async function processVideo(
       const runMetadata = collectRunMetadata(ctx.resourceTracker, ctx.config);
 
       await withPipeline(recording.id, runType, runMetadata, async () => {
+        if (!vlm)
+          throw new Error(
+            '[VLM] Internal error: VLM adapter expected but not initialized'
+          );
         await processRecordingV3(
           recording.id,
           repos,
@@ -289,12 +314,32 @@ export async function processVideo(
           { force }
         );
       });
+
+      // Clean up VLM bridge after processing to free memory for LLM
+      if (vlm) {
+        console.log('[VLM] Unloading VLM model to free memory...');
+        await vlm.unloadVlm?.();
+        // Note: We don't kill the bridge process here, just unload the model
+        // The bridge process will be reused for subsequent recordings if needed
+      }
     }
 
     // Generate artifact and publish (unless skipped), tracked as a pipeline run
     let artifact: ArtifactResult | null = null;
     let outlineUrl: string | undefined;
     if (!skipSummary) {
+      // Guard: Ensure VLM is unloaded before LLM generation to prevent memory contention
+      if (ctx.adapters.vlm) {
+        console.log(
+          '[VLM] Warning: VLM bridge still loaded during artifact generation'
+        );
+        console.log('[VLM] Unloading to prevent memory contention with LLM...');
+        if ('unloadVlm' in ctx.adapters.vlm && ctx.adapters.vlm.unloadVlm) {
+          await ctx.adapters.vlm.unloadVlm();
+        }
+        ctx.adapters.vlm = null;
+      }
+
       const artifactRunMetadata = collectRunMetadata(
         ctx.resourceTracker,
         ctx.config
@@ -307,189 +352,172 @@ export async function processVideo(
           console.log(`\nGenerating ${format} artifact...`);
           let generatedArtifact: ArtifactResult;
 
-          // Load LLM model if using MLX
-          let llmLoadedForMLX = false;
-          if (ctx.config.llmBackend === 'mlx') {
-            const mlxAdapter = llm as any;
-            const llmModel =
-              ctx.config.llmMlxModel || (await selectBestMLXModel()).model;
-            console.log(`[LLM] Loading model ${llmModel}...`);
-            await mlxAdapter.loadLlm(llmModel);
-            llmLoadedForMLX = true;
-          }
+          // LLM model loading is handled internally by generateText()
+          // No explicit load/unload calls needed here
 
-          try {
-            if (format === 'narrative') {
-              // Route narrative through the corrected path
-              generatedArtifact = await generateSummaryV3(
-                recording.id,
-                repos,
-                llm,
-                {
-                  recordingId: recording.id,
-                  outputDir: options.outputDir,
-                  useTemplate: false,
-                  includePersonal,
-                  copyToClipboard,
-                  printToStdout,
-                }
-              );
-            } else {
-              // Card and standup use the original path
-              generatedArtifact = await generateArtifactV3(
-                recording.id,
-                repos,
-                llm,
-                {
-                  recordingId: recording.id,
-                  format,
-                  includePersonal,
-                  copyToClipboard,
-                  printToStdout,
-                }
-              );
-            }
-
-            console.log(`Artifact saved: ${generatedArtifact.filePath}`);
-            if (generatedArtifact.workDuration > 0) {
-              const workMins = Math.round(generatedArtifact.workDuration / 60);
-              console.log(`Work time: ${workMins} minutes`);
-            }
-            if (generatedArtifact.personalDuration > 0 && !includePersonal) {
-              const personalMins = Math.round(
-                generatedArtifact.personalDuration / 60
-              );
-              console.log(`Personal time: ${personalMins} minutes (filtered)`);
-            }
-
-            // Publish to Outline (unless no config)
-            let publishedUrl: string | undefined;
-            if (outlineConfig) {
-              try {
-                await step('outline publish', async () => {
-                  console.log('\nPublishing to Outline...');
-                  const publishing =
-                    createOutlinePublishingService(outlineConfig);
-                  const topicBlocks = repos.topicBlocks.findByRecording(
-                    recording.id
-                  );
-                  const dbRecording = repos.recordings.findById(recording.id);
-
-                  if (
-                    dbRecording &&
-                    !hasContentChanged(
-                      dbRecording,
-                      generatedArtifact.content,
-                      format
-                    )
-                  ) {
-                    console.log('Content unchanged, skipping publish.');
-                  } else {
-                    const published = await publishSummaryV3(
-                      recording.id,
-                      generatedArtifact.content,
-                      topicBlocks,
-                      repos,
-                      publishing,
-                      { collectionName: outlineConfig.collectionName, format }
-                    );
-
-                    const outlineInfo: OutlineMetadata = {
-                      url: published.url,
-                      documentId: published.documentId,
-                      collectionId: published.collectionId,
-                      publishedAt: new Date().toISOString(),
-                      contentHash: published.contentHash,
-                    };
-                    updateRecordingOutlineMetadata(
-                      recording.id,
-                      outlineInfo,
-                      repos,
-                      format
-                    );
-
-                    console.log(`Published to Outline: ${published.url}`);
-                    publishedUrl = published.url;
-                  }
-
-                  // Update status BEFORE rebuilding index so findByStatus('published') includes this recording
-                  repos.recordings.updateStatus(
-                    recording.id,
-                    'published',
-                    null,
-                    null
-                  );
-                  log(
-                    'info',
-                    `[Outline] Recording ${recording.id} status updated to 'published'`
-                  );
-
-                  // Update global index (after status update so this recording is included)
-                  if (publishedUrl) {
-                    const indexResult = await updateGlobalIndex(
-                      repos,
-                      publishing,
-                      {
-                        collectionName: outlineConfig.collectionName,
-                      }
-                    );
-                    console.log(`Updated index: ${indexResult.url}`);
-                  }
-                });
-              } catch (error) {
-                const errorMessage = (error as Error).message;
-                console.warn(
-                  `Warning: Failed to publish to Outline: ${errorMessage}`
-                );
-                log('warn', `[Outline] Publishing failed: ${errorMessage}`);
-
-                // Store error in metadata
-                try {
-                  const dbRecording = repos.recordings.findById(recording.id);
-                  const currentMetadata = dbRecording?.source_metadata
-                    ? JSON.parse(dbRecording.source_metadata)
-                    : {};
-                  const existingOutline = currentMetadata.outline || {};
-                  const updatedMetadata = {
-                    ...currentMetadata,
-                    outline: {
-                      ...existingOutline,
-                      error: errorMessage,
-                      failedAt: new Date().toISOString(),
-                    },
-                  };
-                  repos.recordings.updateMetadata(
-                    recording.id,
-                    JSON.stringify(updatedMetadata)
-                  );
-                } catch (metaError) {
-                  log(
-                    'error',
-                    `[Outline] Failed to store error metadata: ${(metaError as Error).message}`
-                  );
-                }
+          if (format === 'narrative') {
+            // Route narrative through the corrected path
+            generatedArtifact = await generateSummaryV3(
+              recording.id,
+              repos,
+              llm,
+              {
+                recordingId: recording.id,
+                outputDir: options.outputDir,
+                useTemplate: false,
+                includePersonal,
+                copyToClipboard,
+                printToStdout,
               }
-            } else {
-              console.log(
-                'No Outline configuration found. Marking as complete locally.'
-              );
-              repos.recordings.updateStatus(
-                recording.id,
-                'published',
-                null,
-                null
-              );
-            }
-
-            return { artifact: generatedArtifact, outlineUrl: publishedUrl };
-          } finally {
-            // Unload LLM model if it was loaded
-            if (llmLoadedForMLX) {
-              const mlxAdapter = llm as any;
-              console.log('[LLM] Unloading model...');
-              await mlxAdapter.unloadLlm();
-            }
+            );
+          } else {
+            // Card and standup use the original path
+            generatedArtifact = await generateArtifactV3(
+              recording.id,
+              repos,
+              llm,
+              {
+                recordingId: recording.id,
+                format,
+                includePersonal,
+                copyToClipboard,
+                printToStdout,
+              }
+            );
           }
+
+          console.log(`Artifact saved: ${generatedArtifact.filePath}`);
+          if (generatedArtifact.workDuration > 0) {
+            const workMins = Math.round(generatedArtifact.workDuration / 60);
+            console.log(`Work time: ${workMins} minutes`);
+          }
+          if (generatedArtifact.personalDuration > 0 && !includePersonal) {
+            const personalMins = Math.round(
+              generatedArtifact.personalDuration / 60
+            );
+            console.log(`Personal time: ${personalMins} minutes (filtered)`);
+          }
+
+          // Publish to Outline (unless no config)
+          let publishedUrl: string | undefined;
+          if (outlineConfig) {
+            try {
+              await step('outline publish', async () => {
+                console.log('\nPublishing to Outline...');
+                const publishing =
+                  createOutlinePublishingService(outlineConfig);
+                const topicBlocks = repos.topicBlocks.findByRecording(
+                  recording.id
+                );
+                const dbRecording = repos.recordings.findById(recording.id);
+
+                if (
+                  dbRecording &&
+                  !hasContentChanged(
+                    dbRecording,
+                    generatedArtifact.content,
+                    format
+                  )
+                ) {
+                  console.log('Content unchanged, skipping publish.');
+                } else {
+                  const published = await publishSummaryV3(
+                    recording.id,
+                    generatedArtifact.content,
+                    topicBlocks,
+                    repos,
+                    publishing,
+                    { collectionName: outlineConfig.collectionName, format }
+                  );
+
+                  const outlineInfo: OutlineMetadata = {
+                    url: published.url,
+                    documentId: published.documentId,
+                    collectionId: published.collectionId,
+                    publishedAt: new Date().toISOString(),
+                    contentHash: published.contentHash,
+                  };
+                  updateRecordingOutlineMetadata(
+                    recording.id,
+                    outlineInfo,
+                    repos,
+                    format
+                  );
+
+                  console.log(`Published to Outline: ${published.url}`);
+                  publishedUrl = published.url;
+                }
+
+                // Update status BEFORE rebuilding index so findByStatus('published') includes this recording
+                repos.recordings.updateStatus(
+                  recording.id,
+                  'published',
+                  null,
+                  null
+                );
+                log(
+                  'info',
+                  `[Outline] Recording ${recording.id} status updated to 'published'`
+                );
+
+                // Update global index (after status update so this recording is included)
+                if (publishedUrl) {
+                  const indexResult = await updateGlobalIndex(
+                    repos,
+                    publishing,
+                    {
+                      collectionName: outlineConfig.collectionName,
+                    }
+                  );
+                  console.log(`Updated index: ${indexResult.url}`);
+                }
+              });
+            } catch (error) {
+              const errorMessage = (error as Error).message;
+              console.warn(
+                `Warning: Failed to publish to Outline: ${errorMessage}`
+              );
+              log('warn', `[Outline] Publishing failed: ${errorMessage}`);
+
+              // Store error in metadata
+              try {
+                const dbRecording = repos.recordings.findById(recording.id);
+                const currentMetadata = dbRecording?.source_metadata
+                  ? JSON.parse(dbRecording.source_metadata)
+                  : {};
+                const existingOutline = currentMetadata.outline || {};
+                const updatedMetadata = {
+                  ...currentMetadata,
+                  outline: {
+                    ...existingOutline,
+                    error: errorMessage,
+                    failedAt: new Date().toISOString(),
+                  },
+                };
+                repos.recordings.updateMetadata(
+                  recording.id,
+                  JSON.stringify(updatedMetadata)
+                );
+              } catch (metaError) {
+                log(
+                  'error',
+                  `[Outline] Failed to store error metadata: ${(metaError as Error).message}`
+                );
+              }
+            }
+          } else {
+            console.log(
+              'No Outline configuration found. Marking as complete locally.'
+            );
+            repos.recordings.updateStatus(
+              recording.id,
+              'published',
+              null,
+              null
+            );
+          }
+
+          return { artifact: generatedArtifact, outlineUrl: publishedUrl };
         }
       );
       artifact = pipelineResult.artifact;

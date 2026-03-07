@@ -284,6 +284,15 @@ export function createMlxIntelligenceService(
       }
 
       let readyReceived = false;
+      let startupTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const clearStartupTimer = () => {
+        if (startupTimer) {
+          clearTimeout(startupTimer);
+          startupTimer = null;
+        }
+      };
+
       bridgeState.process.stdout.on('data', (data: Buffer) => {
         const lines = data.toString().trim().split('\n');
         for (const line of lines) {
@@ -292,6 +301,7 @@ export function createMlxIntelligenceService(
               const msg = JSON.parse(line);
               if (msg.status === 'ready') {
                 readyReceived = true;
+                clearStartupTimer();
                 bridgeState.ready = true;
                 debugLog(
                   `${mode.toUpperCase()} bridge ready: ${msg.model || msg.mode}`
@@ -315,6 +325,7 @@ export function createMlxIntelligenceService(
         bridgeState.process = null;
         bridgeState.ready = false;
         if (!readyReceived) {
+          clearStartupTimer();
           rejectPromise(
             new Error(
               `${mode.toUpperCase()} bridge failed to start: exit code ${code}`
@@ -326,6 +337,7 @@ export function createMlxIntelligenceService(
       bridgeState.process.on('error', (err) => {
         debugLog(`${mode.toUpperCase()} bridge error: ${err.message}`);
         if (!readyReceived) {
+          clearStartupTimer();
           rejectPromise(
             new Error(
               `Failed to start ${mode.toUpperCase()} bridge: ${err.message}`
@@ -334,8 +346,9 @@ export function createMlxIntelligenceService(
         }
       });
 
-      setTimeout(() => {
+      startupTimer = setTimeout(() => {
         if (!readyReceived) {
+          startupTimer = null;
           rejectPromise(
             new Error(
               `${mode.toUpperCase()} bridge startup timeout (${mlxConfig.timeout / 1000}s)`
@@ -356,16 +369,27 @@ export function createMlxIntelligenceService(
         return;
       }
 
+      let connectionTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const clearConnectionTimer = () => {
+        if (connectionTimer) {
+          clearTimeout(connectionTimer);
+          connectionTimer = null;
+        }
+      };
+
       debugLog(`Connecting to socket: ${socketPath}`);
       const client = createConnection(socketPath);
 
       client.on('connect', () => {
+        clearConnectionTimer();
         debugLog('Socket connected');
         bridgeState.socket = client;
         resolvePromise(client);
       });
 
       client.on('error', (err) => {
+        clearConnectionTimer();
         debugLog(`Socket error: ${err.message}`);
         bridgeState.socket = null;
         rejectPromise(new Error(`Socket connection failed: ${err.message}`));
@@ -376,8 +400,9 @@ export function createMlxIntelligenceService(
         bridgeState.socket = null;
       });
 
-      setTimeout(() => {
+      connectionTimer = setTimeout(() => {
         if (!bridgeState.socket) {
+          connectionTimer = null;
           client.destroy();
           rejectPromise(new Error('Socket connection timeout'));
         }
@@ -613,7 +638,7 @@ export function createMlxIntelligenceService(
       }
     ): Promise<string> {
       const modelSelection = await selectBestMLXModel();
-      const resolvedModel = options?.model ?? modelSelection.model;
+      const resolvedModel = options?.model || modelSelection.model;
       const requestId = Date.now();
       const llmSocketPath = getLlmSocketPath();
 
@@ -630,13 +655,18 @@ export function createMlxIntelligenceService(
 
           debugLog(`Loading LLM model: ${resolvedModel}`);
           console.log(`[LLM] Loading model: ${resolvedModel}`);
-          await sendRequest(llmBridge, llmSocketPath, 'llm', {
-            id: requestId + 1,
-            method: 'load_llm',
-            params: { model: resolvedModel },
-          });
-          llmBridge.loadedModel = resolvedModel;
-          console.log('[LLM] Model loaded');
+          try {
+            await sendRequest(llmBridge, llmSocketPath, 'llm', {
+              id: requestId + 1,
+              method: 'load_llm',
+              params: { model: resolvedModel },
+            });
+            llmBridge.loadedModel = resolvedModel;
+            console.log('[LLM] Model loaded');
+          } catch (loadError) {
+            llmBridge.loadedModel = null;
+            throw loadError;
+          }
         }
 
         debugLog(`Generating text (${prompt.length} chars)...`);
@@ -681,12 +711,17 @@ export function createMlxIntelligenceService(
         });
       }
 
-      await sendRequest(llmBridge, llmSocketPath, 'llm', {
-        id: requestId + 1,
-        method: 'load_llm',
-        params: { model },
-      });
-      llmBridge.loadedModel = model;
+      try {
+        await sendRequest(llmBridge, llmSocketPath, 'llm', {
+          id: requestId + 1,
+          method: 'load_llm',
+          params: { model },
+        });
+        llmBridge.loadedModel = model;
+      } catch (loadError) {
+        llmBridge.loadedModel = null;
+        throw loadError;
+      }
     },
 
     async unloadVlm(): Promise<void> {

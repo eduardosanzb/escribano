@@ -82,6 +82,7 @@ function getArtifactFormats(): ArtifactFormat[] {
 
 async function main(): Promise<void> {
   const skipSummary = process.argv.includes('--skip-summary');
+  const forceArg = process.argv.includes('--force') || false;
   const formats = getArtifactFormats();
   const startTime = Date.now();
 
@@ -131,8 +132,10 @@ async function main(): Promise<void> {
     let videoSuccess = false;
     for (const format of formats) {
       console.log(`  Format: ${format}`);
+      console.log(`    Force: ${forceArg ? 'Yes' : 'No'}`);
+      console.log(`    Processing...`);
       const result = await processVideo(videoPath, ctx, {
-        force: false,
+        force: forceArg,
         skipSummary,
         format,
         includePersonal: true,

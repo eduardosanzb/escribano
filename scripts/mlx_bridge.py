@@ -462,6 +462,14 @@ def handle_describe_images(
     conn: socket.socket, model_obj: Any, processor_obj: Any, config_obj: Any, params: dict, request_id: int
 ) -> None:
     """Handle describe_images request with streaming batch responses."""
+    global model, processor, config
+    
+    # Reload model if it was unloaded (lazy reload after unload_vlm)
+    if model_obj is None:
+        log("VLM model was unloaded, reloading...")
+        model, processor, config = load_model()
+        model_obj, processor_obj, config_obj = model, processor, config
+    
     images = params.get("images", [])
     batch_size = params.get("batchSize", BATCH_SIZE)
     total = len(images)

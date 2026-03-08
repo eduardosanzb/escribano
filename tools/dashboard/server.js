@@ -647,16 +647,45 @@ app.get('/api/recording/:id/artifact-review', (req, res) => {
       return res.status(404).json({ error: 'Recording not found' });
     }
 
-    // Get artifact for this type (card, standup, narrative)
-    const artifact = db
+    // Get ALL artifacts for this type (card, standup, narrative)
+    const artifacts = db
       .prepare(
         `SELECT id, type, format, content, created_at
          FROM artifacts 
          WHERE recording_id = ? AND type = ?
-         ORDER BY created_at DESC
-         LIMIT 1`
+         ORDER BY created_at DESC`
       )
-      .get(id, format);
+      .all(id, format);
+
+    // Enrich each artifact with LLM backend info from its processing run
+    const artifactsWithMeta = artifacts.map(a => {
+      const run = db
+        .prepare(
+          `SELECT metadata 
+           FROM processing_runs 
+           WHERE recording_id = ? 
+             AND started_at <= ?
+             AND (completed_at >= ? OR completed_at IS NULL)
+             AND status = 'completed'
+           ORDER BY started_at DESC
+           LIMIT 1`
+        )
+        .get(id, a.created_at, a.created_at);
+
+      let llm_backend = null;
+      let llm_model = null;
+      if (run?.metadata) {
+        try {
+          const meta = JSON.parse(run.metadata);
+          llm_backend = meta.llm_backend || null;
+          llm_model = meta.llm_model || null;
+        } catch {}
+      }
+      return { ...a, llm_backend, llm_model };
+    });
+
+    // Single artifact for backwards compat (latest)
+    const artifact = artifactsWithMeta[0] || null;
 
     // Get subjects with activity breakdown
     const subjects = db
@@ -793,7 +822,8 @@ app.get('/api/recording/:id/artifact-review', (req, res) => {
         source_type: recording.source_type,
         video_path: recording.video_path
       },
-      artifact: artifact || null,
+      artifacts: artifactsWithMeta,
+      artifact: artifact,
       subjects: parsedSubjects,
       frames: parsedFrames,
       topic_blocks: topicBlocks,

@@ -49,12 +49,14 @@ Task tracking for Escribano development.
   - Sequential model lifecycle: VLM → unload → LLM → unload
   - Auto-detection via `selectBestMLXModel()`
   - Thinking mode, temperature, chat template support
-  - See ADR-008 for full details
+  - Production validated: 17 recordings, 100% LLM success rate
+  - See ADR-008 for full details and benchmarks
 - [ ] **Investigate 6K monitor FFmpeg failure** — One 30s recording failed, two others succeeded — *2-3h*
   - Error: MJPEG encoder failure with corrupted timestamps
   - Test without hardware acceleration (`--no-hwaccel`)
   - Add fallback encoder (libx264/libwebp)
   - Add dimension check and warning for >4096px
+  - See: `docs/learnings.md` for failure details
 - [ ] **Auto-detect ffmpeg hardware accelerator** — videotoolbox/vaapi/d3d11va with `--no-hwaccel` override — currently hardcoded (video.ffmpeg.adapter.ts:105, 259, 393) — *2h*
 - [ ] **Real-time capture pipeline** — Rust-based always-on capture — *20+ h*
   - Removes Cap/QuickTime dependency
@@ -115,7 +117,7 @@ Task tracking for Escribano development.
 - [x] **MLX-VLM Migration** — ADR-006 complete. 3.5x speedup achieved.
   - Token budget: 4000 per batch (16 frames)
   - Adapter: `intelligence.mlx.adapter.ts` + `scripts/mlx_bridge.py`
-  - VLM/LLM separation: MLX for images, Ollama for text
+  - VLM/LLM separation: MLX for images, Ollama for text (now unified in MLX-LM migration)
 
 ---
 

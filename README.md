@@ -95,19 +95,32 @@ Good for retrospectives or blog drafts.
 
 ## Benchmarks
 
-Ran the full pipeline on 15 real screen recordings:
+### Architecture Benefits (MLX Migration)
+
+| Improvement | Impact |
+|-------------|--------|
+| **Zero dependencies** | No external daemons required |
+| **Unified backend** | VLM + LLM use same MLX infrastructure |
+| **Native Metal** | Optimized for Apple Silicon |
+| **Memory efficient** | Sequential model loading (no OOM) |
+| **Auto-detection** | RAM-based model selection |
+
+### Production Run (March 2026)
+
+Processed **17 real screen recordings** with MLX backend:
 
 | Metric | Result |
 |--------|--------|
-| Videos processed | 15 |
-| Total video duration | 79 hours |
+| Videos processed | 17 |
+| Successful | 15 (88%) |
+| Total video duration | 25.6 hours |
 | Artifacts generated | 45 (3 formats × 15 videos) |
-| Success rate | 100% |
-| Total processing time | 124 min (~2 hours) |
-| Avg per video | **~8 min** (pipeline + all 3 formats) |
-| Avg LLM call | 26.9 seconds |
-| Efficiency | 9.2 seconds per minute of video |
+| **LLM generation** | **~2.2 min per video** |
+| Subject grouping | 78.7s avg |
+| Artifact generation | 53.6s avg |
+| LLM success rate | 100% (92 calls) |
 | Hardware | MacBook Pro M4 Max, 128GB |
+| Backend | MLX (Qwen3-VL-2B + Qwen3.5-27B) |
 
 Everything runs locally. No API keys. Nothing leaves your machine.
 

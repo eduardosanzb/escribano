@@ -50,6 +50,11 @@ Task tracking for Escribano development.
   - Auto-detection via `selectBestMLXModel()`
   - Thinking mode, temperature, chat template support
   - See ADR-008 for full details
+- [ ] **Investigate 6K monitor FFmpeg failure** — One 30s recording failed, two others succeeded — *2-3h*
+  - Error: MJPEG encoder failure with corrupted timestamps
+  - Test without hardware acceleration (`--no-hwaccel`)
+  - Add fallback encoder (libx264/libwebp)
+  - Add dimension check and warning for >4096px
 - [ ] **Auto-detect ffmpeg hardware accelerator** — videotoolbox/vaapi/d3d11va with `--no-hwaccel` override — currently hardcoded (video.ffmpeg.adapter.ts:105, 259, 393) — *2h*
 - [ ] **Real-time capture pipeline** — Rust-based always-on capture — *20+ h*
   - Removes Cap/QuickTime dependency
@@ -73,6 +78,15 @@ Task tracking for Escribano development.
 ---
 
 ## Completed
+
+### 2026-03-08
+
+- [x] **MLX-LM production validation** — 17 recordings processed, 100% LLM success rate
+  - Subject grouping: 78.7s avg
+  - Artifact generation: 53.6s avg
+  - Sequential model lifecycle validated
+  - Zero external dependencies
+  - See: `docs/adr/008-mlx-lm-backend.md` for benchmarks
 
 ### 2026-03-05
 

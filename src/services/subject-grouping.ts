@@ -109,8 +109,26 @@ export async function groupTopicBlocksIntoSubjects(
         model: SUBJECT_GROUPING_MODEL || undefined,
         numPredict: 2000,
         think: false,
+        debugContext: {
+          recordingId,
+          callType: 'subject_grouping',
+        },
       });
     });
+
+    // Validate response doesn't contain leaked thinking
+    if (
+      response.includes('Thinking Process:') ||
+      response.includes('Let me analyze') ||
+      response.includes('I can identify')
+    ) {
+      console.warn(
+        '[subject-grouping] Response contains thinking text - model may not respect think=false'
+      );
+      console.warn(
+        '[subject-grouping] This indicates a bug in mlx_bridge.py stripping logic'
+      );
+    }
 
     console.log(
       `[subject-grouping] LLM response (${response.length} chars):\n${response.slice(0, 500)}${response.length > 500 ? '...' : ''}`

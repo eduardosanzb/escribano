@@ -34,6 +34,7 @@ import type {
   VisualLog,
 } from '../0_types.js';
 import { loadConfig } from '../config.js';
+import { getDbPath } from '../db/index.js';
 import {
   ESCRIBANO_HOME,
   ESCRIBANO_VENV_PYTHON,
@@ -256,7 +257,17 @@ export function createMlxIntelligenceService(
       const env: Record<string, string> = {
         ...process.env,
         ESCRIBANO_MLX_SOCKET_PATH: mlxConfig.socketPath,
+        ESCRIBANO_DB_PATH: getDbPath(),
+        ESCRIBANO_DEBUG_LLM: String(config.debugLlm),
       } as Record<string, string>;
+
+      // Debug: log env vars being passed to Python bridge
+      if (config.debugLlm) {
+        console.log(
+          `[MLX] Passing DEBUG_LLM=${config.debugLlm} to ${mode} bridge`
+        );
+        console.log(`[MLX] DB_PATH: ${getDbPath()}`);
+      }
 
       if (mode === 'vlm') {
         env.ESCRIBANO_VLM_MODEL = mlxConfig.model;
@@ -630,6 +641,11 @@ export function createMlxIntelligenceService(
         expectJson?: boolean;
         numPredict?: number;
         think?: boolean;
+        debugContext?: {
+          recordingId?: string;
+          artifactId?: string;
+          callType: 'subject_grouping' | 'artifact_generation';
+        };
       }
     ): Promise<string> {
       const modelSelection = await selectBestMLXModel();
@@ -673,6 +689,7 @@ export function createMlxIntelligenceService(
             maxTokens: options?.numPredict ?? 4000,
             temperature: 0.7,
             think: options?.think ?? false,
+            debugContext: options?.debugContext,
           },
         });
 

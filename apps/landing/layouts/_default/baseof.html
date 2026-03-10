@@ -158,5 +158,56 @@
       }
     });
   </script>
+
+  <script>
+    // Waitlist form handler for Buttondown
+    function initWaitlistForm(formId, messageId) {
+      const form = document.getElementById(formId);
+      const messageEl = document.getElementById(messageId);
+      if (!form) return;
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const submitBtn = form.querySelector('.waitlist-submit');
+        const originalText = submitBtn.textContent;
+        const emailInput = form.querySelector('input[type="email"]');
+        
+        // Disable button and show loading state
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Joining...';
+        messageEl.textContent = '';
+        messageEl.classList.remove('error', 'success');
+
+        try {
+          const formData = new FormData(form);
+          const response = await fetch(form.action, {
+            method: 'POST',
+            body: formData,
+          });
+
+          // Buttondown redirects on success, so we check if request succeeded
+          if (response.ok || response.status === 0 || response.type === 'opaqueredirect') {
+            // Success
+            form.style.display = 'none';
+            messageEl.textContent = "You're on the list! We'll notify you when cloud launches.";
+            messageEl.classList.add('success');
+          } else {
+            throw new Error('Submission failed');
+          }
+        } catch (error) {
+          // Error
+          submitBtn.disabled = false;
+          submitBtn.textContent = originalText;
+          messageEl.textContent = 'Something went wrong. Try again or email info@escribano.work';
+          messageEl.classList.add('error');
+        }
+      });
+    }
+
+    // Initialize both forms
+    initWaitlistForm('waitlist-form-hero', 'waitlist-msg-hero');
+    initWaitlistForm('waitlist-form-pricing', 'waitlist-msg-pricing');
+  </script>
 </body>
 </html>

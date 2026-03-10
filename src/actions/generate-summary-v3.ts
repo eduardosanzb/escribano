@@ -361,8 +361,27 @@ ${section.transcript ? `**Audio Transcript:**\n${section.transcript}` : '*No aud
   const result = await step('llm_artifact_generation', async () => {
     return intelligence.generateText(prompt, {
       expectJson: false,
+      debugContext: {
+        recordingId: recording.id,
+        callType: 'artifact_generation',
+      },
     });
   });
+
+  // Validate response doesn't contain leaked thinking
+  if (
+    result.includes('Thinking Process:') ||
+    result.includes('Let me analyze') ||
+    result.includes('I can identify')
+  ) {
+    console.warn(
+      '[artifact-generation] Response contains thinking text - model may not respect think=false'
+    );
+    console.warn(
+      '[artifact-generation] This indicates a bug in mlx_bridge.py stripping logic'
+    );
+  }
+
   return result;
 }
 

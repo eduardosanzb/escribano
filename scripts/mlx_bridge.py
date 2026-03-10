@@ -23,6 +23,7 @@ import os
 import re
 import signal
 import socket
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -37,6 +38,10 @@ MAX_TOKENS = int(os.environ.get("ESCRIBANO_VLM_MAX_TOKENS", "2000"))
 SOCKET_PATH = os.environ.get("ESCRIBANO_MLX_SOCKET_PATH", "/tmp/escribano-mlx.sock")
 VERBOSE = os.environ.get("ESCRIBANO_VERBOSE", "false").lower() == "true"
 TEMPERATURE = 0.3
+
+# Debug logging configuration
+DB_PATH = os.environ.get("ESCRIBANO_DB_PATH", "")
+DEBUG_LLM = os.environ.get("ESCRIBANO_DEBUG_LLM", "false").lower() == "true"
 
 # Bridge mode (set via --mode flag)
 BridgeMode = Literal["vlm", "llm"]
@@ -105,7 +110,9 @@ processor = None
 config = None
 llm_model = None
 llm_tokenizer = None
+llm_loaded_model_name = None
 server_socket = None
+debug_db_conn = None
 
 
 def log(message: str, level: str = "info") -> None:
@@ -116,6 +123,47 @@ def log(message: str, level: str = "info") -> None:
         level, "[MLX]"
     )
     print(f"{prefix} {message}", file=sys.stderr, flush=True)
+
+
+def get_debug_db() -> sqlite3.Connection | None:
+    """Get or create debug database connection."""
+    global debug_db_conn
+    if not DEBUG_LLM or not DB_PATH:
+        return None
+    if debug_db_conn is None:
+        try:
+            debug_db_conn = sqlite3.connect(DB_PATH)
+            log(f"Connected to debug database: {DB_PATH}", "debug")
+        except Exception as e:
+            log(f"Failed to connect to debug database: {e}", "error")
+    return debug_db_conn
+
+
+def log_llm_call(data: dict) -> None:
+    """Log LLM call to debug table (best-effort)."""
+    db = get_debug_db()
+    if not db:
+        return
+    
+    try:
+        cursor = db.cursor()
+        cursor.execute("""
+            INSERT INTO llm_debug_log (
+                id, recording_id, artifact_id, call_type, prompt, result, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data['id'],
+            data.get('recording_id'),
+            data.get('artifact_id'),
+            data.get('call_type', 'unknown'),
+            data.get('prompt'),
+            data.get('result'),
+            json.dumps(data['metadata']),
+        ))
+        db.commit()
+        log(f"Logged LLM call to debug table: {data['id']}", "debug")
+    except Exception as e:
+        log(f"Failed to log LLM call (non-fatal): {e}", "error")
 
 
 def load_llm_model(model_name: str) -> tuple[Any, Any]:
@@ -182,7 +230,7 @@ def unload_vlm() -> None:
 
 def unload_llm() -> None:
     """Free LLM memory after generation."""
-    global llm_model, llm_tokenizer
+    global llm_model, llm_tokenizer, llm_loaded_model_name
     log("Unloading LLM model to free memory", "debug")
     try:
         import gc
@@ -190,6 +238,7 @@ def unload_llm() -> None:
         
         llm_model = None
         llm_tokenizer = None
+        llm_loaded_model_name = None
         gc.collect()
         mx.metal.clear_cache()  # Apple Silicon memory cleanup
         log("LLM unloaded successfully", "debug")
@@ -198,8 +247,8 @@ def unload_llm() -> None:
 
 
 def cleanup() -> None:
-    """Clean up socket file on exit."""
-    global server_socket
+    """Clean up socket file and debug database on exit."""
+    global server_socket, debug_db_conn
     if server_socket:
         try:
             server_socket.close()
@@ -211,6 +260,12 @@ def cleanup() -> None:
             log(f"Removed socket: {SOCKET_PATH}", "debug")
         except Exception as e:
             log(f"Failed to remove socket: {e}", "error")
+    if debug_db_conn:
+        try:
+            debug_db_conn.close()
+        except Exception:
+            pass
+        debug_db_conn = None
 
 
 def signal_handler(signum: int, frame: Any) -> None:
@@ -569,9 +624,10 @@ def handle_request(
         if method == "describe_images":
             handle_describe_images(conn, model_obj, processor_obj, config_obj, params, request_id)
         elif method == "load_llm":
-            global llm_model, llm_tokenizer
+            global llm_model, llm_tokenizer, llm_loaded_model_name
             try:
                 llm_model, llm_tokenizer = load_llm_model(params.get("model", ""))
+                llm_loaded_model_name = params.get("model", "")
                 send_response(conn, {"id": request_id, "status": "loaded", "done": True})
             except Exception as e:
                 send_response(conn, {"id": request_id, "error": str(e), "done": True})
@@ -652,14 +708,45 @@ def handle_request(
                     else:
                         response_text = str(output)
 
-                    # Strip thinking tags when think=True
-                    if think:
+                    # Store raw response for debug logging
+                    raw_response_text = response_text
+
+                    # Strip thinking tags when think=False (model may still output thinking)
+                    if not think:
+                        original_len = len(response_text)
                         response_text = strip_thinking_tags(response_text)
+                        if original_len != len(response_text):
+                            log(f"Stripped thinking: {original_len} → {len(response_text)} chars", "debug")
 
                     t_end = time.time()
                     generate_time = t_end - t_start
 
                     log(f"Generation completed in {generate_time:.2f}s", "debug")
+
+                    # Log to debug table if enabled
+                    if DEBUG_LLM:
+                        debug_context = params.get("debugContext", {})
+                        log_llm_call({
+                            "id": str(request_id),
+                            "recording_id": debug_context.get("recordingId"),
+                            "artifact_id": debug_context.get("artifactId"),
+                            "call_type": debug_context.get("callType", "unknown"),
+                            "prompt": raw_prompt or (messages if messages else None),
+                            "result": response_text,
+                            "metadata": {
+                                "model": llm_loaded_model_name or "unknown",
+                                "think_param": 1 if think else 0,
+                                "temperature": temperature,
+                                "max_tokens": max_tokens,
+                                "prompt_after_template": prompt[:500] + "..." if len(prompt) > 500 else prompt,
+                                "chat_template_kwargs": {"enable_thinking": think},
+                                "raw_response": raw_response_text,
+                                "prompt_tokens": getattr(output, "prompt_tokens", 0),
+                                "generation_tokens": getattr(output, "generation_tokens", 0),
+                                "generation_tps": getattr(output, "generation_tps", 0.0),
+                                "generate_time_s": generate_time,
+                            },
+                        })
 
                     send_response(conn, {
                         "id": request_id,
@@ -698,6 +785,10 @@ def handle_request(
 def main() -> None:
     """Main entry point."""
     global model, processor, config, server_socket, BRIDGE_MODE, SOCKET_PATH, shutting_down
+
+    # Log debug configuration at startup
+    if DEBUG_LLM:
+        log(f"Debug logging enabled (DB_PATH={DB_PATH})")
 
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="MLX Bridge for Escribano")

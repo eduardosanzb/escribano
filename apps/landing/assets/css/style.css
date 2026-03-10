@@ -935,6 +935,18 @@ footer {
   margin-top: 0.2rem;
 }
 
+.footer-email {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+  text-decoration: none;
+  letter-spacing: 0.04em;
+  display: block;
+  margin-top: 0.2rem;
+}
+
+.footer-email:hover { color: var(--terracotta); }
+
 .footer-right {
   font-family: var(--sans);
   font-size: 0.72rem;
@@ -1572,4 +1584,91 @@ footer {
 /* Mobile nav - show GitHub link */
 @media (max-width: 768px) {
   .nav-links li:nth-child(4) { display: block; }
+}
+
+/* Waitlist Form Styles */
+.waitlist-form {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.waitlist-form--pricing {
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.waitlist-input {
+  flex: 1;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--parchment-deep);
+  border-radius: 2px;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.waitlist-input::placeholder {
+  color: var(--ink-muted);
+}
+
+.waitlist-input:focus {
+  outline: none;
+  border-color: var(--terracotta);
+  box-shadow: 0 0 0 3px rgba(184, 92, 56, 0.1);
+}
+
+.dark-mode .waitlist-input {
+  background: var(--parchment-warm);
+  border-color: var(--parchment-deep);
+  color: var(--ink);
+}
+
+.dark-mode .waitlist-input:focus {
+  box-shadow: 0 0 0 3px rgba(232, 168, 56, 0.15);
+}
+
+.waitlist-submit {
+  white-space: nowrap;
+}
+
+.waitlist-submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.waitlist-message {
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  margin-top: 0.75rem;
+  min-height: 1.2em;
+}
+
+.waitlist-message.error {
+  color: var(--terracotta);
+  font-weight: 500;
+}
+
+.waitlist-message.success {
+  color: var(--olive);
+  font-weight: 500;
+}
+
+/* Mobile: stack form vertically */
+@media (max-width: 768px) {
+  .waitlist-form {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .waitlist-input {
+    width: 100%;
+  }
+
+  .waitlist-submit {
+    width: 100%;
+  }
 }

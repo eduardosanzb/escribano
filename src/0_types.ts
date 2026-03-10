@@ -444,6 +444,11 @@ export interface IntelligenceService {
       expectJson?: boolean;
       numPredict?: number;
       think?: boolean;
+      debugContext?: {
+        recordingId?: string;
+        artifactId?: string;
+        callType: 'subject_grouping' | 'artifact_generation';
+      };
     }
   ): Promise<string>;
   /** Load LLM model into the bridge (MLX adapter only). */

@@ -41,6 +41,7 @@ const configSchema = z.object({
   verbose: z.boolean().default(false),
   debugOllama: z.boolean().default(false),
   debugVlm: z.boolean().default(false),
+  debugLlm: z.boolean().default(false),
   skipLlm: z.boolean().default(false),
 
   // === ADVANCED ===
@@ -99,6 +100,7 @@ const BASE_DEFAULTS = {
   verbose: false,
   debugOllama: false,
   debugVlm: false,
+  debugLlm: false,
   skipLlm: false,
   sceneMinInterval: 2,
   sampleGapThreshold: 15,
@@ -136,6 +138,7 @@ ESCRIBANO_VLM_MODEL=mlx-community/Qwen3-VL-2B-Instruct-4bit
 # === DEBUGGING ===
 ESCRIBANO_VERBOSE=false               # Enable verbose logging
 ESCRIBANO_DEBUG_VLM=false             # Debug VLM processing
+ESCRIBANO_DEBUG_LLM=false             # Log all LLM calls to debug table
 
 # === ADVANCED ===
 ESCRIBANO_SCENE_MIN_INTERVAL=2
@@ -316,6 +319,12 @@ export function loadConfig(): Config {
       BASE_DEFAULTS.debugVlm,
       sources,
       'debugVlm'
+    ),
+    debugLlm: parseEnvBooleanWithSource(
+      'ESCRIBANO_DEBUG_LLM',
+      BASE_DEFAULTS.debugLlm,
+      sources,
+      'debugLlm'
     ),
     skipLlm: parseEnvBooleanWithSource(
       'ESCRIBANO_SKIP_LLM',

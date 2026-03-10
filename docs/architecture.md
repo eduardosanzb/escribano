@@ -384,9 +384,9 @@ export async function selectBestMLXModel(): Promise<ModelSelection> {
   const ramGB = totalRAM / (1024 ** 3);
   
   if (ramGB >= 64) {
-    return { model: "mlx-community/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit" };
+    return { model: "lmstudio-community/Qwen3-30B-A3B-Instruct-2507-MLX-Q4_K_M" };
   } else if (ramGB >= 32) {
-    return { model: "mlx-community/Qwen3.5-9B-OptiQ-4bit" };
+    return { model: "lmstudio-community/Qwen3-30B-A3B-Instruct-2507-MLX-Q3_K_M" };
   }
   // Fallback to Ollama for lower RAM
 }

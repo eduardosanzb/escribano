@@ -28,6 +28,7 @@ vi.mock('node:child_process', () => ({
 
 import { existsSync } from 'node:fs';
 import { resolvePythonPath } from '../adapters/intelligence.mlx.adapter.js';
+import * as pythonUtils from '../python-utils.js';
 import { getPythonPath } from '../python-utils.js';
 
 const mockExistsSync = vi.mocked(existsSync);
@@ -218,7 +219,7 @@ describe('resolvePythonPath', () => {
     expect(venvCall?.[1]).toContain(venvDir);
   });
 
-  it('installs mlx-vlm when the import probe fails', async () => {
+  it('installs mlx-vlm and mlx-lm when the import probe fails', async () => {
     const venvPython = resolve(
       homedir(),
       '.escribano',
@@ -226,6 +227,7 @@ describe('resolvePythonPath', () => {
       'bin',
       'python3'
     );
+    vi.spyOn(pythonUtils, 'getPythonPath').mockReturnValue(null);
     // Simulate: managed venv python exists
     mockExistsSync.mockImplementation((p) => p === venvPython);
 
@@ -255,6 +257,14 @@ describe('resolvePythonPath', () => {
     await expect(resolvePythonPath()).resolves.toBe(venvPython);
 
     expect(mockSpawn.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+    const probeCall = mockSpawn.mock.calls.find(
+      ([_cmd, args]) =>
+        Array.isArray(args) &&
+        args[0] === '-c' &&
+        args[1]?.includes('import mlx_lm')
+    );
+    expect(probeCall).toBeDefined();
 
     // Find the pip install call regardless of its position (robust to ensurepip being inserted)
     const installCall = mockSpawn.mock.calls.find(

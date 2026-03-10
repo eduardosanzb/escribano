@@ -190,7 +190,7 @@ export async function initializeSystem(): Promise<SystemContext> {
   return {
     repos,
     adapters: {
-      vlm: null as any,
+      vlm: null,
       llm,
       video,
       preprocessor,

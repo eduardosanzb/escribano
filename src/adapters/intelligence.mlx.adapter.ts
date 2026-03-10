@@ -114,7 +114,7 @@ async function ensureEscribanoVenv(): Promise<string> {
   try {
     await runSilent(ESCRIBANO_VENV_PYTHON, [
       '-c',
-      'import mlx_vlm; import torch; import torchvision',
+      'import mlx_vlm; import mlx_lm; import torch; import torchvision',
     ]);
     mlxReady = true;
   } catch {
@@ -244,8 +244,7 @@ export function createMlxIntelligenceService(
 
   const startBridge = async (
     bridgeState: BridgeState,
-    mode: 'vlm' | 'llm',
-    socketPath: string
+    mode: 'vlm' | 'llm'
   ): Promise<void> => {
     if (bridgeState.process && bridgeState.ready) return;
 
@@ -427,7 +426,7 @@ export function createMlxIntelligenceService(
     ) => void
   ): Promise<T[]> => {
     if (!bridgeState.ready) {
-      await startBridge(bridgeState, mode, socketPath);
+      await startBridge(bridgeState, mode);
     }
 
     const socket = await connect(bridgeState, socketPath);

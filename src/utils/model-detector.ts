@@ -34,8 +34,6 @@ export const MLX_LLM_MODEL_TIERS = [
   },
 ] as const;
 
-// Tier 4 (Best - 32GB+ RAM)
-
 export type LLMModelTier = (typeof LLM_MODEL_TIERS)[number];
 export type MLXLLMModelTier = (typeof MLX_LLM_MODEL_TIERS)[number];
 

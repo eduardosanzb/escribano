@@ -4,13 +4,14 @@
 -- This allows benchmarking comparisons between backends.
 
 -- Update existing runs to set llm_backend in metadata
--- Since SQLite doesn't have native JSON functions in all versions, we update the metadata text directly
+-- Use JSON functions so nested metadata objects are preserved
 UPDATE processing_runs 
 SET metadata = CASE 
   WHEN metadata IS NULL THEN '{"llm_backend":"ollama"}'
   WHEN metadata LIKE '%"llm_backend"%' THEN metadata  -- Already set, don't override
   WHEN metadata = '{}' THEN '{"llm_backend":"ollama"}'
-  ELSE REPLACE(metadata, '}', ',"llm_backend":"ollama"}')
+  WHEN json_valid(metadata) THEN json_set(metadata, '$.llm_backend', 'ollama')
+  ELSE metadata
 END
 WHERE status IN ('completed', 'failed');
 
@@ -20,6 +21,7 @@ SET metadata = CASE
   WHEN metadata IS NULL THEN '{"llm_backend":"ollama"}'
   WHEN metadata LIKE '%"llm_backend"%' THEN metadata
   WHEN metadata = '{}' THEN '{"llm_backend":"ollama"}'
-  ELSE REPLACE(metadata, '}', ',"llm_backend":"ollama"}')
+  WHEN json_valid(metadata) THEN json_set(metadata, '$.llm_backend', 'ollama')
+  ELSE metadata
 END
 WHERE metadata IS NULL OR metadata NOT LIKE '%"llm_backend"%';

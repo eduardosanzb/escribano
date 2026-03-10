@@ -101,6 +101,28 @@
       color: #9d174d;
     }
 
+    .backend-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .backend-badge.mlx {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .backend-badge.ollama {
+      background: #f3e8ff;
+      color: #6b21a8;
+    }
+
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -365,7 +387,6 @@
       `;
 
       const tbody = table.querySelector('tbody');
-        console.log(runs)
 
       runs.forEach(run => {
         const tr = document.createElement('tr');
@@ -396,7 +417,7 @@
         tr.innerHTML = `
           <td>${date}</td>
           <td><span class="badge badge-${run.run_type}">${run.run_type}</span></td>
-          <td><span class="backend backend-badge.${backendBadge}">${backendBadge}</span></td>
+          <td><span class="backend-badge ${backendBadge}">${backendBadge}</span></td>
           <td><span class="badge badge-${run.status}">${run.status}</span></td>
           <td>${duration}</td>
           <td>${peakMemory}</td>
@@ -536,8 +557,8 @@
       const recordingId = e.target.value;
 
       if (!recordingId) {
-      // Show all runs
-      displayRuns(runs);
+        // Show all runs
+        displayRuns(runs);
         updateStats(runs);
         systemInfo.style.display = 'none';
         return;

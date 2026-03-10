@@ -1,128 +1,111 @@
 # BACKLOG.md - Escribano
 
-Task tracking for Escribano development.
+## Product Thesis: Agent-Native Work Memory
+
+Most screen recording tools summarize recordings for humans. Escribano should also produce **machine-readable work state for agents**.
+
+When agents are the primary consumers, the output of software shifts fundamentally:
+
+- **Structured, unambiguous state** — Not just a rendered summary, but a faithful representation of what's true right now. Agents need reliable contracts about when data is ready.
+- **Rich error semantics** — Not "something went wrong." Agents need to know why it failed, whether it's retryable, and what the recovery path is.
+- **Auditability as first-class output** — Agents operating in multi-step pipelines need provenance: what happened and why. Logs become outputs. Traces become outputs.
+- **Idempotency signals** — An agent retrying an operation needs the system to declare whether it's safe and return consistent results.
+
+**The deeper implication:** The "user interface" gets demoted to a rendering concern. The canonical output becomes the state + semantics layer, and human summaries are just one consumer alongside agents, other services, and monitoring systems.
+
+This instinct is already present in Escribano's pipeline design: Whisper → VLM → structured summary formats where the "output" isn't a UI at all. That's exactly right for an agent-native world.
 
 ---
 
-## P0 — Critical Path
+## Core Product Bet: Own the Recording Layer
 
-### Existential: Validate the product works
+The missing surface is **capture itself**. Escribano currently depends on external tools (Cap, QuickTime) and post-hoc video processing. Owning the recording pipeline unlocks:
 
-- [ ] **Validate artifact quality** — Process 5 real sessions, identify bottleneck layer — *2-3h, do this NOW*
-  - Test with QuickTime recordings (primary workflow)
-  - Rate VLM descriptions, segmentation, summary quality
-- [ ] **Test `npx escribano` from clean environment** — Verify published package installs and runs — *30min*
-- [ ] **Test on MacBook Air 16GB** — Validate minimum tier (qwen3:8b) produces usable output — *1-2h*
+- **Multi-monitor support** — Capture all screens with proper context
+- **Better reliability** — Control frame sampling, scaling, timestamps (addresses 6K issues)
+- **Always-on recording** — Never forget to start; work is always traceable
+- **Agent-friendly output** — Structured capture from the start, not retrofitted
 
-### Quick UX Win
+See: `docs/screen_capture_pipeline.md` for technical design.
 
-- [ ] **Auto-process watcher** — Watch recordings folder, auto-run Escribano on new files — *2-3h*
-  - Removes manual `pnpm escribano` step
-  - Works with Cap or QuickTime recordings
-- [ ] **Sample recording for first-time users** — Include a 5-10 min sample so people can try without recording — *1h*
+---
+
+## Now
+
+### Product
+
+- [ ] **Recorder spike** — Prototype own capture pipeline (Rust + scap) — *8-12h*
+  - Validate multi-monitor capture
+  - Test frame deduplication (pHash)
+  - Compare quality/reliability vs FFmpeg pipeline
+- [ ] **6K FFmpeg reliability** — Investigate MJPEG encoder failures — *2-3h*
+  - Add fallback encoder (libx264/libwebp)
+  - Add dimension check + warning for >4096px
+  - Stopgap until recorder is ready
+- [ ] **Auto-detect hardware accel** — videotoolbox/vaapi/d3d11va with manual override — *2h*
+  - Currently hardcoded at `src/adapters/video.ffmpeg.adapter.ts:108, 262, 401`
+  - Add `--no-hwaccel` flag for troubleshooting
+- [ ] **Demo assets** — 2-min Loom showing the product, not describing it — *1h*
+
+### Growth
+
+- [ ] **Sample recording** — 5-10 min sample for first-time users — *1h*
   - Add to repo or host separately
   - Document in README
 
 ---
 
-## P1 — Launch Blockers
+## Next
 
-**Must have for public launch**
+### Agent Integration
 
-- [ ] **Make repo public** — Unlocks all distribution channels — *15min*
-  - Blocked on: validate npx flow works
-- [ ] **2-min Loom demo** — Shows the product, not describes it — *1h*
-- [x] **README with before/after** — First impression for every GitHub visitor
-- [x] **Landing page** — `apps/landing/` Hugo site for escribano.work
-- [x] **npm package published** — `escribano@0.1.0` live
-- [x] **ADR-005 blog post** — "Why OCR-based screen intelligence fails" — exists at `apps/landing/content/blog/vlm-first-pipeline.md`
+- [ ] **MCP server** — Expose TopicBlocks via MCP for AI assistants — *8-12h*
+  - Natural extension of agent-native thesis
+  - Enables assistants to query work history
+- [ ] **Cross-recording queries** — "show me all debugging sessions this week" — *4-6h*
 
----
+### Quality
 
-## P2 — Next Iteration
+- [ ] **OCR on keyframes** — Extract code/URLs at artifact generation time — *6-8h*
+- [ ] **Compare pages (SEO)** — Competitive positioning content — *4-6h*
 
-**When bandwidth drops to 10-15 hrs/week**
+### Convenience (Low Priority)
 
-- [x] **MLX-LM adapter spike** — Migrated LLM from Ollama to MLX-LM — *completed March 2026*
-  - Extended `mlx_bridge.py` with `generate_text` method
-  - Unified adapter handles both VLM and LLM
-  - Sequential model lifecycle: VLM → unload → LLM → unload
-  - Auto-detection via `selectBestMLXModel()`
-  - Thinking mode, temperature, chat template support
-  - Production validated: 17 recordings, 100% LLM success rate
-  - See ADR-008 for full details and benchmarks
-- [ ] **Investigate 6K monitor FFmpeg failure** — One 30s recording failed, two others succeeded — *2-3h*
-  - Error: MJPEG encoder failure with corrupted timestamps
-  - Test without hardware acceleration (`--no-hwaccel`)
-  - Add fallback encoder (libx264/libwebp)
-  - Add dimension check and warning for >4096px
-  - See: `docs/learnings.md` for failure details
-- [ ] **Auto-detect ffmpeg hardware accelerator** — videotoolbox/vaapi/d3d11va with `--no-hwaccel` override — currently hardcoded (video.ffmpeg.adapter.ts:105, 259, 393) — *2h*
-- [ ] **Real-time capture pipeline** — Rust-based always-on capture — *20+ h*
-  - Removes Cap/QuickTime dependency
-  - Enables automatic session recording (no forgetting to start)
-- [ ] **MCP server** — Expose TopicBlocks via MCP for AI assistant integration — *8-12h*
-- [ ] **Cross-recording Context queries** — "show me all debugging sessions this week" — *4-6h*
-- [ ] **Compare pages (SEO)** — competitive comparison pages — *4-6h*
-- [ ] **OCR on keyframes** — at artifact generation time — *6-8h*
+- [ ] **Auto-process watcher** — Watch folder, auto-run on new files — *2-3h*
+  - Demoted: recorder makes this less relevant
 
 ---
 
-## P3 — Cleanup (Post-Launch)
-
-**Technical debt when product is validated**
+## Cleanup
 
 - [ ] Schema migration: rename `clusters` → `segments`, delete `cluster_merges`
-- [ ] Remove deprecated V2 code (`clustering.ts`, `signal-extraction.ts`, `cluster-merge.ts`, etc.)
-- [ ] Remove deprecated V1 code (`process-session.ts`, `classify-session.ts`, etc.)
+- [ ] Remove V2 code (`clustering.ts`, `signal-extraction.ts`, `cluster-merge.ts`)
+- [ ] Remove V1 code (`process-session.ts`, `classify-session.ts`)
 - [ ] Split `0_types.ts` into domain/port/config modules
 
 ---
 
-## Completed
+## Recently Done
 
-### 2026-03-08
+### 2026-03
 
-- [x] **MLX-LM production validation** — 17 recordings processed, 100% LLM success rate
-  - Subject grouping: 78.7s avg
-  - Artifact generation: 53.6s avg
-  - Sequential model lifecycle validated
-  - Zero external dependencies
-  - See: `docs/adr/008-mlx-lm-backend.md` for benchmarks
-
-### 2026-03-05
-
-- [x] **Config file support** — Auto-create `~/.escribano/.env` with sensible defaults (PR #12)
-- [x] **`--latest <dir>` flag** — Find and process latest video in directory (PR #8)
-- [x] **MLX bridge timeout increase** — 60s → 120s for better stability on loaded systems (commit 9284d7f)
-- [x] **Documentation updates** — AGENTS.md, README.md, BACKLOG.md synced with latest code
-
-### 2026-03-07
-
-- [x] **MLX adapter stability fixes** — Timer cleanup, state desync, empty string handling
-- [x] **Subject repository robustness** — `INSERT OR IGNORE` for duplicate safety
-- [x] **README updated** — MLX as default backend, Ollama optional
-- [x] **MLX-LM migration complete** — ADR-008, unified adapter, auto-detection
-
-### 2026-03-01
-
-- [x] **npm package published** — `escribano@0.4.0` with all features
-- [x] **Model auto-detection** — RAM-based tier selection (16GB→qwen3:8b, 32GB→qwen3:14b, 64GB+→qwen3.5:27b)
-- [x] **Shebang fix** — Postbuild script ensures `npx escribano` works
-- [x] **README overhaul** — Platform callout, hardware tiers, npx examples
-- [x] **Model references fixed** — All `qwen3:32b` → `qwen3.5:27b`
+- **MLX-LM migration** — Unified VLM + LLM backend, 17 recordings validated, 100% success
+- **Production benchmarks** — 25.6 hours processed, ~2.2 min/video average
+- **Config file support** — Auto-create `~/.escribano/.env`
+- **`--latest <dir>` flag** — Find and process latest video
+- **npm package** — Published to npm registry
+- **Repo public** — github.com/eduardosanzb/escribano
 
 ### Earlier
 
-- [x] **MLX-VLM Migration** — ADR-006 complete. 3.5x speedup achieved.
-  - Token budget: 4000 per batch (16 frames)
-  - Adapter: `intelligence.mlx.adapter.ts` + `scripts/mlx_bridge.py`
-  - VLM/LLM separation: MLX for images, Ollama for text (now unified in MLX-LM migration)
+- **MLX-VLM migration** — 4x speedup, zero external dependencies
+- **VLM-first pipeline** — Activity segmentation, multiple artifact formats
+- **Model auto-detection** — RAM-based tier selection
 
 ---
 
-## Deferred (6+ months)
+## Strategic Bets (6+ months)
 
-- [ ] Cloud inference tier — hosted option for users without local hardware
-- [ ] Team/Enterprise features
-- [ ] Linux/Windows support — currently macOS Apple Silicon only
+- **Cloud inference tier** — Hosted option for users without local hardware
+- **Team/Enterprise** — Collaboration features, shared work memory
+- **Cross-platform** — Linux/Windows support (currently macOS Apple Silicon only)

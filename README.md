@@ -350,9 +350,10 @@ Full architecture: [docs/architecture.md](docs/architecture.md)
 - [x] Activity segmentation
 - [x] Multiple artifact formats
 - [x] Auto-detect best LLM model
+- [ ] Own recording pipeline (multi-monitor, always-on)
+- [ ] MCP server for AI assistants
 - [ ] Auto-detect ffmpeg hardware acceleration
 - [ ] OCR on keyframes for code/URLs
-- [ ] MCP server for AI assistants
 - [ ] Cross-recording queries
 
 ---

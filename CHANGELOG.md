@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-10
+
+### Changed
+- 0.5.0
+- Merge pull request #21 from eduardosanzb/freat/migrate-ollama-to-mlx
+- Update docs/architecture.md
+- update models
+- ci
+- fix tokens
+- ci fixes
+- fix(test): correct mock setup for pip install test
+- fix(mlx_bridge): handle orphan </think> tags in thinking stripping
+- add logs to prompot:
+- fix(ci): fix LLM unload for MLX backend and syntax errors
+- fix(ci): add mlx-lm to expected pip install args and update test
+- docs: update BACKLOG with MLX production validation and 6K investigation
+- docs: add MLX production benchmarks emphasizing architecture benefits
+- docs: update benchmarks with 15-video results, fix ADR-008 formatting
+- docs: update benchmarks with 15-video results, fix ADR-008 formatting
+- merge: Resolve conflicts from main branch
+- docs: MLX as default backend, update BACKLOG with completed tasks
+- fix: MLX adapter stability and empty string handling
+- fix: Python resolver prefers managed venv and skips in-project VIRTUAL_ENV
+- fix: MLX bridge chat template, thinking tags, temperature, and VLM reuse
+- docs: update architecture.md with MLX dual-bridge and memory isolation
+- fix: prevent socket accept loop from hanging on shutdown
+- feat: add Qwen3.5 POC and benchmarking infrastructure for MLX-LM model selection
+- feat: add telemetry tracking infrastructure to dashboard for MLX monitoring
+- docs: update ADR-008 with MLX dual-bridge architecture and research findings
+- docs: update AGENTS.md for MLX dual-bridge architecture and timeout renaming
+- refactor: implement lazy VLM initialization and fix MLX single-instance lifecycle
+- refactor: rewrite MLX adapter as unified dual-bridge service (VLM + LLM)
+- feat: refactor MLX bridge to support dual VLM/LLM mode with separate sockets
+- feat: update Qwen3.5 model detection for MLX-LM text generation support
+- refactor: rename mlxStartupTimeout to mlxTimeout for both startup and generation
+- Phase 8: Add benchmarking infrastructure for LLM backend tracking
+- docs: update CHANGELOG for v0.4.5
+
 ## [0.4.5] - 2026-03-05
 
 ### Changed

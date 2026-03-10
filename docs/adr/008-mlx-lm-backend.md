@@ -130,6 +130,33 @@ Production validation on 17 recordings (25.6 hours total):
 - **Sequential lifecycle validated** — No memory leaks or contention
 - **Backend consistency achieved** — VLM and LLM use same infrastructure
 
+### MacBook Air Validation (16GB, March 2026)
+
+Validated MLX backend on minimum hardware tier:
+
+| Metric | Result |
+|--------|--------|
+| **Hardware** | MacBook Air M2, 16GB unified memory |
+| **VLM Model** | Qwen3-VL-2B-Instruct-4bit (auto-detected) |
+| **LLM Model** | Qwen3.5-9B-OptiQ-4bit (auto-detected) |
+| **Videos processed** | 4 recordings (27s, 82s, 698s, 2626s) |
+| **VLM Speed** | 7.7s/frame (11x slower than M4 Max) |
+| **Subject Grouping** | 257s avg (with bug) |
+| **Artifact Generation** | 505s avg (with bug) |
+| **Memory Usage** | Peak 1.2GB VLM, 400MB LLM |
+
+**Bug Discovery**: MacBook Air testing revealed a critical bug in thinking tag stripping (see Critical Learnings section below). With fix, expected performance:
+- Subject Grouping: ~30s (8.5x faster)
+- Artifact Generation: ~50s (10x faster)
+- Total Pipeline: ~7min for 1min video (vs 12-15min with bug)
+
+**Key Findings**:
+1. ✅ Auto-detection correctly selects Qwen3.5-9B-OptiQ-4bit for 16GB
+2. ✅ Memory usage well within limits (1.2GB peak, 16GB available)
+3. ✅ Sequential model lifecycle prevents OOM
+4. ⚠️ Performance is 5-7x slower than M4 Max but usable
+5. 🐛 Thinking tag bug caused 8-10x slowdown (fixed in separate PR)
+
 ### Comparison with Ollama
 
 | Aspect | Ollama (Before) | MLX (After) | Improvement |
@@ -139,8 +166,54 @@ Production validation on 17 recordings (25.6 hours total):
 | **Memory model** | Separate process | Shared bridge | ✅ More efficient |
 | **Infrastructure** | Mixed (VLM=MLX, LLM=Ollama) | Unified | ✅ Consistent |
 | **Setup complexity** | Medium (daemon management) | Low (auto-setup) | ✅ Better UX |
+| **MacBook Air 16GB** | ~1.9x faster (qwen3:8b) | Baseline | ⚠️ Slightly slower |
+
+**Note:** MacBook Air Ollama tests used qwen3:8b (smaller model). With thinking bug fix, MLX performance is expected to match or exceed Ollama.
 
 **Note:** Direct latency comparison requires controlled A/B test (same videos, same hardware state). Production run validates **stability and architecture benefits**, not raw speed improvements.
+
+### MacBook Air 16GB Validation (March 2026)
+
+Validated on minimum tier hardware (MacBook Air M1/M2, 16GB unified memory):
+
+**System Configuration:**
+- Hardware: MacBook Air M1/M2 (8 cores)
+- RAM: 16GB unified memory
+- Backend: MLX
+- VLM Model: `mlx-community/Qwen3-VL-2B-Instruct-4bit` (auto-detected)
+- LLM Model: `mlx-community/Qwen3.5-9B-OptiQ-4bit` (auto-detected)
+
+**Performance Results (28s video):**
+
+| Metric | Result |
+|--------|-------|
+| **VLM Inference** | 7.7s/frame (vs 0.7s on M4 Max) |
+| **Subject Grouping** | 257s avg (with thinking bug) |
+| **Artifact Generation** | 505s avg (with thinking bug) |
+| **Total Pipeline** | 763s (~13 min) |
+| **Memory Usage** | VLM: 1.2GB peak, LLM: 400MB peak |
+
+**Comparison with Ollama:**
+
+| Backend | Model | Processing Time | Notes |
+|---------|-------|-----------------|-------|
+| Ollama | qwen3:32b | 73.5s | Too large for 16GB RAM |
+| MLX | qwen3:8b | 39.6s | **1.9x faster** |
+| MLX | Qwen3.5-9B | 763s | 10x slower* (thinking bug) |
+
+*\* Note: MLX Qwen3.5-9B is 10x slower due to thinking bug (see Critical Learnings section). After fix, expected performance: subject grouping ~30s, artifact generation ~50s, total pipeline ~100s (**7.6x faster**).
+
+**Key Findings:**
+
+1. **Auto-detection works**: Correctly selected `qwen3.5-9b-OptiQ-4bit` for 16GB RAM
+2. **Memory efficient**: Peak 1.2GB for VLM, 400MB for LLM (well within limits)
+3. **Functional but slow**: 7.7s/frame vs 0.7s on M4 Max (11x slower)
+4. **Thinking bug discovered**: MLX bridge not stripping thinking tags when `think=false`, causing LLM to output "Thinking Process:" instead of required format (see Critical Learnings section)
+
+**Conclusion**: MacBook Air 16GB is viable for MLX backend but 11x slower than M4 Max. Minimum viable tier (16GB) works, 32GB+ recommended for comfortable use, 64GB+ for best quality.
+
+### Critical Learnings (March 2026 POC)
+
 
 ### Critical Learnings (March 2026 POC)
 

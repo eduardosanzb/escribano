@@ -21,7 +21,7 @@ export const ESCRIBANO_VENV_PYTHON = resolve(ESCRIBANO_VENV, 'bin', 'python3');
 function isInsideCwd(path: string): boolean {
   const absPath = resolve(path);
   const cwd = process.cwd();
-  return absPath.startsWith(cwd + '/') || absPath.startsWith(cwd + '\\');
+  return absPath.startsWith(`${cwd}/`) || absPath.startsWith(`${cwd}\\`);
 }
 
 /**

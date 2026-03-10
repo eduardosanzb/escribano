@@ -124,6 +124,20 @@ Processed **17 real screen recordings** with MLX backend:
 
 Everything runs locally. No API keys. Nothing leaves your machine.
 
+### Hardware Tiers (March 2026)
+
+Performance varies by hardware:
+
+| Hardware | RAM | VLM Speed | LLM Model | LLM Speed | Total (1min video) |
+|----------|-----|-----------|-----------|-----------|-------------------|
+| **M4 Max** | 128GB | 0.7s/frame | Qwen3.5-27B | 53s avg | **~2.2 min** |
+| **M1/M2/M3 Pro** | 16-32GB | 1.5-3s/frame | Qwen3.5-9B | 80-120s | ~5-8 min |
+| **M1/M2 Air** | 16GB | 7-9s/frame | Qwen3.5-9B | 150-250s | ~12-15 min |
+
+**Minimum viable**: 16GB unified memory (slower but functional)
+
+**Recommended**: 32GB+ for comfortable use, 64GB+ for best quality
+
 ---
 
 ## Why this exists

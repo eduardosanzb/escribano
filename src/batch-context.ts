@@ -190,7 +190,7 @@ export async function initializeSystem(): Promise<SystemContext> {
   return {
     repos,
     adapters: {
-      vlm: null as any, // Will be created lazily
+      vlm: null as any,
       llm,
       video,
       preprocessor,
@@ -199,6 +199,7 @@ export async function initializeSystem(): Promise<SystemContext> {
     resourceTracker,
     outlineConfig,
     config,
+    llmBackend: config.llmBackend,
   };
 }
 
@@ -532,7 +533,7 @@ export async function processVideo(
       artifact = pipelineResult.artifact;
       outlineUrl = pipelineResult.outlineUrl;
 
-      // Unload LLM after artifact generation to free memory ( good hygiene for all RAM tiers)
+      // Unload LLM after artifact generation to free memory (good hygiene for all RAM tiers)
       if (config.llmModel) {
         console.log('[LLM] Unloading model to free memory...');
         const intelConfig: IntelligenceConfig = {
@@ -545,18 +546,19 @@ export async function processVideo(
           timeout: 600000,
           keepAlive: '10m',
           maxContextSize: 131072,
-          embedding: { model: 'nomic-embed-text', similarityThreshold: 0.75 }
-          vlmBatchSize: config.vlmBatchSize
-          vlmMaxTokens: config.vlmMaxTokens
-          mlxSocketPath: config.mlxSocketPath
+          embedding: { model: 'nomic-embed-text', similarityThreshold: 0.75 },
+          vlmBatchSize: config.vlmBatchSize,
+          vlmMaxTokens: config.vlmMaxTokens,
+          mlxSocketPath: config.mlxSocketPath,
         };
-        await unloadOllamaModel(config.llmModel, intelConfig)
+        await unloadOllamaModel(config.llmModel, intelConfig);
+      } else if (
+        'unloadLlm' in ctx.adapters.llm &&
+        ctx.adapters.llm.unloadLlm
+      ) {
+        console.log('[LLM] Unloading MLX model to free memory...');
+        await ctx.adapters.llm.unloadLlm();
       }
-    } else {
-      console.log('[LLM] Unloading MLX model to free memory...');
-      await ctx.adapters.llm.unloadLlm?.();
-    }
-    }
     }
 
     console.log('\n✓ Complete!');

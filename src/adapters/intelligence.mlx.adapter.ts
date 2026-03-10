@@ -36,7 +36,6 @@ import type {
 import { loadConfig } from '../config.js';
 import {
   ESCRIBANO_HOME,
-  ESCRIBANO_VENV,
   ESCRIBANO_VENV_PYTHON,
   getPythonPath,
 } from '../python-utils.js';
@@ -107,7 +106,7 @@ async function ensureEscribanoVenv(): Promise<string> {
     console.log(
       '[MLX] First-time setup: creating Python environment at ~/.escribano/venv'
     );
-    await runVisible('python3', ['-m', 'venv', ESCRIBANO_HOME + '/venv']);
+    await runVisible('python3', ['-m', 'venv', `${ESCRIBANO_HOME}/venv`]);
   }
 
   let mlxReady = false;

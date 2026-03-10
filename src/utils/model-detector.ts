@@ -5,9 +5,9 @@
  * based on system RAM and model quality tiers.
  *
  * MLX Models Note:
- * Qwen3.5 models are technically VLMs but support text-only loading
- * via mlx-lm v0.30.7+ (merged PR #869, Feb 2026). This allows using
- * the same models for both vision (mlx-vlm) and text generation (mlx-lm).
+ * Uses lmstudio-community Instruct-2507 models for reliable inference.
+ * These models respect think=False and produce clean output without
+ * thinking leakage, unlike older Qwen3.5 models.
  */
 
 import { totalmem } from 'node:os';
@@ -21,20 +21,24 @@ export const LLM_MODEL_TIERS = [
 
 export const MLX_LLM_MODEL_TIERS = [
   {
-    model: 'mlx-community/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit',
-    tier: 2,
-    minRamGB: 32,
+    model: 'lmstudio-community/Qwen3-30B-A3B-Instruct-2507-MLX-8bit',
+    tier: 3,
+    minRamGB: 64,
     label: 'best',
   },
   {
-    model: 'mlx-community/Qwen3.5-9B-OptiQ-4bit',
-    tier: 1,
-    minRamGB: 16,
+    model: 'lmstudio-community/Qwen3-30B-A3B-Instruct-2507-MLX-4bit',
+    tier: 2,
+    minRamGB: 32,
     label: 'good',
   },
+  {
+    model: 'lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit',
+    tier: 1,
+    minRamGB: 8,
+    label: 'minimum',
+  },
 ] as const;
-
-// Tier 4 (Best - 32GB+ RAM)
 
 export type LLMModelTier = (typeof LLM_MODEL_TIERS)[number];
 export type MLXLLMModelTier = (typeof MLX_LLM_MODEL_TIERS)[number];

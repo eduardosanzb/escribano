@@ -116,25 +116,32 @@ export async function groupTopicBlocksIntoSubjects(
       });
     });
 
-    // Validate response doesn't contain leaked thinking
-    if (
-      response.includes('Thinking Process:') ||
-      response.includes('Let me analyze') ||
-      response.includes('I can identify')
-    ) {
+    // Strip thinking leakage if present
+    let cleaned = response.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    if (cleaned.includes('</think>')) {
+      // Handle orphan </think> tag (Qwen3.5 behavior)
+      cleaned = cleaned.split('</think>')[1].trim();
+    }
+    // Strip "Thinking Process:" prose (Qwen3.5-OptiQ format)
+    const tpMatch = cleaned.match(/(?:^|\n)Thinking Process:/);
+    if (tpMatch !== null) {
+      const after = cleaned.slice((tpMatch.index ?? 0) + tpMatch[0].length);
+      const heading = after.match(/\n(#\s|\*\*|Group\s)/);
+      cleaned =
+        heading?.index !== undefined ? after.slice(heading.index).trim() : '';
+    }
+
+    if (cleaned.length < 10) {
       console.warn(
-        '[subject-grouping] Response contains thinking text - model may not respect think=false'
-      );
-      console.warn(
-        '[subject-grouping] This indicates a bug in mlx_bridge.py stripping logic'
+        '[subject-grouping] Thinking leakage detected or response too short — parseGroupingResponse will fall back'
       );
     }
 
     console.log(
-      `[subject-grouping] LLM response (${response.length} chars):\n${response.slice(0, 500)}${response.length > 500 ? '...' : ''}`
+      `[subject-grouping] LLM response (${cleaned.length} chars after stripping):\n${cleaned.slice(0, 500)}${cleaned.length > 500 ? '...' : ''}`
     );
 
-    const grouping = parseGroupingResponse(response, topicBlocks);
+    const grouping = parseGroupingResponse(cleaned || response, topicBlocks);
 
     console.log(
       `[subject-grouping] Parsed ${grouping.groups.length} groups: ${grouping.groups.map((g) => g.label).join(', ')}`

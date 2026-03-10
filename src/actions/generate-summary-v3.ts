@@ -368,21 +368,30 @@ ${section.transcript ? `**Audio Transcript:**\n${section.transcript}` : '*No aud
     });
   });
 
-  // Validate response doesn't contain leaked thinking
-  if (
-    result.includes('Thinking Process:') ||
-    result.includes('Let me analyze') ||
-    result.includes('I can identify')
-  ) {
-    console.warn(
-      '[artifact-generation] Response contains thinking text - model may not respect think=false'
-    );
-    console.warn(
-      '[artifact-generation] This indicates a bug in mlx_bridge.py stripping logic'
-    );
+  // Strip thinking leakage if present
+  let cleaned = result.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  if (cleaned.includes('</think>')) {
+    // Handle orphan </think> tag (Qwen3.5 behavior)
+    cleaned = cleaned.split('</think>')[1].trim();
+  }
+  // Strip "Thinking Process:" prose (Qwen3.5-OptiQ format)
+  const tpMatch = cleaned.match(/(?:^|\n)Thinking Process:/);
+  if (tpMatch !== null) {
+    const after = cleaned.slice((tpMatch.index ?? 0) + tpMatch[0].length);
+    const heading = after.match(/\n(#\s|\*\*)/);
+    cleaned =
+      heading?.index !== undefined ? after.slice(heading.index).trim() : '';
   }
 
-  return result;
+  // If cleaning leaves nothing usable, fall back to template
+  if (cleaned.length > 50) {
+    return cleaned;
+  }
+
+  console.warn(
+    '[artifact-generation] Thinking leakage detected or response too short — falling back to template'
+  );
+  return formatSummary(sections, recording.duration, recording.id);
 }
 
 /**

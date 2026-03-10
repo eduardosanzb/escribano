@@ -1,6 +1,7 @@
 # BACKLOG.md - Escribano
 
 ## Product Thesis: Agent-Native Work Memory
+https://notes.eduardosanzb.dev/doc/ai-agenticn-escribano-the-agent-native-thesis-thouthgs-vfOWw4Hafp
 
 Most screen recording tools summarize recordings for humans. Escribano should also produce **machine-readable work state for agents**.
 

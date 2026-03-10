@@ -114,7 +114,7 @@ async function ensureEscribanoVenv(): Promise<string> {
   try {
     await runSilent(ESCRIBANO_VENV_PYTHON, [
       '-c',
-      'import mlx_vlm; import torch; import torchvision',
+      'import mlx_vlm; import mlx_lm; import torch; import torchvision',
     ]);
     mlxReady = true;
   } catch {

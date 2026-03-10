@@ -245,7 +245,7 @@ export function createMlxIntelligenceService(
   const startBridge = async (
     bridgeState: BridgeState,
     mode: 'vlm' | 'llm',
-    socketPath: string
+    _socketPath: string
   ): Promise<void> => {
     if (bridgeState.process && bridgeState.ready) return;
 

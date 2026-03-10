@@ -509,8 +509,21 @@ def parse_interleaved_output(text: str, batch: list[dict]) -> list[dict]:
 
 
 def strip_thinking_tags(text: str) -> str:
-    """Remove <think>...</think> tags from thinking-mode output."""
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    """Remove <think>...</think> tags from thinking-mode output.
+    
+    Handles two cases:
+    1. Standard: <think>...content...</think> (complete pairs)
+    2. Qwen3.5 behavior: thinking text with orphan </think> tag (incomplete pair)
+    """
+    # Strip complete <think>...</think> pairs (standard case)
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    
+    # Strip orphan closing tag + everything before it (Qwen3.5 actual behavior)
+    # This handles: "Let me analyze...\n</think>\n# Actual answer"
+    if "</think>" in text:
+        text = text.split("</think>", 1)[1]
+    
+    return text.strip()
 
 
 def handle_describe_images(

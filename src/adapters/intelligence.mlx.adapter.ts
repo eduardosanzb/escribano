@@ -686,7 +686,7 @@ export function createMlxIntelligenceService(
           method: 'generate_text',
           params: {
             rawPrompt: prompt,
-            maxTokens: options?.numPredict ?? 4000,
+            maxTokens: options?.numPredict ?? 8000,
             temperature: 0.7,
             think: options?.think ?? false,
             debugContext: options?.debugContext,

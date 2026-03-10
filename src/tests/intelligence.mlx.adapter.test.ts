@@ -218,39 +218,77 @@ describe('resolvePythonPath', () => {
     expect(venvCall?.[1]).toContain(venvDir);
   });
 
-  it('installs mlx-vlm when the import probe fails', async () => {
+ it('installs mlx-vlm when the import probe fails', async () => {
     const venvPython = resolve(
       homedir(),
       '.escribano',
       'venv',
-      'bin',
+      'bin'
       'python3'
     );
-    // Simulate: managed venv python exists
-    mockExistsSync.mockImplementation((p) => p === venvPython);
+    const escribanoHome = resolve(homedir(), '.escribano');
+
+    // Mock fs operations
+    mockExistsSync.mockImplementation((p) => {
+      // ESCRIBANO_HOME exists,        return p === escribanoHome;
+    });
+    
+    const mockMkdirSync = vi.mocked(mkdirSync);
+    mockMkdirSync.mockReturnValue(undefined);
 
     const { spawn } = await import('node:child_process');
     const mockSpawn = vi.mocked(spawn);
     mockSpawn.mockClear();
 
-    let callIndex = 0;
+    let callIndex = 0
     mockSpawn.mockImplementation((_cmd, _args, _opts) => {
       const thisCall = callIndex++;
-      const emitter = {
-        on: vi.fn((event: string, cb: (code: number) => void) => {
+      const emitter =        on: vi.fn((event: string, cb: (code: number) => void) 
           if (event === 'exit') {
-            // First call: import probe fails (non-zero exit)
-            // All subsequent calls (ensurepip, pip install, ...): succeed
-            cb(thisCall === 0 ? 1 : 0);
+            // Call 0: venv creation - succeed
+            // Call 1: import probe - fail (mlxReady = false)
+            // Call 2+: ensurepip, pip install - succeed
+            if (thisCall === 1) {
+              cb(1); // Import probe fails
+            } else {
+              cb(0); // All other calls succeed
+            }
           }
-          return emitter;
-        }),
-        stdout: { on: vi.fn() },
-        stderr: { on: vi.fn() },
+          return emitter;),
+        stdout: on: vi.fn() ,
+        stderr: on: vi.fn() ,
         kill: vi.fn(),
       };
       return emitter as never;
     });
+
+    await expect(resolvePythonPath()).resolves.toBe(venvPython);
+
+    // Should have at least 3 calls: venv creation, import probe, pip install
+    expect(mockSpawn.mock.calls.length).toBeGreaterThanOrEqual(3);
+
+    // Find the pip install call
+    const installCall = mockSpawn.mock.calls.find(
+      ([_cmd, args]) =>
+        Array.isArray(args) &&
+        args.includes('-m') &&
+        args.includes('pip') &&
+        args.includes('install') &&
+        args.includes('mlx-vlm')
+    );
+    expect(installCall).toBeDefined();
+    expect(installCall?.[1]).toEqual(
+      expect.arrayContaining([
+        '-m',
+        'pip',
+        'install',
+        'mlx-vlm',
+        'torch',
+        'torchvision',
+        'mlx-lm',
+      ])
+    );
+  });
 
     await expect(resolvePythonPath()).resolves.toBe(venvPython);
 

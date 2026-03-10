@@ -43,13 +43,20 @@ Task tracking for Escribano development.
 
 **When bandwidth drops to 10-15 hrs/week**
 
-- [ ] **MLX-LM adapter spike** — Evaluate migrating LLM from Ollama to MLX-LM — *4-6h*
-  - Extend `mlx_bridge.py` with `generate_text` method
-  - Create `intelligence.mlx-lm.adapter.ts`
-  - Benchmark against Ollama with real prompts (subject grouping, artifact generation)
-  - Compare: speed, memory, model availability (qwen3.5:27b MLX port?), feature parity (thinking mode, JSON format)
-  - Decision criteria: >20% speedup + feature parity → migrate; else keep Ollama
-  - Risk: loses Ollama model auto-detection, thinking mode, JSON enforcement
+- [x] **MLX-LM adapter spike** — Migrated LLM from Ollama to MLX-LM — *completed March 2026*
+  - Extended `mlx_bridge.py` with `generate_text` method
+  - Unified adapter handles both VLM and LLM
+  - Sequential model lifecycle: VLM → unload → LLM → unload
+  - Auto-detection via `selectBestMLXModel()`
+  - Thinking mode, temperature, chat template support
+  - Production validated: 17 recordings, 100% LLM success rate
+  - See ADR-008 for full details and benchmarks
+- [ ] **Investigate 6K monitor FFmpeg failure** — One 30s recording failed, two others succeeded — *2-3h*
+  - Error: MJPEG encoder failure with corrupted timestamps
+  - Test without hardware acceleration (`--no-hwaccel`)
+  - Add fallback encoder (libx264/libwebp)
+  - Add dimension check and warning for >4096px
+  - See: `docs/learnings.md` for failure details
 - [ ] **Auto-detect ffmpeg hardware accelerator** — videotoolbox/vaapi/d3d11va with `--no-hwaccel` override — currently hardcoded (video.ffmpeg.adapter.ts:105, 259, 393) — *2h*
 - [ ] **Real-time capture pipeline** — Rust-based always-on capture — *20+ h*
   - Removes Cap/QuickTime dependency
@@ -74,12 +81,28 @@ Task tracking for Escribano development.
 
 ## Completed
 
+### 2026-03-08
+
+- [x] **MLX-LM production validation** — 17 recordings processed, 100% LLM success rate
+  - Subject grouping: 78.7s avg
+  - Artifact generation: 53.6s avg
+  - Sequential model lifecycle validated
+  - Zero external dependencies
+  - See: `docs/adr/008-mlx-lm-backend.md` for benchmarks
+
 ### 2026-03-05
 
 - [x] **Config file support** — Auto-create `~/.escribano/.env` with sensible defaults (PR #12)
 - [x] **`--latest <dir>` flag** — Find and process latest video in directory (PR #8)
 - [x] **MLX bridge timeout increase** — 60s → 120s for better stability on loaded systems (commit 9284d7f)
 - [x] **Documentation updates** — AGENTS.md, README.md, BACKLOG.md synced with latest code
+
+### 2026-03-07
+
+- [x] **MLX adapter stability fixes** — Timer cleanup, state desync, empty string handling
+- [x] **Subject repository robustness** — `INSERT OR IGNORE` for duplicate safety
+- [x] **README updated** — MLX as default backend, Ollama optional
+- [x] **MLX-LM migration complete** — ADR-008, unified adapter, auto-detection
 
 ### 2026-03-01
 
@@ -94,7 +117,7 @@ Task tracking for Escribano development.
 - [x] **MLX-VLM Migration** — ADR-006 complete. 3.5x speedup achieved.
   - Token budget: 4000 per batch (16 frames)
   - Adapter: `intelligence.mlx.adapter.ts` + `scripts/mlx_bridge.py`
-  - VLM/LLM separation: MLX for images, Ollama for text
+  - VLM/LLM separation: MLX for images, Ollama for text (now unified in MLX-LM migration)
 
 ---
 

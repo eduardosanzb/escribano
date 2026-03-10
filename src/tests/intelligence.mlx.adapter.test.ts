@@ -26,7 +26,7 @@ vi.mock('node:child_process', () => ({
   })),
 }));
 
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { resolvePythonPath } from '../adapters/intelligence.mlx.adapter.js';
 import { getPythonPath } from '../python-utils.js';
 
@@ -226,8 +226,12 @@ describe('resolvePythonPath', () => {
       'bin',
       'python3'
     );
-    // Simulate: managed venv python exists
-    mockExistsSync.mockImplementation((p) => p === venvPython);
+    const escribanoHome = resolve(homedir(), '.escribano');
+
+    mockExistsSync.mockImplementation((p) => p === escribanoHome);
+
+    const mockMkdirSync = vi.mocked(mkdirSync);
+    mockMkdirSync.mockReturnValue(undefined);
 
     const { spawn } = await import('node:child_process');
     const mockSpawn = vi.mocked(spawn);
@@ -239,9 +243,11 @@ describe('resolvePythonPath', () => {
       const emitter = {
         on: vi.fn((event: string, cb: (code: number) => void) => {
           if (event === 'exit') {
-            // First call: import probe fails (non-zero exit)
-            // All subsequent calls (ensurepip, pip install, ...): succeed
-            cb(thisCall === 0 ? 1 : 0);
+            if (thisCall === 1) {
+              cb(1);
+            } else {
+              cb(0);
+            }
           }
           return emitter;
         }),
@@ -254,9 +260,8 @@ describe('resolvePythonPath', () => {
 
     await expect(resolvePythonPath()).resolves.toBe(venvPython);
 
-    expect(mockSpawn.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(mockSpawn.mock.calls.length).toBeGreaterThanOrEqual(3);
 
-    // Find the pip install call regardless of its position (robust to ensurepip being inserted)
     const installCall = mockSpawn.mock.calls.find(
       ([_cmd, args]) =>
         Array.isArray(args) &&
@@ -274,6 +279,7 @@ describe('resolvePythonPath', () => {
         'mlx-vlm',
         'torch',
         'torchvision',
+        'mlx-lm',
       ])
     );
   });

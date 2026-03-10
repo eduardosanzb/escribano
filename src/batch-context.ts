@@ -67,6 +67,7 @@ import {
 import {
   formatModelSelection,
   selectBestLLMModel,
+  selectBestMLXModel,
 } from './utils/model-detector.js';
 
 const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
@@ -76,7 +77,7 @@ const MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
 export interface SystemContext {
   repos: Repositories;
   adapters: {
-    vlm: IntelligenceService;
+    vlm: IntelligenceService | null;
     llm: IntelligenceService;
     video: VideoService;
     preprocessor: AudioPreprocessor;
@@ -84,6 +85,8 @@ export interface SystemContext {
   };
   resourceTracker: ResourceTracker;
   outlineConfig: OutlineConfig | null;
+  config: ReturnType<typeof loadConfig>;
+  llmBackend: 'mlx' | 'ollama';
 }
 
 export interface ProcessVideoOptions {
@@ -132,17 +135,24 @@ export async function initializeSystem(): Promise<SystemContext> {
   // Setup stats observer to capture pipeline events
   setupStatsObserver(repos.stats);
 
-  // Detect best LLM model
-  const modelSelection = await selectBestLLMModel();
-  console.log(formatModelSelection(modelSelection));
-  console.log('');
+  // Detect best LLM model based on configured backend
+  let llm: IntelligenceService;
+  let mlxService: ReturnType<typeof createMlxIntelligenceService> | null = null;
 
-  // Initialize adapters ONCE (config is now used by adapters)
-  console.log('[VLM] Using MLX-VLM for image processing');
-  const vlm = createMlxIntelligenceService(config);
-
-  console.log('[LLM] Using Ollama for text generation');
-  const llm = createOllamaIntelligenceService(config);
+  if (config.llmBackend === 'mlx') {
+    console.log('[LLM] Using MLX for text generation');
+    const mlxModelSelection = await selectBestMLXModel();
+    console.log(formatModelSelection(mlxModelSelection));
+    console.log('');
+    mlxService = createMlxIntelligenceService();
+    llm = mlxService;
+  } else {
+    console.log('[LLM] Using Ollama for text generation');
+    const ollamaModelSelection = await selectBestLLMModel();
+    console.log(formatModelSelection(ollamaModelSelection));
+    console.log('');
+    llm = createOllamaIntelligenceService();
+  }
 
   const video = createFfmpegVideoService();
   const preprocessor = createSileroPreprocessor();
@@ -153,33 +163,43 @@ export async function initializeSystem(): Promise<SystemContext> {
     outputFormat: 'json',
   });
 
-  // Setup resource tracking
   const resourceTracker = new ResourceTracker();
-  resourceTracker.register(vlm as ResourceTrackable);
   resourceTracker.register(video as ResourceTrackable);
   resourceTracker.register(preprocessor as ResourceTrackable);
-  // Ollama runs as a daemon - special case
-  resourceTracker.register({
-    getResourceName: () => 'ollama',
-    getPid: () => {
-      try {
-        const output = execSync('pgrep -f "ollama serve"').toString().trim();
-        const pid = parseInt(output.split('\n')[0] ?? '0', 10);
-        return pid > 0 ? pid : null;
-      } catch {
-        return null;
-      }
-    },
-  });
+
+  if (config.llmBackend === 'ollama') {
+    resourceTracker.register({
+      getResourceName: () => 'ollama',
+      getPid: () => {
+        try {
+          const output = execSync('pgrep -f "ollama serve"').toString().trim();
+          const pid = parseInt(output.split('\n')[0] ?? '0', 10);
+          return pid > 0 ? pid : null;
+        } catch {
+          return null;
+        }
+      },
+    });
+  } else if (mlxService) {
+    resourceTracker.register(mlxService as unknown as ResourceTrackable);
+  }
   setResourceTracker(resourceTracker);
 
   const outlineConfig = getOutlineConfig();
 
   return {
     repos,
-    adapters: { vlm, llm, video, preprocessor, transcription },
+    adapters: {
+      vlm: null as any,
+      llm,
+      video,
+      preprocessor,
+      transcription,
+    },
     resourceTracker,
     outlineConfig,
+    config,
+    llmBackend: config.llmBackend,
   };
 }
 
@@ -206,7 +226,7 @@ export async function processVideo(
     printToStdout = false,
   } = options;
   const { repos, adapters, outlineConfig } = ctx;
-  const { vlm, llm, video, preprocessor, transcription } = adapters;
+  const { llm, video, preprocessor, transcription } = adapters;
 
   // Load unified config for lifecycle management
   const config = loadConfig();
@@ -268,15 +288,35 @@ export async function processVideo(
       dbRec &&
       (dbRec.status === 'processed' || dbRec.status === 'published') &&
       !force;
+
+    // Create VLM adapter lazily (only if needed)
+    let vlm: IntelligenceService | null = null;
+    if (!skipProcessing) {
+      // Reuse the same MLX service instance for VLM (unified adapter handles both)
+      // Check if LLM is MLX backend - if so, it's already a unified VLM+LLM service
+      if (ctx.config.llmBackend === 'mlx' && llm) {
+        vlm = llm;
+      } else {
+        console.log('[VLM] Initializing MLX-VLM for frame analysis...');
+        vlm = createMlxIntelligenceService();
+        ctx.resourceTracker.register(vlm as unknown as ResourceTrackable);
+      }
+      ctx.adapters.vlm = vlm;
+    }
+
     if (!skipProcessing) {
       const runType = force
         ? 'force'
         : dbRec?.processing_step
           ? 'resume'
           : 'initial';
-      const runMetadata = collectRunMetadata(ctx.resourceTracker);
+      const runMetadata = collectRunMetadata(ctx.resourceTracker, ctx.config);
 
       await withPipeline(recording.id, runType, runMetadata, async () => {
+        if (!vlm)
+          throw new Error(
+            '[VLM] Internal error: VLM adapter expected but not initialized'
+          );
         await processRecordingV3(
           recording.id,
           repos,
@@ -285,16 +325,35 @@ export async function processVideo(
         );
       });
 
-      // Free VLM memory after processing (good hygiene for all RAM tiers)
-      console.log('[VLM] Freeing VLM memory...');
-      cleanupMlxBridge();
+      // Clean up VLM bridge after processing to free memory for LLM
+      if (vlm) {
+        console.log('[VLM] Unloading VLM model to free memory...');
+        await vlm.unloadVlm?.();
+        // Note: We don't kill the bridge process here, just unload the model
+        // The bridge process will be reused for subsequent recordings if needed
+      }
     }
 
     // Generate artifact and publish (unless skipped), tracked as a pipeline run
     let artifact: ArtifactResult | null = null;
     let outlineUrl: string | undefined;
     if (!skipSummary) {
-      const artifactRunMetadata = collectRunMetadata(ctx.resourceTracker);
+      // Guard: Ensure VLM is unloaded before LLM generation to prevent memory contention
+      if (ctx.adapters.vlm) {
+        console.log(
+          '[VLM] Warning: VLM bridge still loaded during artifact generation'
+        );
+        console.log('[VLM] Unloading to prevent memory contention with LLM...');
+        if ('unloadVlm' in ctx.adapters.vlm && ctx.adapters.vlm.unloadVlm) {
+          await ctx.adapters.vlm.unloadVlm();
+        }
+        ctx.adapters.vlm = null;
+      }
+
+      const artifactRunMetadata = collectRunMetadata(
+        ctx.resourceTracker,
+        ctx.config
+      );
       const pipelineResult = await withPipeline(
         recording.id,
         'artifact',
@@ -302,6 +361,9 @@ export async function processVideo(
         async () => {
           console.log(`\nGenerating ${format} artifact...`);
           let generatedArtifact: ArtifactResult;
+
+          // LLM model loading is handled internally by generateText()
+          // No explicit load/unload calls needed here
 
           if (format === 'narrative') {
             // Route narrative through the corrected path
@@ -490,6 +552,12 @@ export async function processVideo(
           mlxSocketPath: config.mlxSocketPath,
         };
         await unloadOllamaModel(config.llmModel, intelConfig);
+      } else if (
+        'unloadLlm' in ctx.adapters.llm &&
+        ctx.adapters.llm.unloadLlm
+      ) {
+        console.log('[LLM] Unloading MLX model to free memory...');
+        await ctx.adapters.llm.unloadLlm();
       }
     }
 
@@ -542,7 +610,8 @@ function getOutlineConfig(): OutlineConfig | null {
  * Collect metadata about the current run.
  */
 function collectRunMetadata(
-  resourceTracker?: ResourceTracker
+  resourceTracker?: ResourceTracker,
+  config?: ReturnType<typeof loadConfig>
 ): Record<string, unknown> {
   let commitHash = 'unknown';
   try {
@@ -558,6 +627,7 @@ function collectRunMetadata(
       process.env.ESCRIBANO_VLM_MODEL ??
       'mlx-community/Qwen3-VL-2B-Instruct-bf16',
     llm_model: process.env.ESCRIBANO_LLM_MODEL ?? 'auto-detected',
+    llm_backend: config?.llmBackend ?? 'ollama',
     commit_hash: commitHash,
     node_version: process.version,
     platform: process.platform,

@@ -13,6 +13,7 @@ import type {
   DbTopicBlock,
   IntelligenceService,
 } from '../0_types.js';
+import { step } from '../pipeline/context.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -75,8 +76,7 @@ const PERSONAL_APPS = new Set([
 
 const PERSONAL_APP_THRESHOLD = 0.5;
 
-const SUBJECT_GROUPING_MODEL =
-  process.env.ESCRIBANO_SUBJECT_GROUPING_MODEL || 'qwen3.5:27b';
+const SUBJECT_GROUPING_MODEL = process.env.ESCRIBANO_SUBJECT_GROUPING_MODEL;
 
 export async function groupTopicBlocksIntoSubjects(
   topicBlocks: DbTopicBlock[],
@@ -95,23 +95,53 @@ export async function groupTopicBlocksIntoSubjects(
 
   const prompt = buildGroupingPrompt(blocksForGrouping);
 
+  const modelInfo = SUBJECT_GROUPING_MODEL
+    ? ` (model: ${SUBJECT_GROUPING_MODEL})`
+    : ' (auto-detected)';
   console.log(
-    `[subject-grouping] Grouping ${topicBlocks.length} blocks into subjects (model: ${SUBJECT_GROUPING_MODEL})`
+    `[subject-grouping] Grouping ${topicBlocks.length} blocks into subjects${modelInfo}`
   );
 
   try {
-    const response = await intelligence.generateText(prompt, {
-      expectJson: false,
-      model: SUBJECT_GROUPING_MODEL,
-      numPredict: 2000,
-      think: false,
+    const response = await step('llm_subject_grouping', async () => {
+      return intelligence.generateText(prompt, {
+        expectJson: false,
+        model: SUBJECT_GROUPING_MODEL || undefined,
+        numPredict: 2000,
+        think: false,
+        debugContext: {
+          recordingId,
+          callType: 'subject_grouping',
+        },
+      });
     });
 
+    // Strip thinking leakage if present
+    let cleaned = response.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    if (cleaned.includes('</think>')) {
+      // Handle orphan </think> tag (Qwen3.5 behavior)
+      cleaned = cleaned.split('</think>')[1].trim();
+    }
+    // Strip "Thinking Process:" prose (Qwen3.5-OptiQ format)
+    const tpMatch = cleaned.match(/(?:^|\n)Thinking Process:/);
+    if (tpMatch !== null) {
+      const after = cleaned.slice((tpMatch.index ?? 0) + tpMatch[0].length);
+      const heading = after.match(/\n(#\s|\*\*|Group\s)/);
+      cleaned =
+        heading?.index !== undefined ? after.slice(heading.index).trim() : '';
+    }
+
+    if (cleaned.length < 10) {
+      console.warn(
+        '[subject-grouping] Thinking leakage detected or response too short — parseGroupingResponse will fall back'
+      );
+    }
+
     console.log(
-      `[subject-grouping] LLM response (${response.length} chars):\n${response.slice(0, 500)}${response.length > 500 ? '...' : ''}`
+      `[subject-grouping] LLM response (${cleaned.length} chars after stripping):\n${cleaned.slice(0, 500)}${cleaned.length > 500 ? '...' : ''}`
     );
 
-    const grouping = parseGroupingResponse(response, topicBlocks);
+    const grouping = parseGroupingResponse(cleaned || response, topicBlocks);
 
     console.log(
       `[subject-grouping] Parsed ${grouping.groups.length} groups: ${grouping.groups.map((g) => g.label).join(', ')}`

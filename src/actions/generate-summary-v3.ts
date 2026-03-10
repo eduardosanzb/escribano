@@ -10,7 +10,7 @@ import { homedir } from 'node:os';
 import path, { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { IntelligenceService, Repositories } from '../0_types.js';
-import { log } from '../pipeline/context.js';
+import { log, step } from '../pipeline/context.js';
 import {
   groupTopicBlocksIntoSubjects,
   type Subject,
@@ -358,10 +358,40 @@ ${section.transcript ? `**Audio Transcript:**\n${section.transcript}` : '*No aud
     .replace('{{URLS_LIST}}', urlsList);
 
   // Call LLM
-  const result = await intelligence.generateText(prompt, {
-    expectJson: false,
+  const result = await step('llm_artifact_generation', async () => {
+    return intelligence.generateText(prompt, {
+      expectJson: false,
+      debugContext: {
+        recordingId: recording.id,
+        callType: 'artifact_generation',
+      },
+    });
   });
-  return result;
+
+  // Strip thinking leakage if present
+  let cleaned = result.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  if (cleaned.includes('</think>')) {
+    // Handle orphan </think> tag (Qwen3.5 behavior)
+    cleaned = cleaned.split('</think>')[1].trim();
+  }
+  // Strip "Thinking Process:" prose (Qwen3.5-OptiQ format)
+  const tpMatch = cleaned.match(/(?:^|\n)Thinking Process:/);
+  if (tpMatch !== null) {
+    const after = cleaned.slice((tpMatch.index ?? 0) + tpMatch[0].length);
+    const heading = after.match(/\n(#\s|\*\*)/);
+    cleaned =
+      heading?.index !== undefined ? after.slice(heading.index).trim() : '';
+  }
+
+  // If cleaning leaves nothing usable, fall back to template
+  if (cleaned.length > 50) {
+    return cleaned;
+  }
+
+  console.warn(
+    '[artifact-generation] Thinking leakage detected or response too short — falling back to template'
+  );
+  return formatSummary(sections, recording.duration, recording.id);
 }
 
 /**

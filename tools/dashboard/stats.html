@@ -9,7 +9,7 @@
     :root {
       --pico-font-size: 14px;
     }
-    
+
     .header {
       display: flex;
       align-items: center;
@@ -54,83 +54,83 @@
       flex-wrap: wrap;
       margin-bottom: 1rem;
     }
-    
+
     select {
       min-width: 300px;
     }
-    
+
     .badge {
       padding: 0.25rem 0.5rem;
       border-radius: 4px;
       font-size: 0.75rem;
       font-weight: 500;
     }
-    
+
     .badge-success {
       background: #dcfce7;
       color: #166534;
     }
-    
+
     .badge-failed {
       background: #fee2e2;
       color: #991b1b;
     }
-    
+
     .badge-cancelled {
       background: #fef3c7;
       color: #92400e;
     }
-    
+
     .badge-running {
       background: #e0e7ff;
       color: #3730a3;
     }
-    
+
     .badge-initial {
       background: #f3e8ff;
       color: #6b21a8;
     }
-    
+
     .badge-resume {
       background: #dbeafe;
       color: #1e40af;
     }
-    
+
     .badge-force {
       background: #fce7f3;
       color: #9d174d;
     }
-    
+
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 1rem;
       margin-bottom: 2rem;
     }
-    
+
     .stat-card {
       background: var(--pico-background-color);
       padding: 1rem;
       border-radius: 8px;
       border: 1px solid var(--pico-muted-border-color);
     }
-    
+
     .stat-label {
       font-size: 0.75rem;
       color: var(--pico-muted-color);
       text-transform: uppercase;
       margin-bottom: 0.25rem;
     }
-    
+
     .stat-value {
       font-size: 1.5rem;
       font-weight: bold;
     }
-    
+
     .phase-table {
       margin-top: 2rem;
     }
-    
+
     .resource-bar {
       display: flex;
       height: 20px;
@@ -139,7 +139,7 @@
       background: #f3f4f6;
       margin-top: 0.5rem;
     }
-    
+
     .resource-segment {
       display: flex;
       align-items: center;
@@ -148,59 +148,59 @@
       color: white;
       font-weight: bold;
     }
-    
+
     .resource-segment-mlx {
       background: #3b82f6;
     }
-    
+
     .resource-segment-ffmpeg {
       background: #10b981;
     }
-    
+
     .resource-segment-nodejs {
       background: #f59e0b;
     }
-    
+
     .resource-segment-ollama {
       background: #8b5cf6;
     }
-    
+
     .resource-segment-silero {
       background: #ec4899;
     }
-    
+
     .resource-legend {
       display: flex;
       gap: 1rem;
       margin-top: 1rem;
       flex-wrap: wrap;
     }
-    
+
     .legend-item {
       display: flex;
       align-items: center;
       gap: 0.5rem;
       font-size: 0.875rem;
     }
-    
+
     .legend-color {
       width: 12px;
       height: 12px;
       border-radius: 2px;
     }
-    
+
     .loading {
       text-align: center;
       padding: 2rem;
       color: var(--pico-muted-color);
     }
-    
+
     .empty {
       text-align: center;
       padding: 2rem;
       color: var(--pico-muted-color);
     }
-    
+
     .system-info {
       background: var(--pico-background-color);
       padding: 1rem;
@@ -208,13 +208,13 @@
       margin-bottom: 1rem;
       font-size: 0.875rem;
     }
-    
+
     .system-info-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 0.5rem;
     }
-    
+
     .phase-row:hover {
       background: var(--pico-muted-background-color);
     }
@@ -230,7 +230,7 @@
         <a href="/stats.html" class="active">Stats</a>
       </nav>
     </div>
-    
+
     <div class="controls">
       <label>
         Select Recording
@@ -239,12 +239,12 @@
         </select>
       </label>
     </div>
-    
+
     <div id="system-info" class="system-info" style="display: none;">
       <h4>System Information</h4>
       <div class="system-info-grid" id="system-info-grid"></div>
     </div>
-    
+
     <div class="stats-grid" id="stats-grid" style="display: none;">
       <div class="stat-card">
         <div class="stat-label">Total Runs</div>
@@ -267,17 +267,17 @@
         <div class="stat-value" id="stat-peak-memory">-</div>
       </div>
     </div>
-    
+
     <h3>Run History</h3>
     <div id="runs-container">
       <div class="loading">Loading runs...</div>
     </div>
-    
+
     <div id="phase-details" style="display: none;">
       <h3>Phase Breakdown</h3>
       <div id="phase-table-container"></div>
     </div>
-    
+
     <div class="resource-legend" id="resource-legend" style="display: none;">
       <div class="legend-item">
         <div class="legend-color" style="background: #3b82f6;"></div>
@@ -301,7 +301,7 @@
       </div>
     </div>
   </main>
-  
+
   <script>
     const recordingSelect = document.getElementById('recording-select');
     const runsContainer = document.getElementById('runs-container');
@@ -309,20 +309,20 @@
     const systemInfo = document.getElementById('system-info');
     const phaseDetails = document.getElementById('phase-details');
     const resourceLegend = document.getElementById('resource-legend');
-    
+
     let recordings = [];
     let runs = [];
-    
+
     async function loadData() {
       try {
         const [recRes, runsRes] = await Promise.all([
           fetch('/api/recordings'),
           fetch('/api/runs')
         ]);
-        
+
         recordings = await recRes.json();
         runs = await runsRes.json();
-        
+
         populateRecordingSelect(recordings);
         displayRuns(runs);
         updateStats(runs);
@@ -331,7 +331,7 @@
         runsContainer.innerHTML = `<div class="loading">Error loading: ${err.message}</div>`;
       }
     }
-    
+
     function populateRecordingSelect(recordings) {
       recordings.forEach(rec => {
         const option = document.createElement('option');
@@ -341,19 +341,20 @@
         recordingSelect.appendChild(option);
       });
     }
-    
+
     function displayRuns(runs) {
       if (runs.length === 0) {
         runsContainer.innerHTML = '<div class="empty">No runs found</div>';
         return;
       }
-      
+
       const table = document.createElement('table');
       table.innerHTML = `
         <thead>
           <tr>
             <th>Started</th>
             <th>Type</th>
+            <th>Backend</th>
             <th>Status</th>
             <th>Duration</th>
             <th>Peak Memory</th>
@@ -362,72 +363,79 @@
         </thead>
         <tbody id="runs-tbody"></tbody>
       `;
-      
+
       const tbody = table.querySelector('tbody');
-      
+        console.log(runs)
+
       runs.forEach(run => {
         const tr = document.createElement('tr');
         tr.className = 'phase-row';
-        
+
         const date = new Date(run.started_at).toLocaleString();
         const duration = formatDuration(run.total_duration_ms);
-        
+
         let peakMemory = '-';
         let memoryHtml = '-';
-        
+        let backendBadge = 'unknown';
+
         if (run.metadata) {
           try {
             const metadata = JSON.parse(run.metadata);
             if (metadata.system) {
               peakMemory = `${metadata.system.totalMemoryGB}GB total, ${metadata.system.cpuCores} cores`;
             }
+            // "{\"vlm_model\":\"mlx-community/Qwen3-VL-2B-Instruct-4bit\",\"llm_model\":\"mlx-community/Qwen3.5-27B-4bit\",\"llm_backend\":\"mlx\",\"commit_hash\":\"9edd8f7\",\"node_version\":\"v24.3.0\",\"platform\":\"darwin\",\"arch\":\"arm64\",\"env\":{\"ESCRIBANO_SAMPLE_INTERVAL\":\"10\",\"ESCRIBANO_VLM_BATCH_SIZE\":\"7\",\"ESCRIBANO_VERBOSE\":\"true\"},\"system\":{\"totalMemoryGB\":128,\"cpuCores\":16,\"platform\":\"darwin\"}}"
+            if (metadata.llm_backend) {
+              backendBadge = metadata.llm_backend;
+            }
           } catch {
             // ignore
           }
         }
-        
+
         tr.innerHTML = `
           <td>${date}</td>
           <td><span class="badge badge-${run.run_type}">${run.run_type}</span></td>
+          <td><span class="backend backend-badge.${backendBadge}">${backendBadge}</span></td>
           <td><span class="badge badge-${run.status}">${run.status}</span></td>
           <td>${duration}</td>
           <td>${peakMemory}</td>
           <td><button onclick="showRunDetails('${run.id}')" class="secondary" style="font-size: 0.75rem;">Details</button></td>
         `;
-        
+
         tbody.appendChild(tr);
       });
-      
+
       runsContainer.innerHTML = '';
       runsContainer.appendChild(table);
       statsGrid.style.display = 'grid';
     }
-    
+
     function updateStats(runs) {
       const completed = runs.filter(r => r.status === 'completed').length;
       const failed = runs.filter(r => r.status === 'failed').length;
       const avgDuration = runs
         .filter(r => r.total_duration_ms)
         .reduce((acc, r) => acc + r.total_duration_ms, 0) / runs.filter(r => r.total_duration_ms).length || 0;
-      
+
       document.getElementById('stat-total-runs').textContent = runs.length;
       document.getElementById('stat-completed').textContent = completed;
       document.getElementById('stat-failed').textContent = failed;
       document.getElementById('stat-avg-duration').textContent = formatDuration(avgDuration);
     }
-    
+
     async function showRunDetails(runId) {
       try {
         const res = await fetch(`/api/runs/${runId}/stats`);
         const stats = await res.json();
-        
+
         if (stats.length === 0) {
           alert('No phase stats available for this run');
           return;
         }
-        
+
         const container = document.getElementById('phase-table-container');
-        
+
         const table = document.createElement('table');
         table.innerHTML = `
           <thead>
@@ -441,15 +449,15 @@
           </thead>
           <tbody id="phase-tbody"></tbody>
         `;
-        
+
         const tbody = table.querySelector('tbody');
-        
+
         stats.forEach(stat => {
           const tr = document.createElement('tr');
-          
+
           let resourcesHtml = '-';
           let memoryBarHtml = '';
-          
+
           if (stat.metadata) {
             try {
               const metadata = JSON.parse(stat.metadata);
@@ -457,16 +465,16 @@
                 const resources = metadata.resources;
                 const resourceItems = [];
                 let totalMemory = 0;
-                
+
                 Object.entries(resources).forEach(([name, data]) => {
                   if (data.peakMemoryMB) {
                     resourceItems.push(`${name}: ${data.peakMemoryMB}MB`);
                     totalMemory += data.peakMemoryMB;
                   }
                 });
-                
+
                 resourcesHtml = resourceItems.join('<br>');
-                
+
                 // Create memory bar
                 if (totalMemory > 0) {
                   memoryBarHtml = '<div class="resource-bar">';
@@ -484,11 +492,11 @@
               // ignore
             }
           }
-          
-          const items = stat.items_total 
+
+          const items = stat.items_total
             ? `${stat.items_processed || 0}/${stat.items_total}`
             : (stat.items_processed || '-');
-          
+
           tr.innerHTML = `
             <td><strong>${stat.phase}</strong></td>
             <td><span class="badge badge-${stat.status}">${stat.status}</span></td>
@@ -496,15 +504,15 @@
             <td>${items}</td>
             <td>${resourcesHtml}${memoryBarHtml}</td>
           `;
-          
+
           tbody.appendChild(tr);
         });
-        
+
         container.innerHTML = '';
         container.appendChild(table);
         phaseDetails.style.display = 'block';
         resourceLegend.style.display = 'flex';
-        
+
         // Scroll to phase details
         phaseDetails.scrollIntoView({ behavior: 'smooth' });
       } catch (err) {
@@ -512,7 +520,7 @@
         alert('Failed to load run details');
       }
     }
-    
+
     function formatDuration(ms) {
       if (!ms) return '-';
       const seconds = Math.floor(ms / 1000);
@@ -523,23 +531,23 @@
       }
       return `${s}s`;
     }
-    
+
     recordingSelect.addEventListener('change', async (e) => {
       const recordingId = e.target.value;
-      
+
       if (!recordingId) {
-        // Show all runs
-        displayRuns(runs);
+      // Show all runs
+      displayRuns(runs);
         updateStats(runs);
         systemInfo.style.display = 'none';
         return;
       }
-      
+
       // Filter runs for this recording
       const filteredRuns = runs.filter(r => r.recording_id === recordingId);
       displayRuns(filteredRuns);
       updateStats(filteredRuns);
-      
+
       // Show system info from the first run
       const run = filteredRuns[0];
       if (run && run.metadata) {
@@ -562,7 +570,7 @@
         }
       }
     });
-    
+
     // Load data on page load
     loadData().then(() => {
       // Check for URL param to pre-select recording

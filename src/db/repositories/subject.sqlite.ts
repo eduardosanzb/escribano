@@ -20,7 +20,7 @@ export function createSqliteSubjectRepository(
       'SELECT * FROM subjects WHERE recording_id = ? ORDER BY created_at ASC'
     ),
     insert: db.prepare(`
-      INSERT INTO subjects (id, recording_id, label, is_personal, duration, activity_breakdown, metadata, created_at)
+      INSERT OR IGNORE INTO subjects (id, recording_id, label, is_personal, duration, activity_breakdown, metadata, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `),
     insertLink: db.prepare(`

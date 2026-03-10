@@ -95,18 +95,48 @@ Good for retrospectives or blog drafts.
 
 ## Benchmarks
 
-Ran the full pipeline on 11 real screen recordings:
+### Architecture Benefits (MLX Migration)
+
+| Improvement | Impact |
+|-------------|--------|
+| **Zero dependencies** | No external daemons required |
+| **Unified backend** | VLM + LLM use same MLX infrastructure |
+| **Native Metal** | Optimized for Apple Silicon |
+| **Memory efficient** | Sequential model loading (no OOM) |
+| **Auto-detection** | RAM-based model selection |
+
+### Production Run (March 2026)
+
+Processed **17 real screen recordings** with MLX backend:
 
 | Metric | Result |
 |--------|--------|
-| Videos processed | 11 |
-| Artifacts generated | 33 (3 formats × 11 videos) |
-| Success rate | 100% |
-| Total time | 1h 41m |
-| Avg per video | **~9 min** (pipeline + all 3 formats) |
+| Videos processed | 17 |
+| Successful | 15 (88%) |
+| Total video duration | 25.6 hours |
+| Artifacts generated | 45 (3 formats × 15 videos) |
+| **LLM generation** | **~2.2 min per video** |
+| Subject grouping | 78.7s avg |
+| Artifact generation | 53.6s avg |
+| LLM success rate | 100% (92 calls) |
 | Hardware | MacBook Pro M4 Max, 128GB |
+| Backend | MLX (Qwen3-VL-2B + Qwen3.5-27B) |
 
 Everything runs locally. No API keys. Nothing leaves your machine.
+
+### Hardware Tiers (March 2026)
+
+Performance varies by hardware:
+
+| Hardware | RAM | VLM Speed | LLM Model | LLM Speed | Total (1min video) |
+|----------|-----|-----------|-----------|-----------|-------------------|
+| **M4 Max** | 128GB | 0.7s/frame | Qwen3.5-27B | 53s avg | **~2.2 min** |
+| **M1/M2/M3 Pro** | 16-32GB | 1.5-3s/frame | Qwen3.5-9B | 80-120s | ~5-8 min |
+| **M1/M2 Air** | 16GB | 7-9s/frame | Qwen3.5-9B | 150-250s | ~12-15 min |
+
+**Minimum viable**: 16GB unified memory (slower but functional)
+
+**Recommended**: 32GB+ for comfortable use, 64GB+ for best quality
 
 ---
 
@@ -141,7 +171,7 @@ Screen recording
 Activity segmentation → temporal audio alignment → TopicBlocks
      │
      ▼
-LLM summary (Ollama, auto-detected) → Markdown artifact
+LLM summary (MLX-LM, auto-detected) → Markdown artifact
 ```
 
 Uses VLM-first visual understanding, not OCR + text clustering. OCR fails for developer work because all code screens produce similar tokens. VLMs understand the *activity*, not just the text.
@@ -154,32 +184,22 @@ Uses VLM-first visual understanding, not OCR + text clustering. OCR fails for de
 
 ```bash
 # macOS (Homebrew)
-brew install ollama whisper-cpp ffmpeg
+brew install whisper-cpp ffmpeg
 
-# MLX-VLM for frame analysis (Apple Silicon)
-# Using uv (recommended, faster)
-uv pip install mlx-vlm
-
-# Or using pip
-pip install mlx-vlm
+# MLX for inference (Apple Silicon) - auto-installed on first run
+# Or pre-install with:
+pip install mlx-vlm mlx-lm
 ```
 
-### LLM Model Setup
+That's it. No external daemons required. MLX-VLM and MLX-LM run in-process.
 
-Escribano auto-detects the best model for your hardware:
+### (Optional) Ollama Backend
 
-| Your RAM | Auto-selected | Install command |
-|----------|---------------|-----------------|
-| 16GB | `qwen3:8b` | `ollama pull qwen3:8b` |
-| 32GB | `qwen3:14b` | `ollama pull qwen3:14b` |
-| 64GB+ | `qwen3.5:27b` | `ollama pull qwen3.5:27b` |
+If you prefer Ollama, set `ESCRIBANO_LLM_BACKEND=ollama`:
 
 ```bash
-# Minimum (16GB)
-ollama pull qwen3:8b
-
-# Or best quality (64GB+)
-ollama pull qwen3.5:27b
+brew install ollama
+ollama pull qwen3:8b  # or qwen3.5:27b for 64GB+ RAM
 ```
 
 ### Run

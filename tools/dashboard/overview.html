@@ -672,10 +672,17 @@
     }
 
     .artifact-outline-link {
-      margin-left: auto;
+      margin-left: 0.5rem;
       font-size: 0.75rem;
       text-decoration: none;
       color: var(--pico-primary);
+      padding: 0.125rem 0.5rem;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+
+    .artifact-outline-link:hover {
+      background: var(--pico-muted-background-color);
     }
 
     .artifact-subjects {
@@ -711,6 +718,29 @@
 
     .artifact-content {
       max-height: 300px;
+    }
+
+    /* Backend badges */
+    .backend-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .backend-badge.mlx {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .backend-badge.ollama {
+      background: #f3e8ff;
+      color: #6b21a8;
     }
   </style>
 </head>
@@ -1027,6 +1057,10 @@
         } else if (rec.outline_url) {
           outlineLinks = `<a href="${rec.outline_url}" target="_blank" class="link-icon" onclick="event.stopPropagation()" title="View in Outline">📄</a>`;
         }
+
+        const backendBadge = rec.llm_backend 
+          ? `<span class="backend-badge ${rec.llm_backend}" title="${rec.llm_model || rec.llm_backend}">${rec.llm_backend}</span>`
+          : '<span style="color: var(--pico-muted-color)">—</span>';
         
         return `
           <tr class="recording-row" data-id="${rec.id}" onclick="toggleRecordingDetail('${rec.id}')">
@@ -1040,9 +1074,11 @@
             <td>${rec.last_run_at ? formatTimestamp(rec.last_run_at) : '<span style="color: var(--pico-muted-color)">—</span>'}</td>
             <td>${rec.stats.frames || '--'}</td>
             <td>${rec.stats.vlm_fps ? rec.stats.vlm_fps + ' fps' : '--'}</td>
+            <td>${backendBadge}</td>
             <td>${formatDuration(rec.stats.processing_time_sec)}</td>
             <td class="actions-cell">
               <button class="link-icon" onclick="event.stopPropagation(); navigator.clipboard.writeText('${rec.id}'); alert('Recording ID copied to clipboard');" title="Copy ID">📋</button>
+              <a href="review.html?recording=${rec.id}" class="link-icon" onclick="event.stopPropagation()" title="Review artifact">🔍</a>
               <a href="debug.html?recording=${rec.id}" class="link-icon" onclick="event.stopPropagation()" title="View frames">🖼️</a>
               <a href="stats.html?recording=${rec.id}" class="link-icon" onclick="event.stopPropagation()" title="View stats">📊</a>
               ${outlineLinks}
@@ -1052,7 +1088,7 @@
             </td>
           </tr>
           <tr class="detail-row" id="detail-${rec.id}" style="display: none;">
-            <td colspan="8">
+            <td colspan="9">
               <div class="detail-content" id="detail-content-${rec.id}">
                 <div class="loading">Loading details...</div>
               </div>
@@ -1071,6 +1107,7 @@
               <th>Last Run</th>
               <th>Frames</th>
               <th>VLM</th>
+              <th>Backend</th>
               <th>Time</th>
               <th>Artifacts</th>
             </tr>
@@ -1142,29 +1179,30 @@
                 ${data.artifacts.map(a => {
                   const artifactSubjects = data.subjects.filter(s => a.subject_ids.includes(s.id));
                   return `
-                    <div class="artifact-card">
-                      <div class="artifact-header">
-                        <span class="artifact-type-badge ${a.type}">${a.type}</span>
-                        <span class="artifact-meta">${a.format || 'markdown'} • ${formatTimestamp(a.created_at)}</span>
-                        ${a.outline_url 
-                          ? `<a href="${a.outline_url}" target="_blank" class="artifact-outline-link">View in Outline →</a>`
-                          : '<span class="missing-indicator">⚠️ No Outline</span>'}
-                      </div>
-                      ${artifactSubjects.length > 0 ? `
-                        <div class="artifact-subjects">
-                          <span class="artifact-subjects-label">Subjects:</span>
-                          ${artifactSubjects.map(s => `
-                            <span class="subject-mini-badge ${s.is_personal ? 'personal' : 'work'}">${escapeHtml(s.label)}</span>
-                          `).join('')}
-                        </div>
-                      ` : ''}
-                      ${a.content ? `
-                        <div class="summary-content artifact-content">
-                          ${renderMarkdown(a.content)}
-                        </div>
-                      ` : ''}
+                <div class="artifact-card">
+                  <div class="artifact-header">
+                    <span class="artifact-type-badge ${a.type}">${a.type}</span>
+                    <span class="artifact-meta">${a.format || 'markdown'} • ${formatTimestamp(a.created_at)}</span>
+                    <a href="review.html?recording=${data.recording.id}&format=${a.format}" class="artifact-outline-link" onclick="event.stopPropagation()" title="Review artifact">🔍 Review</a>
+                    ${a.outline_url 
+                      ? `<a href="${a.outline_url}" target="_blank" class="artifact-outline-link">View in Outline →</a>`
+                      : '<span class="missing-indicator">⚠️ No Outline</span>'}
+                  </div>
+                  ${artifactSubjects.length > 0 ? `
+                    <div class="artifact-subjects">
+                      <span class="artifact-subjects-label">Subjects:</span>
+                      ${artifactSubjects.map(s => `
+                        <span class="subject-mini-badge ${s.is_personal ? 'personal' : 'work'}">${escapeHtml(s.label)}</span>
+                      `).join('')}
                     </div>
-                  `;
+                  ` : ''}
+                  ${a.content ? `
+                    <div class="summary-content artifact-content">
+                      ${renderMarkdown(a.content)}
+                    </div>
+                  ` : ''}
+                </div>
+              `;
                 }).join('')}
               </div>
             </div>

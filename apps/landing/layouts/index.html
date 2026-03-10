@@ -84,7 +84,14 @@
       Escribano watches your screen recordings and turns hours of deep work into structured, shareable summaries — so you never start a status update from a blank page again.
     </p>
     <div class="hero-actions">
-      <a href="#" class="btn-primary">Join the waitlist</a>
+      <form class="waitlist-form" id="waitlist-form-hero"
+            action="https://buttondown.com/api/emails/embed-subscribe/sanchez_bautista"
+            method="post">
+        <input type="email" name="email" placeholder="you@company.com"
+               class="waitlist-input" required autocomplete="email">
+        <button type="submit" class="btn-primary waitlist-submit">Join the waitlist</button>
+      </form>
+      <p class="waitlist-message" id="waitlist-msg-hero" aria-live="polite"></p>
       <a href="#open-source" class="btn-ghost">Try it free <span>→</span></a>
     </div>
     <div class="indie-badge">
@@ -225,7 +232,7 @@
         </div>
         <div class="detail-actions">
           <a href="https://github.com/eduardosanzb/escribano" class="btn-primary" target="_blank" rel="noopener">View on GitHub</a>
-          <a href="#" class="btn-ghost">Star the repo <span>★</span></a>
+          <a href="https://github.com/eduardosanzb/escribano" class="btn-ghost" target="_blank" rel="noopener">Star the repo <span>★</span></a>
         </div>
       </div>
     </div>
@@ -322,19 +329,26 @@
           <li>Cross-session search &amp; context</li>
           <li>European infrastructure only</li>
         </ul>
-        <a href="#" class="btn-pricing">Join the waitlist</a>
+        <form class="waitlist-form waitlist-form--pricing" id="waitlist-form-pricing"
+              action="https://buttondown.com/api/emails/embed-subscribe/sanchez_bautista"
+              method="post">
+          <input type="email" name="email" placeholder="you@company.com"
+                 class="waitlist-input" required autocomplete="email">
+          <button type="submit" class="btn-pricing waitlist-submit">Join the waitlist</button>
+        </form>
+        <p class="waitlist-message" id="waitlist-msg-pricing" aria-live="polite"></p>
       </div>
     </div>
-  </div>
-</section>
+  </section>
 
 <footer>
   <div>
     <div class="footer-logo">Escrib<span>a</span>no</div>
     <div class="footer-tagline">Your AI scribe for deep work</div>
+    <a href="mailto:info@escribano.work" class="footer-email">info@escribano.work</a>
   </div>
   <div class="footer-right">
-    <a href="#">Privacy Policy</a> · <a href="#">Terms</a> · <a href="#">Contact</a><br>
+    <a href="#">Privacy Policy</a> · <a href="#">Terms</a> · <a href="mailto:info@escribano.work">Contact</a><br>
     Made with care in Europe · No VC funding · © {{ now.Year }} Escribano
   </div>
 </footer>

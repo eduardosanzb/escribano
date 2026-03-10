@@ -32,6 +32,8 @@ const configSchema = z.object({
 
   // === MODELS ===
   llmModel: z.string().optional(),
+  llmBackend: z.enum(['mlx', 'ollama']).default('mlx'),
+  llmMlxModel: z.string().optional(),
   vlmModel: z.string().default('mlx-community/Qwen3-VL-2B-Instruct-4bit'),
   subjectGroupingModel: z.string().optional(),
 
@@ -39,6 +41,7 @@ const configSchema = z.object({
   verbose: z.boolean().default(false),
   debugOllama: z.boolean().default(false),
   debugVlm: z.boolean().default(false),
+  debugLlm: z.boolean().default(false),
   skipLlm: z.boolean().default(false),
 
   // === ADVANCED ===
@@ -92,10 +95,12 @@ const BASE_DEFAULTS = {
   sampleInterval: 10,
   sceneThreshold: 0.4,
   vlmMaxTokens: 2000,
+  llmBackend: 'mlx',
   vlmModel: 'mlx-community/Qwen3-VL-2B-Instruct-4bit',
   verbose: false,
   debugOllama: false,
   debugVlm: false,
+  debugLlm: false,
   skipLlm: false,
   sceneMinInterval: 2,
   sampleGapThreshold: 15,
@@ -125,12 +130,15 @@ ESCRIBANO_SCENE_THRESHOLD=0.4         # Scene detection sensitivity (0.0-1.0)
 ESCRIBANO_VLM_MAX_TOKENS=2000         # Token budget per batch
 
 # === MODELS ===
-# ESCRIBANO_LLM_MODEL=qwen3.5:27b     # Summary generation (auto-detected if not set)
+# ESCRIBANO_LLM_BACKEND=mlx             # LLM backend: 'mlx' (default) or 'ollama'
+# ESCRIBANO_LLM_MODEL=qwen3.5:27b       # Ollama model (only used if llmBackend='ollama')
+# ESCRIBANO_LLM_MLX_MODEL=              # MLX model (only used if llmBackend='mlx', auto-detected if not set)
 ESCRIBANO_VLM_MODEL=mlx-community/Qwen3-VL-2B-Instruct-4bit
 
 # === DEBUGGING ===
 ESCRIBANO_VERBOSE=false               # Enable verbose logging
 ESCRIBANO_DEBUG_VLM=false             # Debug VLM processing
+ESCRIBANO_DEBUG_LLM=false             # Log all LLM calls to debug table
 
 # === ADVANCED ===
 ESCRIBANO_SCENE_MIN_INTERVAL=2
@@ -268,6 +276,18 @@ export function loadConfig(): Config {
       sources,
       'llmModel'
     ),
+    llmBackend: (parseEnvStringWithSource(
+      'ESCRIBANO_LLM_BACKEND',
+      BASE_DEFAULTS.llmBackend,
+      sources,
+      'llmBackend'
+    ) ?? 'mlx') as 'mlx' | 'ollama',
+    llmMlxModel: parseEnvStringWithSource(
+      'ESCRIBANO_LLM_MLX_MODEL',
+      undefined,
+      sources,
+      'llmMlxModel'
+    ),
     vlmModel: parseEnvStringWithSource(
       'ESCRIBANO_VLM_MODEL',
       BASE_DEFAULTS.vlmModel,
@@ -299,6 +319,12 @@ export function loadConfig(): Config {
       BASE_DEFAULTS.debugVlm,
       sources,
       'debugVlm'
+    ),
+    debugLlm: parseEnvBooleanWithSource(
+      'ESCRIBANO_DEBUG_LLM',
+      BASE_DEFAULTS.debugLlm,
+      sources,
+      'debugLlm'
     ),
     skipLlm: parseEnvBooleanWithSource(
       'ESCRIBANO_SKIP_LLM',

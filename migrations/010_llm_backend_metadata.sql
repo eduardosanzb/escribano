@@ -9,7 +9,7 @@ UPDATE processing_runs
 SET metadata = CASE 
   WHEN metadata IS NULL THEN '{"llm_backend":"ollama"}'
   WHEN metadata LIKE '%"llm_backend"%' THEN metadata  -- Already set, don't override
-  WHEN metadata = '{}' THEN '{"llm_backend":"ollama"}'
+  WHEN metadata = '{}' THEN json_set(metadata, '$.llm_backend', 'ollama')
   WHEN json_valid(metadata) THEN json_set(metadata, '$.llm_backend', 'ollama')
   ELSE metadata
 END
@@ -20,7 +20,7 @@ UPDATE processing_runs
 SET metadata = CASE 
   WHEN metadata IS NULL THEN '{"llm_backend":"ollama"}'
   WHEN metadata LIKE '%"llm_backend"%' THEN metadata
-  WHEN metadata = '{}' THEN '{"llm_backend":"ollama"}'
+  WHEN metadata = '{}' THEN json_set(metadata, '$.llm_backend', 'ollama')
   WHEN json_valid(metadata) THEN json_set(metadata, '$.llm_backend', 'ollama')
   ELSE metadata
 END

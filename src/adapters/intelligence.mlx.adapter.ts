@@ -78,9 +78,6 @@ interface FrameDescription {
   raw_response?: string;
 }
 
-/** pip binary inside Escribano's managed venv. */
-const _ESCRIBANO_VENV_PIP = resolve(ESCRIBANO_VENV, 'bin', 'pip');
-
 function runVisible(cmd: string, args: string[]): Promise<void> {
   return new Promise((res, rej) => {
     const proc = spawn(cmd, args, { stdio: 'inherit' });

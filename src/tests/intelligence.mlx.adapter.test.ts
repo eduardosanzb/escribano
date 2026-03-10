@@ -274,6 +274,7 @@ describe('resolvePythonPath', () => {
         'mlx-vlm',
         'torch',
         'torchvision',
+        'mlx-lm',
       ])
     );
   });

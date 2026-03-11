@@ -16,10 +16,11 @@
  */
 
 import { type ChildProcess, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { createConnection, type Socket } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -35,13 +36,14 @@ import type {
 } from '../0_types.js';
 import { loadConfig } from '../config.js';
 import { getDbPath } from '../db/index.js';
-import {
-  ESCRIBANO_HOME,
-  ESCRIBANO_VENV_PYTHON,
-  getPythonPath,
-} from '../python-utils.js';
+import { ensureEscribanoVenv as ensurePythonVenv } from '../python-deps.js';
+import { getPythonPath } from '../python-utils.js';
 import type { ResourceTrackable } from '../stats/types.js';
 import { selectBestMLXModel } from '../utils/model-detector.js';
+
+// ============================================================================
+// Utility Functions - Parsing, Prompts, Debug Logging
+// ============================================================================
 
 function debugLog(...args: unknown[]): void {
   const config = loadConfig();
@@ -49,6 +51,160 @@ function debugLog(...args: unknown[]): void {
     console.log('[MLX]', ...args);
   }
 }
+
+/**
+ * Strip <think>...</think> tags from LLM output.
+ * Handles standard pairs and Qwen's orphan </think> edge case.
+ */
+function stripThinkingTags(text: string): string {
+  // Strip complete <think>...</think> pairs (standard case)
+  let result = text.replace(/<think>[\s\S]*?<\/think>/g, '');
+
+  // Strip orphan closing tag + everything before it (Qwen3.5 actual behavior)
+  // This handles: "Let me analyze...\n</think>\n# Actual answer"
+  if (result.includes('</think>')) {
+    const parts = result.split('</think>');
+    result = parts[parts.length - 1]; // Take content after the last </think>
+  }
+
+  return result.trim();
+}
+
+/**
+ * Load VLM prompt template from prompts/vlm-batch.md or use inline fallback.
+ */
+function loadVlmPrompt(batchSize: number): string {
+  try {
+    const promptPath = resolve(__dirname, '../../prompts/vlm-batch.md');
+    const content = readFileSync(promptPath, 'utf-8');
+    return content.replace('{{FRAME_COUNT}}', String(batchSize));
+  } catch {
+    // Fallback to inline prompt
+    return `Analyze these ${batchSize} screenshots from a screen recording.
+
+For each frame above, provide:
+- description: What's on screen? Be specific about content, text, and UI elements.
+- activity: What is the user doing?
+- apps: Which applications are visible?
+- topics: What topics, projects, or technical subjects?
+
+Output in this exact format for each frame:
+Frame 1: description: ... | activity: ... | apps: [...] | topics: [...]
+Frame 2: description: ... | activity: ... | apps: [...] | topics: [...]
+...and so on for all ${batchSize} frames.`;
+  }
+}
+
+/**
+ * Parse interleaved multi-frame VLM output.
+ * Handles the pipe-delimited format returned by MLX-VLM.
+ */
+function parseInterleavedOutput(
+  text: string,
+  batch: Array<{ index: number; timestamp: number; imagePath: string }>
+): Array<{
+  index: number;
+  timestamp: number;
+  imagePath: string;
+  description: string;
+  activity: string;
+  apps: string[];
+  topics: string[];
+  raw_response?: string;
+}> {
+  const results: Array<{
+    index: number;
+    timestamp: number;
+    imagePath: string;
+    description: string;
+    activity: string;
+    apps: string[];
+    topics: string[];
+    raw_response?: string;
+  }> = [];
+
+  for (let frameNum = 1; frameNum <= batch.length; frameNum++) {
+    const frame = batch[frameNum - 1];
+
+    // Look for "Frame N: description: ..." pattern
+    const pattern = new RegExp(
+      `Frame ${frameNum}:\\s*description:\\s*(.+?)\\s*\\|\\s*activity:\\s*(.+?)\\s*\\|\\s*apps:\\s*(\\[.+?\\]|[^|]+)\\s*\\|\\s*topics:\\s*(.+?)(?=Frame \\d+:|$)`,
+      'is'
+    );
+    const match = text.match(pattern);
+
+    if (match) {
+      const appsStr = match[3].replace(/^\[|\]$/g, '').trim();
+      const topicsStr = match[4].replace(/^\[|\]$/g, '').trim();
+
+      results.push({
+        index: frame.index,
+        timestamp: frame.timestamp,
+        imagePath: frame.imagePath,
+        description: match[1].trim(),
+        activity: match[2].trim(),
+        apps: appsStr
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        topics: topicsStr
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      });
+    } else {
+      results.push({
+        index: frame.index,
+        timestamp: frame.timestamp,
+        imagePath: frame.imagePath,
+        description: `Failed to parse Frame ${frameNum}`,
+        activity: 'unknown',
+        apps: [],
+        topics: [],
+        raw_response: text,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Log LLM call to debug database (TypeScript-side).
+ */
+function logLlmCallToDb(
+  recordingId: string | undefined,
+  artifactId: string | undefined,
+  callType: string,
+  prompt: string | unknown,
+  result: string,
+  metadata: Record<string, unknown>
+): void {
+  try {
+    const dbPath = getDbPath();
+    const db = new Database(dbPath);
+    const stmt = db.prepare(
+      `INSERT INTO llm_debug_log (id, recording_id, artifact_id, call_type, prompt, result, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+    const id = `ts-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    stmt.run(
+      id,
+      recordingId || null,
+      artifactId || null,
+      callType,
+      typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
+      result,
+      JSON.stringify(metadata)
+    );
+    db.close();
+    debugLog(`Logged LLM call to debug table: ${id}`);
+  } catch (err) {
+    debugLog(`Failed to log LLM call (non-fatal): ${(err as Error).message}`);
+  }
+}
+
+// ============================================================================
 
 interface MlxConfig {
   model: string;
@@ -78,75 +234,8 @@ interface FrameDescription {
   raw_response?: string;
 }
 
-function runVisible(cmd: string, args: string[]): Promise<void> {
-  return new Promise((res, rej) => {
-    const proc = spawn(cmd, args, { stdio: 'inherit' });
-    proc.on('exit', (code) =>
-      code === 0 ? res() : rej(new Error(`${cmd} exited with code ${code}`))
-    );
-    proc.on('error', rej);
-  });
-}
-
-function runSilent(cmd: string, args: string[]): Promise<void> {
-  return new Promise((res, rej) => {
-    const proc = spawn(cmd, args, { stdio: 'ignore' });
-    proc.on('exit', (code) =>
-      code === 0 ? res() : rej(new Error(`${cmd} exited with code ${code}`))
-    );
-    proc.on('error', rej);
-  });
-}
-
-async function ensureEscribanoVenv(): Promise<string> {
-  if (!existsSync(ESCRIBANO_HOME)) {
-    mkdirSync(ESCRIBANO_HOME, { recursive: true });
-  }
-
-  if (!existsSync(ESCRIBANO_VENV_PYTHON)) {
-    console.log(
-      '[MLX] First-time setup: creating Python environment at ~/.escribano/venv'
-    );
-    await runVisible('python3', ['-m', 'venv', `${ESCRIBANO_HOME}/venv`]);
-  }
-
-  let mlxReady = false;
-  try {
-    await runSilent(ESCRIBANO_VENV_PYTHON, [
-      '-c',
-      'import mlx_vlm; import mlx_lm; import torch; import torchvision',
-    ]);
-    mlxReady = true;
-  } catch {
-    // not installed yet
-  }
-
-  if (!mlxReady) {
-    console.log(
-      '[MLX] Installing mlx-vlm into ~/.escribano/venv (first run — this may take a few minutes)...'
-    );
-    try {
-      await runVisible(ESCRIBANO_VENV_PYTHON, ['-m', 'ensurepip', '--upgrade']);
-    } catch {
-      // ensurepip may be unavailable
-    }
-    await runVisible(ESCRIBANO_VENV_PYTHON, [
-      '-m',
-      'pip',
-      'install',
-      'mlx-vlm',
-      'torch',
-      'torchvision',
-      'mlx-lm',
-    ]);
-    console.log('[MLX] mlx-vlm and mlx-lm installed successfully.');
-  }
-
-  return ESCRIBANO_VENV_PYTHON;
-}
-
 export async function resolvePythonPath(): Promise<string> {
-  return getPythonPath() ?? ensureEscribanoVenv();
+  return getPythonPath() ?? ensurePythonVenv();
 }
 
 let globalCleanup: (() => void) | null = null;
@@ -257,17 +346,7 @@ export function createMlxIntelligenceService(
       const env: Record<string, string> = {
         ...process.env,
         ESCRIBANO_MLX_SOCKET_PATH: mlxConfig.socketPath,
-        ESCRIBANO_DB_PATH: getDbPath(),
-        ESCRIBANO_DEBUG_LLM: String(config.debugLlm),
       } as Record<string, string>;
-
-      // Debug: log env vars being passed to Python bridge
-      if (config.debugLlm) {
-        console.log(
-          `[MLX] Passing DEBUG_LLM=${config.debugLlm} to ${mode} bridge`
-        );
-        console.log(`[MLX] DB_PATH: ${getDbPath()}`);
-      }
 
       if (mode === 'vlm') {
         env.ESCRIBANO_VLM_MODEL = mlxConfig.model;
@@ -556,67 +635,119 @@ export function createMlxIntelligenceService(
 
       const startTime = Date.now();
       const allResults: FrameDescription[] = [];
-      const requestId = Date.now();
 
-      const handleBatch = (
-        response: {
-          results: FrameDescription[];
-          progress: { current: number; total: number };
-        },
-        progress: { current: number; total: number }
-      ): void => {
-        if (response.results) {
-          for (const result of response.results) {
+      // Convert input images to indexed list
+      const imageList = images.map((img, idx) => ({
+        index: idx,
+        timestamp: img.timestamp,
+        imagePath: img.imagePath,
+      }));
+
+      // Process in batches
+      for (
+        let batchStart = 0;
+        batchStart < imageList.length;
+        batchStart += mlxConfig.batchSize
+      ) {
+        const batchEnd = Math.min(
+          batchStart + mlxConfig.batchSize,
+          imageList.length
+        );
+        const batch = imageList.slice(batchStart, batchEnd);
+
+        debugLog(`Processing batch: ${batchStart + 1}-${batchEnd}/${total}`);
+
+        try {
+          // Load VLM prompt for this batch
+          const prompt = loadVlmPrompt(batch.length);
+
+          // Build messages in shape expected by Python bridge:
+          // [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image", imagePath: ... }, ...] }]
+          const messages = [
+            {
+              role: 'user' as const,
+              content: [
+                {
+                  type: 'text' as const,
+                  text: prompt,
+                },
+                ...batch.map((img) => ({
+                  type: 'image' as const,
+                  imagePath: img.imagePath,
+                })),
+              ],
+            },
+          ];
+
+          // Send single batch request
+          const requestId = Date.now() + batchStart;
+          const responses = await sendRequest(
+            vlmBridge,
+            getVlmSocketPath(),
+            'vlm',
+            {
+              id: requestId,
+              method: 'vlm_infer',
+              params: {
+                messages,
+                maxTokens: mlxConfig.maxTokens,
+              },
+            }
+          );
+
+          if (responses.length === 0) {
+            throw new Error('No response from VLM inference');
+          }
+
+          // Extract raw text from first response
+          const response = responses[0] as {
+            text?: string;
+            error?: string;
+          };
+          if (response.error) {
+            throw new Error(`VLM inference failed: ${response.error}`);
+          }
+
+          const rawText = response.text || '';
+          debugLog(`VLM returned ${rawText.length} chars`);
+
+          // Parse interleaved output
+          const batchResults = parseInterleavedOutput(rawText, batch);
+
+          // Append results and invoke callback with cumulative progress
+          for (const result of batchResults) {
             allResults.push(result);
+            const cumulativeProgress = {
+              current: allResults.length,
+              total,
+            };
             if (options.onImageProcessed) {
-              options.onImageProcessed(result, progress);
+              options.onImageProcessed(result, cumulativeProgress);
             }
           }
 
-          if (
-            progress.current % 10 === 0 ||
-            progress.current === progress.total
-          ) {
+          // Log progress roughly every 10 frames
+          if (allResults.length % 10 === 0 || allResults.length === total) {
             console.log(
-              `[VLM] [${progress.current}/${progress.total}] frames processed`
+              `[VLM] [${allResults.length}/${total}] frames processed`
             );
           }
+        } catch (batchError) {
+          const message = (batchError as Error).message;
+          console.error(
+            `[VLM] Batch ${batchStart + 1}-${batchEnd} failed: ${message}`
+          );
+          throw batchError;
         }
-      };
-
-      try {
-        await sendRequest(
-          vlmBridge,
-          getVlmSocketPath(),
-          'vlm',
-          {
-            id: requestId,
-            method: 'describe_images',
-            params: {
-              images: images.map((img, idx) => ({
-                index: idx,
-                imagePath: img.imagePath,
-                timestamp: img.timestamp,
-              })),
-              batchSize: mlxConfig.batchSize,
-              maxTokens: mlxConfig.maxTokens,
-            },
-          },
-          handleBatch
-        );
-
-        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-        const fps = total / ((Date.now() - startTime) / 1000);
-        console.log(
-          `\n[VLM] Complete: ${allResults.length}/${total} frames in ${duration}s (${fps.toFixed(2)} fps)`
-        );
-
-        return allResults;
-      } catch (error) {
-        const message = (error as Error).message;
-        console.error(`[VLM] ERROR: ${message}`);
-        throw new Error(`MLX VLM processing failed: ${message}`);
       }
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      const fps = total / ((Date.now() - startTime) / 1000);
+      console.log(
+        `\n[VLM] Complete: ${allResults.length}/${total} frames in ${duration}s (${fps.toFixed(2)} fps)`
+      );
+
+      return allResults;
     },
 
     async embedText(
@@ -648,6 +779,7 @@ export function createMlxIntelligenceService(
         };
       }
     ): Promise<string> {
+      const config = loadConfig();
       const modelSelection = await selectBestMLXModel();
       const resolvedModel = options?.model || modelSelection.model;
       const requestId = Date.now();
@@ -683,13 +815,12 @@ export function createMlxIntelligenceService(
         debugLog(`Generating text (${prompt.length} chars)...`);
         const responses = await sendRequest(llmBridge, llmSocketPath, 'llm', {
           id: requestId + 2,
-          method: 'generate_text',
+          method: 'llm_infer',
           params: {
             rawPrompt: prompt,
             maxTokens: options?.numPredict ?? 8000,
             temperature: 0.7,
             think: options?.think ?? false,
-            debugContext: options?.debugContext,
           },
         });
 
@@ -702,8 +833,29 @@ export function createMlxIntelligenceService(
           throw new Error(`Text generation failed: ${response.error}`);
         }
 
-        debugLog(`Generated ${response.text?.length || 0} chars`);
-        return response.text || '';
+        const rawText = response.text || '';
+        debugLog(`Generated ${rawText.length} chars`);
+
+        // Strip thinking tags in TypeScript
+        const cleanText = stripThinkingTags(rawText);
+
+        // Log to debug DB if enabled
+        if (config.debugLlm && options?.debugContext) {
+          logLlmCallToDb(
+            options.debugContext.recordingId,
+            options.debugContext.artifactId,
+            options.debugContext.callType,
+            prompt,
+            rawText,
+            {
+              model: resolvedModel,
+              think: options.think ?? false,
+              cleanedLength: cleanText.length,
+            }
+          );
+        }
+
+        return cleanText;
       } catch (error) {
         const message = (error as Error).message;
         console.error(`[LLM] ERROR: ${message}`);

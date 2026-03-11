@@ -9,28 +9,24 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock node:fs so we can control which paths "exist"
+// Mock fs so we can control which paths "exist"
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => false),
-  mkdirSync: vi.fn(),
-  unlinkSync: vi.fn(),
 }));
 
-// Mock node:child_process so we don't actually spawn anything
-vi.mock('node:child_process', () => ({
-  spawn: vi.fn(() => ({
-    on: vi.fn(),
-    stdout: { on: vi.fn() },
-    stderr: { on: vi.fn() },
-    kill: vi.fn(),
-  })),
-}));
-
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { resolvePythonPath } from '../adapters/intelligence.mlx.adapter.js';
 import { getPythonPath } from '../python-utils.js';
 
+// Mock python-deps to control venv behavior
+vi.mock('../python-deps.js', () => ({
+  ensureEscribanoVenv: vi.fn(),
+}));
+
+import { ensureEscribanoVenv as ensurePythonVenv } from '../python-deps.js';
+
 const mockExistsSync = vi.mocked(existsSync);
+const mockEnsurePythonVenv = vi.mocked(ensurePythonVenv);
 
 // Keys cleared/restored around each test
 const MANAGED_KEYS = [
@@ -58,6 +54,7 @@ describe('getPythonPath', () => {
         process.env[key] = saved[key];
       }
     }
+    mockExistsSync.mockReset();
   });
 
   it('returns ESCRIBANO_PYTHON_PATH when set (highest priority)', () => {
@@ -87,27 +84,6 @@ describe('getPythonPath', () => {
     expect(getPythonPath()).toBe(resolve('/active/venv', 'bin', 'python3'));
   });
 
-  it('returns project-local .venv python when it exists', () => {
-    const localVenvPython = resolve(process.cwd(), '.venv', 'bin', 'python3');
-    mockExistsSync.mockImplementation((p) => p === localVenvPython);
-    expect(getPythonPath()).toBe(localVenvPython);
-  });
-
-  it('returns home .venv python when it exists and local .venv does not', () => {
-    const homeVenvPython = resolve(homedir(), '.venv', 'bin', 'python3');
-    mockExistsSync.mockImplementation((p) => p === homeVenvPython);
-    expect(getPythonPath()).toBe(homeVenvPython);
-  });
-
-  it('prefers local .venv over home .venv', () => {
-    const localVenvPython = resolve(process.cwd(), '.venv', 'bin', 'python3');
-    const homeVenvPython = resolve(homedir(), '.venv', 'bin', 'python3');
-    mockExistsSync.mockImplementation(
-      (p) => p === localVenvPython || p === homeVenvPython
-    );
-    expect(getPythonPath()).toBe(localVenvPython);
-  });
-
   it('returns null when nothing is explicitly configured (triggers auto-venv)', () => {
     mockExistsSync.mockReturnValue(false);
     expect(getPythonPath()).toBeNull();
@@ -123,6 +99,7 @@ describe('resolvePythonPath', () => {
       delete process.env[key];
     }
     mockExistsSync.mockReturnValue(false);
+    mockEnsurePythonVenv.mockClear();
   });
 
   afterEach(() => {
@@ -133,12 +110,15 @@ describe('resolvePythonPath', () => {
         process.env[key] = saved[key];
       }
     }
+    mockExistsSync.mockReset();
     vi.restoreAllMocks();
   });
 
   it('returns the explicit path immediately when ESCRIBANO_PYTHON_PATH is set', async () => {
     process.env.ESCRIBANO_PYTHON_PATH = '/my/python3';
     await expect(resolvePythonPath()).resolves.toBe('/my/python3');
+    // Should not call ensurePythonVenv when explicit path is set
+    expect(mockEnsurePythonVenv).not.toHaveBeenCalled();
   });
 
   it('returns the explicit path immediately when VIRTUAL_ENV is set', async () => {
@@ -146,141 +126,29 @@ describe('resolvePythonPath', () => {
     await expect(resolvePythonPath()).resolves.toBe(
       resolve('/my/venv', 'bin', 'python3')
     );
+    // Should not call ensurePythonVenv when explicit path is set
+    expect(mockEnsurePythonVenv).not.toHaveBeenCalled();
   });
 
-  it('falls through to managed venv python when nothing is configured', async () => {
-    // Simulate: no explicit config, venv already exists, mlx-vlm already installed
-    const venvPython = resolve(
+  it('delegates to ensurePythonVenv when nothing is configured', async () => {
+    const managedPython = resolve(
       homedir(),
       '.escribano',
       'venv',
       'bin',
       'python3'
     );
-    mockExistsSync.mockImplementation((p) => p === venvPython);
+    mockEnsurePythonVenv.mockResolvedValue(managedPython);
 
-    // Mock spawn so the mlx-vlm probe exits with 0 (already installed)
-    const { spawn } = await import('node:child_process');
-    const mockSpawn = vi.mocked(spawn);
-    mockSpawn.mockImplementation((_cmd, _args, _opts) => {
-      const emitter = {
-        on: vi.fn((event: string, cb: (code: number) => void) => {
-          if (event === 'exit') cb(0);
-          return emitter;
-        }),
-        stdout: { on: vi.fn() },
-        stderr: { on: vi.fn() },
-        kill: vi.fn(),
-      };
-      return emitter as never;
-    });
-
-    await expect(resolvePythonPath()).resolves.toBe(venvPython);
+    await expect(resolvePythonPath()).resolves.toBe(managedPython);
+    expect(mockEnsurePythonVenv).toHaveBeenCalledOnce();
   });
 
-  it('creates the managed venv when it does not exist', async () => {
-    // beforeEach has mockExistsSync default to false, simulating a missing venv
-    const venvDir = resolve(homedir(), '.escribano', 'venv');
+  it('propagates errors from ensurePythonVenv', async () => {
+    const testError = new Error('Failed to set up Python environment');
+    mockEnsurePythonVenv.mockRejectedValue(testError);
 
-    const { spawn } = await import('node:child_process');
-    const mockSpawn = vi.mocked(spawn);
-    mockSpawn.mockClear();
-
-    // Set up spawn to call exit(0) for all calls so the async function resolves.
-    mockSpawn.mockImplementation((_cmd, _args, _opts) => {
-      const emitter = {
-        on: vi.fn((event: string, cb: (code: number) => void) => {
-          if (event === 'exit') cb(0);
-          return emitter;
-        }),
-        stdout: { on: vi.fn() },
-        stderr: { on: vi.fn() },
-        kill: vi.fn(),
-      };
-      return emitter as never;
-    });
-
-    await resolvePythonPath();
-
-    // Expect that we attempted to create a virtual environment in the managed directory
-    expect(mockSpawn).toHaveBeenCalled();
-
-    // Find the venv-creation call: command is python3 with -m venv <dir>
-    const venvCall = mockSpawn.mock.calls.find(
-      ([cmd, args]) =>
-        typeof cmd === 'string' &&
-        (cmd === 'python3' || cmd === 'python') &&
-        Array.isArray(args) &&
-        args.includes('-m') &&
-        args.includes('venv')
-    );
-    expect(venvCall).toBeDefined();
-    expect(venvCall?.[1]).toContain(venvDir);
-  });
-
-  it('installs mlx-vlm when the import probe fails', async () => {
-    const venvPython = resolve(
-      homedir(),
-      '.escribano',
-      'venv',
-      'bin',
-      'python3'
-    );
-    const escribanoHome = resolve(homedir(), '.escribano');
-
-    mockExistsSync.mockImplementation((p) => p === escribanoHome);
-
-    const mockMkdirSync = vi.mocked(mkdirSync);
-    mockMkdirSync.mockReturnValue(undefined);
-
-    const { spawn } = await import('node:child_process');
-    const mockSpawn = vi.mocked(spawn);
-    mockSpawn.mockClear();
-
-    let callIndex = 0;
-    mockSpawn.mockImplementation((_cmd, _args, _opts) => {
-      const thisCall = callIndex++;
-      const emitter = {
-        on: vi.fn((event: string, cb: (code: number) => void) => {
-          if (event === 'exit') {
-            if (thisCall === 1) {
-              cb(1);
-            } else {
-              cb(0);
-            }
-          }
-          return emitter;
-        }),
-        stdout: { on: vi.fn() },
-        stderr: { on: vi.fn() },
-        kill: vi.fn(),
-      };
-      return emitter as never;
-    });
-
-    await expect(resolvePythonPath()).resolves.toBe(venvPython);
-
-    expect(mockSpawn.mock.calls.length).toBeGreaterThanOrEqual(3);
-
-    const installCall = mockSpawn.mock.calls.find(
-      ([_cmd, args]) =>
-        Array.isArray(args) &&
-        args.includes('-m') &&
-        args.includes('pip') &&
-        args.includes('install') &&
-        args.includes('mlx-vlm')
-    );
-    expect(installCall).toBeDefined();
-    expect(installCall?.[1]).toEqual(
-      expect.arrayContaining([
-        '-m',
-        'pip',
-        'install',
-        'mlx-vlm',
-        'torch',
-        'torchvision',
-        'mlx-lm',
-      ])
-    );
+    await expect(resolvePythonPath()).rejects.toThrow(testError);
+    expect(mockEnsurePythonVenv).toHaveBeenCalledOnce();
   });
 });

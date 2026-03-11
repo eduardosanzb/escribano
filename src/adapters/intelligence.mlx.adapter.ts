@@ -661,21 +661,37 @@ export function createMlxIntelligenceService(
           // Load VLM prompt for this batch
           const prompt = loadVlmPrompt(batch.length);
 
-          // Build messages in shape expected by Python bridge:
-          // [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image", imagePath: ... }, ...] }]
+          // Build interleaved messages: [label, image, label, image, ..., prompt]
+          // This matches the old Python structure that worked correctly
+          const content: Array<
+            | { type: 'text'; text: string }
+            | { type: 'image'; imagePath: string }
+          > = [];
+
+          for (let i = 0; i < batch.length; i++) {
+            const frameNum = i + 1;
+            const timestamp = batch[i].timestamp;
+
+            content.push({
+              type: 'text' as const,
+              text: `Frame ${frameNum} (timestamp: ${timestamp}s):`,
+            });
+
+            content.push({
+              type: 'image' as const,
+              imagePath: batch[i].imagePath,
+            });
+          }
+
+          content.push({
+            type: 'text' as const,
+            text: prompt,
+          });
+
           const messages = [
             {
               role: 'user' as const,
-              content: [
-                {
-                  type: 'text' as const,
-                  text: prompt,
-                },
-                ...batch.map((img) => ({
-                  type: 'image' as const,
-                  imagePath: img.imagePath,
-                })),
-              ],
+              content,
             },
           ];
 

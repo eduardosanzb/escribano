@@ -7,6 +7,11 @@
 import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
+  checkCorePackagesInstalled,
+  detectPipCommand,
+  getPythonPackagesToInstall,
+} from './python-deps.js';
+import {
   ESCRIBANO_VENV_PYTHON,
   getEffectivePythonPathSync,
 } from './python-utils.js';
@@ -72,7 +77,7 @@ const PREREQUISITES: PrerequisiteResult[] = [
   {
     name: 'mlx-vlm',
     found: false,
-    installCommand: 'pip install mlx-vlm torch torchvision',
+    installCommand: 'pip install mlx-vlm mlx-lm',
     notes:
       'VLM library for frame analysis (Apple Silicon) — auto-installed by escribano on first run',
   },
@@ -154,58 +159,6 @@ function checkLLMModels(): {
   };
 }
 
-function checkPythonPackage(packageName: string): {
-  found: boolean;
-  pythonPath?: string;
-} {
-  const pythonPath = getEffectivePythonPathSync();
-  try {
-    execSync(`"${pythonPath}" -c "import ${packageName}"`, {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 5000,
-    });
-    return { found: true, pythonPath };
-  } catch {
-    return { found: false };
-  }
-}
-
-function detectPipCommand(): string {
-  // Check for uv first (fastest, recommended)
-  try {
-    execSync('uv --version', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 3000,
-    });
-    return 'uv pip install mlx-vlm';
-  } catch {}
-
-  // Check for pip3
-  try {
-    execSync('pip3 --version', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 3000,
-    });
-    return 'pip3 install mlx-vlm';
-  } catch {}
-
-  // Check for pip
-  try {
-    execSync('pip --version', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 3000,
-    });
-    return 'pip install mlx-vlm';
-  } catch {}
-
-  // Fallback: python3 -m pip
-  return 'python3 -m pip install mlx-vlm';
-}
-
 export function checkPrerequisites(): PrerequisiteResult[] {
   const results: PrerequisiteResult[] = [];
 
@@ -257,13 +210,14 @@ export function checkPrerequisites(): PrerequisiteResult[] {
         break;
       }
       case 'mlx-vlm': {
-        const check = checkPythonPackage('mlx_vlm');
-        result.found = check.found;
-        if (check.found && check.pythonPath) {
-          result.notes = `via ${check.pythonPath}`;
+        const pythonPath = getEffectivePythonPathSync();
+        result.found = checkCorePackagesInstalled(pythonPath);
+
+        if (result.found) {
+          result.notes = `via ${pythonPath}`;
         } else if (existsSync(ESCRIBANO_VENV_PYTHON)) {
-          // Managed venv exists but mlx-vlm is missing — auto-install will fix it on next run
-          result.installCommand = `${ESCRIBANO_VENV_PYTHON} -m pip install mlx-vlm torch torchvision`;
+          const packages = getPythonPackagesToInstall();
+          result.installCommand = `${ESCRIBANO_VENV_PYTHON} -m pip install ${packages.join(' ')}`;
         } else {
           result.installCommand = detectPipCommand();
         }

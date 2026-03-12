@@ -10,11 +10,12 @@
 
 Validate that a standalone Swift CLI using ScreenCaptureKit can:
 
-1. Run headlessly (no visible window) as a launchd LaunchAgent
+1. Run headlessly (no visible window) when launched interactively
 2. Take periodic screenshots on a timer
 3. Capture all connected displays
 4. Persist TCC permissions across binary restarts
 
+For this spike, execution is **interactive-only** — launchd `LaunchAgent` plists and daemonization are explicitly **out of scope** and will be validated in a later phase.
 This is **throwaway code** — isolated from the main Escribano pipeline. Delete after findings are incorporated into Phase 1 implementation.
 
 Analogous to: `scripts/poc-vllm-mlx/` (MLX-VLM proof-of-concept)

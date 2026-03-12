@@ -73,11 +73,11 @@ describe('checkPythonPackageInstalled', () => {
     );
   });
 
-  it('strips version specifier from package name', () => {
+  it('maps hyphenated package names to valid Python module names', () => {
     mockExecSync.mockReturnValue('');
     checkPythonPackageInstalled('mlx-vlm>=0.9.0', '/path/to/python3');
     expect(mockExecSync).toHaveBeenCalledWith(
-      expect.stringContaining('import mlx-vlm'),
+      expect.stringContaining('import mlx_vlm'),
       expect.any(Object)
     );
   });
@@ -111,7 +111,7 @@ describe('detectPipCommand', () => {
 
   it('returns uv command when uv is available', () => {
     mockExecSync.mockReturnValue('uv 0.1.0');
-    expect(detectPipCommand()).toBe('uv pip install mlx-vlm mlx-lm');
+    expect(detectPipCommand()).toBe('uv pip install mlx-vlm mlx mlx-lm');
   });
 
   it('returns pip3 command when pip3 is available', () => {
@@ -120,7 +120,7 @@ describe('detectPipCommand', () => {
         throw new Error('uv not found');
       })
       .mockReturnValue('pip 23.0');
-    expect(detectPipCommand()).toBe('pip3 install mlx-vlm mlx-lm');
+    expect(detectPipCommand()).toBe('pip3 install mlx-vlm mlx mlx-lm');
   });
 
   it('returns pip command as fallback', () => {
@@ -132,14 +132,16 @@ describe('detectPipCommand', () => {
         throw new Error('pip3 not found');
       })
       .mockReturnValue('pip 23.0');
-    expect(detectPipCommand()).toBe('pip install mlx-vlm mlx-lm');
+    expect(detectPipCommand()).toBe('pip install mlx-vlm mlx mlx-lm');
   });
 
   it('returns python3 -m pip as final fallback', () => {
     mockExecSync.mockImplementation(() => {
       throw new Error('not found');
     });
-    expect(detectPipCommand()).toBe('python3 -m pip install mlx-vlm mlx-lm');
+    expect(detectPipCommand()).toBe(
+      'python3 -m pip install mlx-vlm mlx mlx-lm'
+    );
   });
 });
 

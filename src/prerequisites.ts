@@ -77,7 +77,7 @@ const PREREQUISITES: PrerequisiteResult[] = [
   {
     name: 'mlx-vlm',
     found: false,
-    installCommand: 'pip install mlx-vlm mlx-lm',
+    installCommand: undefined,
     notes:
       'VLM library for frame analysis (Apple Silicon) — auto-installed by escribano on first run',
   },

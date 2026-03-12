@@ -138,7 +138,7 @@ describe('resolvePythonPath', () => {
       'bin',
       'python3'
     );
-    mockEnsurePythonVenv.mockResolvedValue(managedPython);
+    mockEnsurePythonVenv.mockReturnValue(managedPython);
 
     await expect(resolvePythonPath()).resolves.toBe(managedPython);
     expect(mockEnsurePythonVenv).toHaveBeenCalledOnce();
@@ -146,7 +146,9 @@ describe('resolvePythonPath', () => {
 
   it('propagates errors from ensurePythonVenv', async () => {
     const testError = new Error('Failed to set up Python environment');
-    mockEnsurePythonVenv.mockRejectedValue(testError);
+    mockEnsurePythonVenv.mockImplementation(() => {
+      throw testError;
+    });
 
     await expect(resolvePythonPath()).rejects.toThrow(testError);
     expect(mockEnsurePythonVenv).toHaveBeenCalledOnce();

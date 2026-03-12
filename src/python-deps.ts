@@ -195,8 +195,9 @@ export function ensureEscribanoVenv(): string {
     );
   }
 
+  const packages = getPythonInstallPackageNames();
   console.log(
-    `[VLM] Installing mlx-vlm into ${ESCRIBANO_VENV} (this may take a few minutes)...`
+    `[VLM] Installing MLX Python packages into ${ESCRIBANO_VENV}: ${packages.join(', ')} (this may take a few minutes)...`
   );
 
   // Install packages into the venv
@@ -209,8 +210,42 @@ export function ensureEscribanoVenv(): string {
     throw new Error(`Failed to install packages: ${result.error}`);
   }
 
-  console.log('[VLM] mlx-vlm installed successfully.');
+  console.log('[VLM] MLX Python packages installed successfully.');
   return ESCRIBANO_VENV_PYTHON;
+}
+
+// ============================================================================
+// Package Name Normalization
+// ============================================================================
+
+/**
+ * Strip version specifier from a package spec.
+ * "mlx-vlm>=0.9.0" -> "mlx-vlm"
+ */
+function stripVersionSpecifier(pkg: string): string {
+  return pkg.split(/[>=<]/)[0].trim();
+}
+
+/**
+ * Map pip package name to Python module name.
+ * Handles known hyphenated packages: mlx-vlm -> mlx_vlm, mlx-lm -> mlx_lm
+ */
+function toPythonModuleName(pkg: string): string {
+  const base = stripVersionSpecifier(pkg);
+  const knownMap: Record<string, string> = {
+    'mlx-vlm': 'mlx_vlm',
+    'mlx-lm': 'mlx_lm',
+    mlx: 'mlx',
+  };
+  return knownMap[base] ?? base.replace(/-/g, '_');
+}
+
+/**
+ * Get install package names without versions.
+ * Used for generating pip install hints.
+ */
+function getPythonInstallPackageNames(): string[] {
+  return getPythonPackagesToInstall().map(stripVersionSpecifier);
 }
 
 // ============================================================================
@@ -219,15 +254,17 @@ export function ensureEscribanoVenv(): string {
 
 /**
  * Check if a specific Python package is installed in the given environment.
+ * Accepts pip-style package names (e.g., "mlx-vlm>=0.9.0") and maps to importable module names.
  */
 export function checkPythonPackageInstalled(
   packageName: string,
   pythonPath?: string
 ): boolean {
   const python = pythonPath || getPythonPath() || 'python3';
+  const moduleName = toPythonModuleName(packageName);
 
   try {
-    execSync(`"${python}" -c "import ${packageName.split(/[>=<]/)[0]}"`, {
+    execSync(`"${python}" -c "import ${moduleName}"`, {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 5000,
@@ -264,6 +301,8 @@ export function checkCorePackagesInstalled(pythonPath?: string): boolean {
  * MLX-only (audio deps are managed separately via uv run).
  */
 export function detectPipCommand(): string {
+  const packages = getPythonInstallPackageNames().join(' ');
+
   // Check for uv first (fastest, recommended)
   try {
     execSync('uv --version', {
@@ -271,7 +310,7 @@ export function detectPipCommand(): string {
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 3000,
     });
-    return 'uv pip install mlx-vlm mlx-lm';
+    return `uv pip install ${packages}`;
   } catch {}
 
   // Check for pip3
@@ -281,7 +320,7 @@ export function detectPipCommand(): string {
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 3000,
     });
-    return 'pip3 install mlx-vlm mlx-lm';
+    return `pip3 install ${packages}`;
   } catch {}
 
   // Check for pip
@@ -291,9 +330,9 @@ export function detectPipCommand(): string {
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 3000,
     });
-    return 'pip install mlx-vlm mlx-lm';
+    return `pip install ${packages}`;
   } catch {}
 
   // Fallback: python3 -m pip
-  return 'python3 -m pip install mlx-vlm mlx-lm';
+  return `python3 -m pip install ${packages}`;
 }

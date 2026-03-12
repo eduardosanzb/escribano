@@ -41,15 +41,15 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [x] Validate all displays enumerated + captured from CLI binary (single display tested)
 - [x] Test TCC permission behavior: grant, persist across restart, behavior after binary replace
 - [x] Document results in `docs/SCREENCAPTUREKIT-POC-SPIKE.md` and confirm Phase 1 approach
-- **Phase A complete (2026-03-12)** — Phase B (SCStream) pending
-- See: `docs/SCREENCAPTUREKIT-POC-SPIKE.md` for full results + learnings
+- **Phase A complete (2026-03-12)** — See: `docs/SCREENCAPTUREKIT-POC-SPIKE.md` for full results + learnings
 
-#### Pre-Phase 1b: SCStream Validation (~2-4h)
-- [ ] Extend POC to use `SCStream` instead of `SCScreenshotManager`
-- [ ] Validate `minimumFrameInterval` controls delivery rate (5s interval)
-- [ ] Validate `CMSampleBuffer` → `CGImage` conversion
-- [ ] Confirm stream delivers frames headlessly without Timer
-- [ ] See: `docs/SCREENCAPTUREKIT-POC-SPIKE.md` Phase B section for details
+#### Pre-Phase 1b: SCStream Validation
+- [x] Extend POC to use `SCStream` instead of `SCScreenshotManager`
+- [x] Validate `minimumFrameInterval` controls delivery rate (5s interval — confirmed exactly 5s)
+- [x] Validate `CMSampleBuffer` → `CGImage` conversion
+- [x] Confirm stream delivers frames headlessly without Timer
+- [x] Document Swift 6 concurrency patterns in `docs/SCREENCAPTUREKIT-POC-SPIKE.md`
+- **Phase B complete (2026-03-12)** — SCStream confirmed as Phase 1 capture API. See: `docs/SCREENCAPTUREKIT-POC-SPIKE.md` Phase B section for patterns + gotchas
 
 #### Phase 1: Swift Capture Daemon (~3-4 days)
 - [ ] Set up `apps/recorder/` Swift package (Package.swift, Xcode project, basic structure)
@@ -131,7 +131,8 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ### 2026-03
 
-- **ADR-009** — Architecture decision for always-on screen recorder (Swift ScreenCaptureKit + SQLite WAL)
+- **SCStream POC (Phase B)** — Validated `SCStream` with Swift 6 concurrency patterns (`@MainActor`, `sampleHandlerQueue: .main`, `MainActor.assumeIsolated`, `nonisolated(unsafe) let`); 5s frame interval confirmed exact; SCStream chosen as Phase 1 capture API
+- **ScreenCaptureKit Spike (Phase A)** — ADR-009 architecture decision for always-on screen recorder (Swift ScreenCaptureKit + SQLite WAL)
 - **MLX-LM migration** — Unified VLM + LLM backend, 17 recordings validated, 100% success
 - **Production benchmarks** — 25.6 hours processed, ~2.2 min/video average
 - **Config file support** — Auto-create `~/.escribano/.env`

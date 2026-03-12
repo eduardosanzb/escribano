@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (2026-03-12) | Updated (2026-03-12) — Blocking issues resolved, concurrency & schema refined via research spike
+Proposed (2026-03-12) | Updated (2026-03-12) — Blocking issues resolved, concurrency & schema refined via research spike | **Accepted (2026-03-12) — Phase A (SCScreenshotManager) + Phase B (SCStream) both validated; SCStream confirmed as Phase 1 capture API**
 
 ## Context
 
@@ -312,46 +312,12 @@ This section documents critical architectural questions resolved during the revi
 - **Disk usage** — Continuous JPEG capture requires cleanup strategy (JPEG deleted after analysis, stale frame purge every 7 days)
 - **macOS-only** — ScreenCaptureKit locks capture layer to Apple platforms (intentional, cross-platform deferred)
 - **New entity** — `frames` table adds schema complexity (mitigated by clear FK chain: Frame → Observation → Segment)
-- **ScreenCaptureKit daemon feasibility** — **Phase A (SCScreenshotManager) validated**; Phase B (SCStream) pending. See `docs/SCREENCAPTUREKIT-POC-spike.md` for full results and blocking.
+- **ScreenCaptureKit daemon feasibility** — **Phase A (SCScreenshotManager) + Phase B (SCStream) both validated (2026-03-12).** SCStream confirmed as the Phase 1 capture API. See `docs/SCREENCAPTUREKIT-POC-SPIKE.md` for full results, Swift 6 concurrency patterns, and build toolchain gotchas.
 
 ### Neutral
 - SQLite WAL handles concurrency (no Redis/message queue)
 - Existing VLM/LLM infrastructure unchanged (same MLX bridge)
 - Current batch pipeline continues to work alongside recorder
-
-- **New entity** — `frames` table adds schema complexity (mitigated by clear FK chain: Frame → Observation → Segment)
-- **ScreenCaptureKit daemon feasibility** — **Phase A validated** (`SCScreenshotManager`), Phase B (`SCStream`) pending — see `docs/SCREENCAPTUREKIT-POC-SPIKE.md`
-
-**Approach**: Minimal Swift proof-of-concept in `apps/recorder-spike/`:
-
-```
-apps/recorder-spike/
-├── Package.swift                      -- Swift package definition
-├── Sources/Spike/main.swift           -- Minimal capture loop
-└── com.escribano.spike.plist          -- Test launchd plist (LaunchAgent)
-```
-
-**What to validate:**
-1. Can `SCShareableContent.current` be called in a launchd daemon (no window server access)?
-2. Does TCC Screen Recording permission survive daemon restart? Can it be granted non-interactively?
-3. Does `SCStream` support periodic screenshot mode, or is it streaming-only? (If streaming-only, can we capture keyframes efficiently?)
-4. Do `SCDisplay` handles work for all connected monitors in daemon context?
-
-**Success criteria:**
-- [ ] Compile and run Swift proof-of-concept using Swift Package Manager and Xcode Command Line Tools (no Xcode.app GUI required)
-- [ ] Install launchd plist and run as background agent
-- [ ] Capture one screenshot successfully to disk
-- [ ] Verify screenshot contains expected content (not blank/black screen)
-- [ ] Confirm permission prompt appears on first run (or graceful fail if denied)
-
-**Failure scenarios & fallbacks:**
-- **SCK requires UI session** → Use `CGWindowListCreateImage()` (older API, no TCC requirement, but single display only)
-- **SCK streaming-only** → Use `SCStream` with frame handler + high capture rate + pHash dedup (more CPU)
-- **TCC permission not grantable for daemon** → Require user interaction once, then persist permission (same as ffmpeg recorder)
-
-**Ownership**: @opencode agent (explore subagent) — research + validation, no implementation
-
-**Timeline**: 2-4 hours
 
 ---
 

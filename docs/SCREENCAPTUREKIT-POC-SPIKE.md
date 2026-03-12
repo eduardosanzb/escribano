@@ -2,7 +2,7 @@
 
 **Date:** March 12, 2026
 **Hardware:** MacBook Pro M4 Max (128GB unified memory)
-**Status:** **Phase A (SCScreenshotManager) complete** — Phase B (SCStream) pending
+**Status:** **Phase A (SCScreenshotManager) complete** — **Phase B (SCStream) complete** — both validated 2026-03-12
 
 ---
 
@@ -44,7 +44,7 @@ Adopt `SCStream` for efficient periodic multi-display capture, implement Swift 6
 | TCC staleness after binary update? | "Goes stale, needs lsregister -f" | **DISPROVED** — no re-prompt after binary replacement on macOS 15.3.2 |
 | `SCScreenshotManager` works? | Validated (macOS 14+) | **CONFIRMED** — returns valid frames headlessly |
 | Multi-monitor support? | Validated | Deferred to Phase 4 (single display tested) |
-| Efficient periodic capture? | `SCStream` recommended | **Phase B will validate** — `SCScreenshotManager` has per-call overhead |
+| Efficient periodic capture? | `SCStream` recommended | **CONFIRMED** — `minimumFrameInterval=5s` delivers exactly 1 frame/5s, no Timer needed |
 
 ### Reference Implementations
 
@@ -250,7 +250,7 @@ All tests run on macOS 15.3.2 by the user (Eduardo) on 2026-03-12.
 
 ## Phase B: SCStream Validation
 
-**Status:** Pending — required before Phase 1 implementation starts.
+**Status:** Complete (2026-03-12)
 
 ### Why SCStream Instead of SCScreenshotManager for Phase 1
 
@@ -276,104 +276,159 @@ The research synthesis (S1) and Peekaboo (production reference) both use `SCStre
 | Best for | Timer-based periodic capture (5-10s) | Sub-second sampling, real-time scene-change reaction |
 | Per-call overhead | Yes (session open/close each call) | No (persistent session) |
 
-**Decision for Phase 1:** Use `SCStream` with `minimumFrameInterval` set to the capture interval. The persistent session is more efficient for 24/7 operation.
+**Decision for Phase 1:** Use `SCStream` with `minimumFrameInterval` set to the capture interval. The persistent session is more efficient for 24/7 operation. **Confirmed by Phase B.**
 
-### What to Prove
+### Actual Code Implemented
 
-- [ ] `SCStream` starts and delivers frames headlessly (no UI session required)
-- [ ] `minimumFrameInterval` controls delivery rate — set to 5s, confirm ~1 frame/5s
-- [ ] `CMSampleBuffer` → `CGImage` conversion works correctly (via `CVPixelBuffer`)
-- [ ] Multi-display: one `SCStream` per display, confirmed separate frame delivery
-- [ ] Stream restarts cleanly after permission revoke + re-grant
-
-### Swift 6 Pattern (Replace Timer with Task)
-
-For Phase 1, replace the `Timer` pattern from Phase A with Swift 6 idiomatic code:
+#### `scripts/poc-screencapturekit-stream/Package.swift`
 
 ```swift
-// Instead of Timer.scheduledTimer — use a cancellable Task loop
-let captureTask = Task {
-    while !Task.isCancelled {
-        await capture()
-        try await Task.sleep(for: .seconds(captureInterval))
-    }
-}
+// swift-tools-version: 6.0
+import PackageDescription
+
+let package = Package(
+    name: "sck-stream-poc",
+    platforms: [.macOS(.v15)],
+    targets: [
+        .executableTarget(
+            name: "sck-stream-poc",
+            path: "Sources"
+        )
+    ]
+)
 ```
 
-With `SCStream` this loop is not even needed — the stream's `minimumFrameInterval` handles cadence. The `Task` pattern is still useful for the overall daemon lifecycle (startup, shutdown, error recovery).
+#### `scripts/poc-screencapturekit-stream/Sources/main.swift` (key patterns)
 
-### SCStream Sketch for Phase B POC
+The full implementation is in the POC directory. Key Swift 6 concurrency patterns used:
 
 ```swift
-import ScreenCaptureKit
-import CoreMedia
+// 1. @MainActor final class protects all mutable state (frameCount, ciContext, stream ref)
+@MainActor final class StreamCapture: NSObject, SCStreamOutput {
+    private var frameCount: Int = 0
+    private let ciContext = CIContext()  // expensive to create; reuse across frames
 
-let outputDir = URL(fileURLWithPath: "/tmp/sck-stream-frames")
+    // 2. sampleHandlerQueue: .main — aligns SCStream callbacks with @MainActor executor.
+    //    CRITICAL: without this, assumeIsolated would be a runtime assertion failure.
+    try stream?.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
 
-class StreamCapture: NSObject, SCStreamOutput {
-    let stream: SCStream
-    var frameCount = 0
+    // 3. nonisolated delegate method (Obj-C protocol witness) re-enters @MainActor via assumeIsolated
+    nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-    init(display: SCDisplay) async throws {
-        let config = SCStreamConfiguration()
-        config.width = Int(display.width) / 2
-        config.height = Int(display.height) / 2
-        config.minimumFrameInterval = CMTime(value: 5, timescale: 1) // 1 frame per 5s
-        config.pixelFormat = kCVPixelFormatType_32BGRA
+        // 4. nonisolated(unsafe) let on a local variable silences the Sendable warning for
+        //    CVPixelBuffer crossing the isolation boundary. Safe here because:
+        //    - sampleHandlerQueue is .main, so we're already on the main thread
+        //    - CVPixelBuffer is used immediately and not stored
+        nonisolated(unsafe) let safeBuffer = pixelBuffer
 
-        let filter = SCContentFilter(display: display, excludingWindows: [])
-        stream = SCStream(filter: filter, configuration: config, delegate: nil)
-        super.init()
-        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
-        try await stream.startCapture()
-    }
-
-    func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen,
-              let imageBuffer = CMSampleBufferGetImageBuffer(buffer) else { return }
-        let ciImage = CIImage(cvPixelBuffer: imageBuffer)
-        let context = CIContext()
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
-        let timestamp = Int(Date().timeIntervalSince1970)
-        let url = outputDir.appendingPathComponent("stream_\(timestamp).jpg")
-        saveJPEG(cgImage, to: url)
-        frameCount += 1
-        print("[SCStream] [\(frameCount)] Saved stream_\(timestamp).jpg — \(cgImage.width)x\(cgImage.height)px")
-    }
-
-    func saveJPEG(_ image: CGImage, to url: URL) {
-        guard let destination = CGImageDestinationCreateWithURL(
-            url as CFURL,
-            "public.jpeg" as CFString,
-            1,
-            nil
-        ) else { return }
-        let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.8]
-        CGImageDestinationAddImage(destination, image, options as CFDictionary)
-        CGImageDestinationFinalize(destination)
-    }
-}
-
-// Usage in NSApplicationDelegate:
-let app = NSApplication.shared
-class AppDelegate: NSObject, NSApplicationDelegate {
-    var captures: [StreamCapture] = []
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        Task {
-            let content = try await SCShareableContent.current
-            for display in content.displays {
-                let capture = try await StreamCapture(display: display)
-                captures.append(capture)
-            }
-            print("[SCStream] Started \(captures.count) stream(s)")
+        // 5. MainActor.assumeIsolated — synchronous re-entry; no Task spawn needed
+        MainActor.assumeIsolated {
+            let ciImage = CIImage(cvPixelBuffer: safeBuffer)
+            guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
+            // ... save JPEG, increment counter
         }
     }
 }
-let delegate = AppDelegate()
-app.delegate = delegate
-app.run()
+
+// 6. SCStreamDelegate conformance in separate extension — avoids signature mismatch warnings
+extension StreamCapture: SCStreamDelegate {
+    nonisolated func stream(_ stream: SCStream, didStopWithError error: any Error) {
+        // error is non-optional in the protocol — match exactly
+        let displayID = self.displayID
+        MainActor.assumeIsolated {
+            print("[SCStream] Stream stopped for display \(displayID): \(error.localizedDescription)")
+        }
+    }
+}
 ```
+
+### Build Toolchain Gotchas (Phase B)
+
+Issues encountered and fixed — avoid repeating in Phase 1.
+
+1. **`@MainActor` + `nonisolated(unsafe)` are mutually exclusive on instance methods.**
+   The initial implementation tried `private nonisolated(unsafe) func processFrameOnMain(...)` decorated with `@MainActor`. Swift 6 rejects this: "instance method has multiple actor-isolation attributes."
+   **Fix:** Remove the helper method entirely. Inline all frame processing inside `MainActor.assumeIsolated { }` within the `nonisolated` `stream(_:didOutputSampleBuffer:of:)` callback. Use `nonisolated(unsafe) let` on the local `pixelBuffer` binding instead.
+
+2. **`nonisolated(unsafe)` has no effect on instance methods (warning + error).**
+   The attribute only applies to stored properties and local variable bindings, not method declarations.
+   **Fix:** Apply `nonisolated(unsafe)` to the local `let safeBuffer = pixelBuffer` binding inside the callback, not to any method.
+
+3. **`SCStreamDelegate.stream(_:didStopWithError:)` signature mismatch.**
+   The protocol declares `error: any Error` (non-optional), but an initial implementation used `(any Error)?` (optional).
+   Swift 6 warns: "parameter has different optionality than expected by protocol."
+   **Fix:** Match the protocol signature exactly: `error: any Error`. The delegate is only called on actual errors so the non-optional signature is correct.
+
+4. **`@preconcurrency import ScreenCaptureKit` is still required in Swift 6.**
+   `SCShareableContent` is not `Sendable` in the current SDK. Without `@preconcurrency`, using it in `@MainActor async` functions produces errors.
+   **Fix:** Keep `@preconcurrency import ScreenCaptureKit` until Apple ships Sendable conformances.
+
+5. **swift-tools-version 6.0 enables strict concurrency by default.**
+   All the Swift 6 warnings above become errors (not warnings). This is intentional — Phase B uses swift-tools-version 6.0 and macOS(.v15) to mirror production conditions.
+   Phase A used 5.9 so did not hit these. Plan for these patterns in Phase 1.
+
+### Manual Test Results
+
+All tests run on macOS 15.3.2 by Eduardo on 2026-03-12.
+
+#### Actual terminal output
+
+```
+[AppDelegate] Writing frames to /tmp/sck-stream-frames
+[AppDelegate] Capture interval: 5s  |  Press Ctrl+C to stop
+[AppDelegate] Found 1 display(s)
+[SCStream] Starting capture for display 1
+[SCStream] Capture started for display 1
+[AppDelegate] Started 1 stream(s)
+[SCStream] [1] display1: saved display1_stream_1773325668.jpg — 864x558px
+[SCStream] [2] display1: saved display1_stream_1773325673.jpg — 864x558px
+[SCStream] [3] display1: saved display1_stream_1773325678.jpg — 864x558px
+[SCStream] [4] display1: saved display1_stream_1773325683.jpg — 864x558px
+[SCStream] [5] display1: saved display1_stream_1773325688.jpg — 864x558px
+^C
+```
+
+Note: display ID in Phase A was `3` (from `SCScreenshotManager`); Phase B shows `1` (from `SCStream`). The two APIs enumerate displays differently. Phase 1 should use the display's `CGDirectDisplayID` obtained from CoreGraphics for stable cross-session identification.
+
+#### Validation checklist
+
+- [x] `SCStream` starts and delivers frames headlessly (no UI session required)
+- [x] `minimumFrameInterval = CMTime(value:5, timescale:1)` delivers exactly 1 frame per 5s — timestamps: `...668`, `...673`, `...678`, `...683`, `...688` (delta = 5s ± 0s across all 5 frames)
+- [x] `CMSampleBuffer` → `CVPixelBuffer` → `CIImage` → `CGImage` conversion works correctly
+- [x] JPEG files written at 0.8 quality — sizes ~180–250KB per frame (consistent with Phase A)
+- [x] Frame dimensions correct — `864x558px` = half of physical display resolution (1728x1116), as configured
+- [x] Clean shutdown on Ctrl+C — process exits, no hang
+- [ ] Multi-display: one `SCStream` per display — deferred to Phase 4 (single display tested; Phase A also single display)
+- [ ] Stream restart after permission revoke + re-grant — deferred; not blocking for Phase 1
+
+#### TCC permission behavior (Phase B)
+
+Same behavior as Phase A (path-based, terminal inherits):
+- Running an **unsigned CLI binary** for the first time with `SCStream` does not trigger a TCC prompt — macOS silently denies with error `SCStreamErrorDomain Code=-3801 "The user declined TCCs"`.
+- **Fix**: Grant Screen Recording permission to the **terminal app** (iTerm2, Terminal.app, etc.) in System Settings → Privacy & Security → Screen Recording. The binary runs under the terminal's process and inherits the terminal's TCC grant.
+- After granting terminal permission: runs without prompt, no re-prompt after binary replacement (path-based, same as Phase A).
+- `tccutil reset ScreenCapture` clears any stale denial so the next run gets a fresh evaluation.
+
+### Key Learnings from Phase B
+
+1. **`sampleHandlerQueue: .main` + `MainActor.assumeIsolated` is the correct Swift 6 SCStream pattern.**
+   Set `sampleHandlerQueue: .main` when adding stream output. This guarantees callbacks arrive on the main thread. Then use `MainActor.assumeIsolated { }` inside the `nonisolated` delegate method to synchronously re-enter `@MainActor` isolation. No `Task` spawn needed, no `DispatchQueue.main.async` needed. The assumption is safe because we enforce it via the queue parameter.
+
+2. **`nonisolated(unsafe) let` on a local variable is the correct Swift 6 escape hatch for non-Sendable C types.**
+   `CVPixelBuffer` (aliased as `CVImageBuffer`) is a C type that is not `Sendable`. When a `nonisolated` function captures it into a `MainActor.assumeIsolated` closure, Swift 6 strict concurrency flags it as a potential data race. The correct response is `nonisolated(unsafe) let safeBuffer = pixelBuffer` before the closure — this tells the compiler "I assert the thread safety; suppress the check." This pattern is idiomatic for bridging non-Sendable CoreVideo/CoreMedia types into actor-isolated contexts when you know the queue is aligned.
+
+3. **`CIContext` should be created once and reused — not inside the frame callback.**
+   `CIContext()` allocates GPU/Metal state. Creating one per frame at 0.2 fps is wasteful, but the pattern matters even more for higher frame rates. Store it as a `let` on the `@MainActor` class. At 5s intervals the cost is negligible; at 1s intervals it would degrade performance visibly.
+
+4. **`SCStreamDelegate` is an Obj-C optional protocol — conform in a separate extension.**
+   Conforming in the main class declaration causes Swift to try to match the protocol signature strictly, producing optionality warnings. Conforming via `extension StreamCapture: SCStreamDelegate { }` avoids this. The same extension pattern applies to other Obj-C optional protocols in Swift 6.
+
+5. **Display ID enumeration differs between `SCStream` and `SCScreenshotManager`.**
+   Phase A's `SCScreenshotManager` returned `displayID = 3`; Phase B's `SCStream` returned `displayID = 1` for the same physical display. Neither is a stable identifier across reboots or display reconnections. Phase 1 should resolve the stable `CGDirectDisplayID` via CoreGraphics (`CGMainDisplayID()`, `CGGetActiveDisplayList()`) and use that as the primary key in the `frames` table. The `SCDisplay.displayID` should be treated as a session-local handle only.
+
+6. **`minimumFrameInterval` is accurate to the second at 5s intervals.**
+   All 5 captured frames were separated by exactly 5 seconds in the Unix timestamp (measured to 1s precision). No drift, no skipped frames, no burst delivery. The stream is reliable for the 5-10s capture cadence required by Phase 1. For sub-second intervals the jitter characteristics are unknown — not relevant for this use case.
 
 ---
 
@@ -381,13 +436,16 @@ app.run()
 
 | Decision | Confirmed Choice |
 |---|---|
-| macOS minimum target | **14** — `SCStream` available on 12.3+, `SCScreenshotManager` on 14+ |
-| Capture API | **`SCStream`** — more efficient for 24/7 periodic capture (Phase B will validate) |
+| macOS minimum target | **15** — using swift-tools-version 6.0 and macOS(.v15) in Phase B; both APIs available on 12.3+/14+ so 15 is fine for dev |
+| Capture API | **`SCStream`** — confirmed by Phase B: persistent session, exact 5s interval, no Timer needed |
+| Swift concurrency model | **`@MainActor final class` + `sampleHandlerQueue: .main` + `MainActor.assumeIsolated`** — validated pattern for SCStreamOutput conformance in Swift 6 |
+| Non-Sendable C type bridging | **`nonisolated(unsafe) let`** on local variable binding before `assumeIsolated` closure |
 | TCC staleness fix | **None needed on macOS 15.3.2** — path-based, survives binary replacement |
 | Run loop approach | **`NSApplication.shared.run()`** — confirmed working headlessly |
-| Frame format | **JPEG 0.8** — confirmed ~100-300KB per frame, quality adequate |
+| Frame format | **JPEG 0.8** — ~180–250KB per frame, quality adequate |
 | Timing mechanism | **`SCStream.minimumFrameInterval`** — no Timer needed, stream handles cadence |
-| Concurrency pattern | **Swift 6 `Task`** for daemon lifecycle, not for capture timing |
+| Display ID strategy | **CoreGraphics `CGDirectDisplayID`** for stable cross-session ID; `SCDisplay.displayID` is session-local only |
+| Concurrency pattern | **Swift 6 `Task`** for daemon lifecycle; `assumeIsolated` (not Task) for per-frame callback |
 
 ---
 
@@ -395,6 +453,6 @@ app.run()
 
 1. [x] **Phase A complete** — SCScreenshotManager validated, learnings documented above
 2. [x] Update `.gitignore` for `.build/` artifacts
-3. [ ] **Run Phase B: SCStream validation** — required before Phase 1
-4. [ ] Update `docs/adr/009-always-on-recorder.md` with confirmed capture API (`SCStream`)
+3. [x] **Phase B complete** — SCStream validated, Swift 6 patterns confirmed
+4. [x] Update `docs/adr/009-always-on-recorder.md` with confirmed capture API (`SCStream`)
 5. [ ] Begin **Phase 1**: `apps/recorder/` Swift package

@@ -150,11 +150,17 @@ SQLite WAL mode handles multi-process coordination using **single-writer/multi-r
 
 **Analyzer concurrency guard** (prevents parallel VLM runs):
 ```sql
--- Analyzer atomically claims unanalyzed frames
+-- Analyzer atomically claims up to 20 unanalyzed frames in a deterministic order
 UPDATE frames
-  SET processing_lock_id = $analyzer_uuid, processing_started_at = datetime('now')
-  WHERE analyzed = 0 AND processing_lock_id IS NULL
-  LIMIT 20;
+  SET processing_lock_id = $analyzer_uuid,
+      processing_started_at = datetime('now')
+  WHERE rowid IN (
+    SELECT rowid
+    FROM frames
+    WHERE analyzed = 0 AND processing_lock_id IS NULL
+    ORDER BY rowid
+    LIMIT 20
+  );
 
 -- Stale lock cleanup: after 10min of no progress, unlock (crashed analyzer recovery)
 UPDATE frames

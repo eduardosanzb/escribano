@@ -75,10 +75,9 @@ Frame                    Observation              Segment
 │ captured_at      │     │ vlm_description  │     │ start_time / end_time    │
 │ image_path       │     │ activity_type    │     │ activity_type            │
 │ phash            │     │ apps[]           │     │ observations[] (FK)      │
-│ analyzed (bool)  │     │ topics[]         │     │ apps[] / topics[]        │
+│ analyzed (0/1/2) │     │ topics[]         │     │ apps[] / topics[]        │
 │ width / height   │     │ timestamp        │     │ classification (JSON)    │
-└──────────────────┘     └──────────────────┘     │ consumed (bool)          │
-                                                   └──────────┬───────────────┘
+└──────────────────┘     └──────────────────┘     └──────────┬───────────────┘
                                                               │
                                           Subject             │     Artifact
                                 ┌──────────────────┐          │  ┌──────────────────┐
@@ -133,7 +132,7 @@ Captured → Stored → Analyzed → Segmented → Consumed → Cleaned
 
 ### Concurrency Model
 
-SQLite WAL mode handles multi-process coordination with **row-level locking** to prevent analyzer storms:
+SQLite WAL mode handles multi-process coordination using **single-writer/multi-reader semantics** plus atomic row-claim updates to prevent analyzer storms:
 
 **Process roles:**
 - **Swift daemon**: Continuous writer (INSERT frames)
@@ -147,7 +146,7 @@ SQLite WAL mode handles multi-process coordination with **row-level locking** to
 - POSIX lock cancellation bug in SQLite <3.52.0 when `close()` happens mid-write
 - **Mitigation**: Pin SQLite ≥3.52.0; prefer GRDB.swift (Swift) + better-sqlite3 (Node) which handle this
 - Checkpoint starvation if readers hold WAL file indefinitely
-- **Mitigation**: Schedule `wal_checkpoint(RESTART)` every 1000 page writes
+- **Mitigation**: Enable `pragma wal_autocheckpoint = 1000` on all connections (automatic checkpoint every 1000 page writes; reserve `wal_checkpoint(RESTART)` for operational maintenance only)
 
 **Analyzer concurrency guard** (prevents parallel VLM runs):
 ```sql
@@ -182,10 +181,10 @@ CREATE TABLE frames (
   height                INTEGER,
   analyzed              INTEGER DEFAULT 0,    -- 0=pending, 1=complete, 2=failed
   processing_lock_id    TEXT,                 -- UUID of analyzer; NULL = available
-  processing_started_at TEXT,                 -- ISO 8601; NULL = not claimed
+  processing_started_at TEXT,                 -- SQLite datetime; NULL = not claimed
   retry_count           INTEGER DEFAULT 0,    -- Incremented on VLM failure
-  failed_at             TEXT,                 -- ISO 8601; set after max retries
-  created_at            TEXT DEFAULT (datetime('now'))
+  failed_at             TEXT,                 -- SQLite datetime; set after max retries
+  created_at            TEXT DEFAULT (datetime('now'))  -- SQLite datetime
 );
 
 CREATE INDEX idx_frames_analyzed ON frames(analyzed);
@@ -267,7 +266,7 @@ This section documents critical architectural questions resolved during the revi
 **Issue**: `npx escribano` is pure TypeScript. Adding a Swift binary requires a build/distribution strategy.
 
 **Resolution**: **Dev-only Swift binary for MVP**
-- Swift package built locally via `swift build` (requires Xcode; bail gracefully if missing)
+- Swift package built locally via `swift build` (requires Xcode Command Line Tools; bail gracefully if missing)
 - Binary stored in `apps/recorder/` alongside source
 - No npm distribution, no notarization — for development validation only
 - Post-MVP: move to pre-built binaries + GitHub Releases when architecture is validated
@@ -337,7 +336,7 @@ apps/recorder-spike/
 4. Do `SCDisplay` handles work for all connected monitors in daemon context?
 
 **Success criteria:**
-- [ ] Compile and run Swift proof-of-concept without Xcode
+- [ ] Compile and run Swift proof-of-concept using Swift Package Manager and Xcode Command Line Tools (no Xcode.app GUI required)
 - [ ] Install launchd plist and run as background agent
 - [ ] Capture one screenshot successfully to disk
 - [ ] Verify screenshot contains expected content (not blank/black screen)

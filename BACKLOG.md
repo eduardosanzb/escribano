@@ -68,7 +68,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [ ] Add `capture.recorder.adapter.ts` — new `CaptureSource` adapter for recorder frames
 - [ ] Update `activity-segmentation.ts` to persist segments to DB when invoked from recorder path
 - [ ] Implement `escribano cut` CLI command — runs segmentation on a time range, suggests breaks, generates artifact
-- [ ] Track `consumed=1` on segments after artifact generation
+- [ ] Link segments to artifacts via `artifact_segments` join table after generation
 
 #### Phase 4: Polish (~2-3 days)
 - [ ] Multi-display capture — extend Phase 1 to capture all displays with `display_id`

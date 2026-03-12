@@ -27,32 +27,57 @@ The missing surface is **capture itself**. Escribano currently depends on extern
 - **Always-on recording** — Never forget to start; work is always traceable
 - **Agent-friendly output** — Structured capture from the start, not retrofitted
 
-See: `docs/screen_capture_pipeline.md` for technical design.
+See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ---
 
 ## Now
 
-### Product
+### Recorder MVP (ADR-009)
 
-- [ ] **Recorder spike** — Prototype own capture pipeline (Rust + scap) — *8-12h*
-  - Validate multi-monitor capture
-  - Test frame deduplication (pHash)
-  - Compare quality/reliability vs FFmpeg pipeline
-- [ ] **6K FFmpeg reliability** — Investigate MJPEG encoder failures — *2-3h*
-  - Add fallback encoder (libx264/libwebp)
-  - Add dimension check + warning for >4096px
-  - Stopgap until recorder is ready
-- [ ] **Auto-detect hardware accel** — videotoolbox/vaapi/d3d11va with manual override — *2h*
+#### Phase 1: Swift Capture Daemon (~3-4 days)
+- [ ] Set up `apps/recorder/` Swift package (Package.swift, Xcode project, basic structure)
+- [ ] Implement ScreenCaptureKit capture loop — single display, configurable interval
+- [ ] Implement pHash deduplication — skip frame if visually identical to previous
+- [ ] Write JPEG frames to `~/.escribano/frames/{date}/`
+- [ ] Write frame rows to SQLite `frames` table (new migration)
+- [ ] Write launchd plist `com.escribano.capture.plist` (KeepAlive, StartOnLoad)
+- [ ] Add `escribano daemon install` CLI command — drops plist, registers with launchd
+- [ ] Add `escribano daemon status` CLI command — shows capture running/stopped + frame count
+
+#### Phase 2: Node Batch Analyzer (~2-3 days)
+- [ ] Add `frames` table + `frame_id` column on `observations` to `src/db/migrate.ts`
+- [ ] Add `frames` repository to `src/db/repositories/`
+- [ ] Implement `escribano analyze` CLI command — checks unanalyzed frame count against threshold; if met, runs VLM batch and writes observations with `frame_id`; exits
+- [ ] Reuse `vlm-service.ts` unchanged for VLM batch
+- [ ] Mark frames `analyzed=1` after VLM completes
+- [ ] Write launchd plist `com.escribano.analyze.plist` (StartInterval=120) — installed alongside capture plist via `daemon install`
+- [ ] Add `ESCRIBANO_ANALYZE_THRESHOLD` config (default: 20 frames)
+
+#### Phase 3: Segmentation + CLI (~2-3 days)
+- [ ] Add `segments` table migration to `src/db/migrate.ts`
+- [ ] Add `segments` repository (replaces in-memory segments + topic_blocks for recorder path)
+- [ ] Add `capture.recorder.adapter.ts` — new `CaptureSource` adapter for recorder frames
+- [ ] Update `activity-segmentation.ts` to persist segments to DB when invoked from recorder path
+- [ ] Implement `escribano cut` CLI command — runs segmentation on a time range, suggests breaks, generates artifact
+- [ ] Track `consumed=1` on segments after artifact generation
+
+#### Phase 4: Polish (~2-3 days)
+- [ ] Multi-display capture — extend Phase 1 to capture all displays with `display_id`
+- [ ] Frame cleanup — delete JPEGs after analysis; add `ESCRIBANO_FRAME_RETENTION_DAYS` config (default: 1)
+- [ ] Swift menu bar status item — show capture on/off, frame count, last analysis time
+- [ ] `escribano daemon uninstall` — removes launchd plists, stops daemons
+
+### Stopgaps (batch pipeline, lower priority now that recorder is the focus)
+
+- [ ] **6K FFmpeg reliability** — Add fallback encoder (libx264/libwebp), dimension check + warning for >4096px — *2-3h*
+- [ ] **Auto-detect hardware accel** — videotoolbox/vaapi with `--no-hwaccel` override — *2h*
   - Currently hardcoded at `src/adapters/video.ffmpeg.adapter.ts:108, 262, 401`
-  - Add `--no-hwaccel` flag for troubleshooting
-- [ ] **Demo assets** — 2-min Loom showing the product, not describing it — *1h*
 
 ### Growth
 
+- [ ] **Demo assets** — 2-min Loom showing the product, not describing it — *1h*
 - [ ] **Sample recording** — 5-10 min sample for first-time users — *1h*
-  - Add to repo or host separately
-  - Document in README
 
 ---
 
@@ -90,6 +115,7 @@ See: `docs/screen_capture_pipeline.md` for technical design.
 
 ### 2026-03
 
+- **ADR-009** — Architecture decision for always-on screen recorder (Swift ScreenCaptureKit + SQLite WAL)
 - **MLX-LM migration** — Unified VLM + LLM backend, 17 recordings validated, 100% success
 - **Production benchmarks** — 25.6 hours processed, ~2.2 min/video average
 - **Config file support** — Auto-create `~/.escribano/.env`

@@ -852,8 +852,10 @@ export function createMlxIntelligenceService(
         const rawText = response.text || '';
         debugLog(`Generated ${rawText.length} chars`);
 
-        // Strip thinking tags in TypeScript
-        const cleanText = stripThinkingTags(rawText);
+        // Only strip thinking tags when think is false (or not set)
+        const thinkEnabled = options?.think === true;
+        const outputText = thinkEnabled ? rawText : stripThinkingTags(rawText);
+        const strippedText = stripThinkingTags(rawText);
 
         // Log to debug DB if enabled
         if (config.debugLlm && options?.debugContext) {
@@ -866,12 +868,13 @@ export function createMlxIntelligenceService(
             {
               model: resolvedModel,
               think: options.think ?? false,
-              cleanedLength: cleanText.length,
+              returnedLength: outputText.length,
+              strippedLength: strippedText.length,
             }
           );
         }
 
-        return cleanText;
+        return outputText;
       } catch (error) {
         const message = (error as Error).message;
         console.error(`[LLM] ERROR: ${message}`);

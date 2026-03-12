@@ -329,7 +329,7 @@ apps/recorder-spike/
 ```
 
 **What to validate:**
-1. Can `ScreenCaptureKit.sharable​Content()` be called in a launchd daemon (no window server access)?
+1. Can `SCShareableContent.current` be called in a launchd daemon (no window server access)?
 2. Does TCC Screen Recording permission survive daemon restart? Can it be granted non-interactively?
 3. Does `SCStream` support periodic screenshot mode, or is it streaming-only? (If streaming-only, can we capture keyframes efficiently?)
 4. Do `SCDisplay` handles work for all connected monitors in daemon context?

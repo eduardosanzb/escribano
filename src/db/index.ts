@@ -14,7 +14,6 @@ import { createStatsRepository } from '../stats/repository.js';
 import { runMigrations } from './migrate.js';
 import {
   createSqliteArtifactRepository,
-  createSqliteClusterRepository,
   createSqliteContextRepository,
   createSqliteObservationRepository,
   createSqliteRecordingRepository,
@@ -71,7 +70,6 @@ export function getRepositories(): Repositories {
     contexts: createSqliteContextRepository(dbInstance),
     topicBlocks: createSqliteTopicBlockRepository(dbInstance),
     artifacts: createSqliteArtifactRepository(dbInstance),
-    clusters: createSqliteClusterRepository(dbInstance),
     subjects: createSqliteSubjectRepository(dbInstance),
     stats: createStatsRepository(dbInstance),
   };
@@ -95,7 +93,6 @@ export function createTestRepositories(): Repositories & {
     contexts: createSqliteContextRepository(testDb),
     topicBlocks: createSqliteTopicBlockRepository(testDb),
     artifacts: createSqliteArtifactRepository(testDb),
-    clusters: createSqliteClusterRepository(testDb),
     subjects: createSqliteSubjectRepository(testDb),
     stats: createStatsRepository(testDb),
     cleanup: () => testDb.close(),

@@ -560,13 +560,9 @@ import type {
   DbArtifact,
   DbArtifactInsert,
   DbArtifactSubject,
-  DbCluster,
-  DbClusterInsert,
-  DbClusterMerge,
   DbContext,
   DbContextInsert,
   DbObservation,
-  DbObservationCluster,
   DbObservationContext,
   DbObservationInsert,
   DbRecording,
@@ -582,13 +578,9 @@ export type {
   DbArtifact,
   DbArtifactInsert,
   DbArtifactSubject,
-  DbCluster,
-  DbClusterInsert,
-  DbClusterMerge,
   DbContext,
   DbContextInsert,
   DbObservation,
-  DbObservationCluster,
   DbObservationContext,
   DbObservationInsert,
   DbRecording,
@@ -660,41 +652,6 @@ export interface TopicBlockRepository {
   deleteByRecording(recordingId: string): void;
 }
 
-export interface ClusterRepository {
-  findById(id: string): DbCluster | null;
-  findByRecording(recordingId: string): DbCluster[];
-  findByRecordingAndType(
-    recordingId: string,
-    type: 'visual' | 'audio'
-  ): DbCluster[];
-  save(cluster: DbClusterInsert): void;
-  saveBatch(clusters: DbClusterInsert[]): void;
-  linkObservation(
-    observationId: string,
-    clusterId: string,
-    distance?: number
-  ): void;
-  linkObservationsBatch(
-    links: Array<{
-      observationId: string;
-      clusterId: string;
-      distance?: number;
-    }>
-  ): void;
-  getObservations(clusterId: string): DbObservation[];
-  updateClassification(id: string, classification: string): void;
-  updateCentroid(id: string, centroid: number[]): void;
-  saveMerge(
-    visualClusterId: string,
-    audioClusterId: string,
-    similarity: number,
-    reason: string
-  ): void;
-  getMergedAudioClusters(visualClusterId: string): DbCluster[];
-  delete(id: string): void;
-  deleteByRecording(recordingId: string): void;
-}
-
 export interface ArtifactRepository {
   findById(id: string): DbArtifact | null;
   findByType(type: string): DbArtifact[];
@@ -731,7 +688,6 @@ export interface Repositories {
   contexts: ContextRepository;
   topicBlocks: TopicBlockRepository;
   artifacts: ArtifactRepository;
-  clusters: ClusterRepository;
   subjects: SubjectRepository;
   stats: StatsRepository;
 }

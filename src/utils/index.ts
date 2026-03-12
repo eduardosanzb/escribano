@@ -1,4 +1,3 @@
-export * from './ocr.js';
 export * from './parallel.js';
 
 /**

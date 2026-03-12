@@ -18,7 +18,7 @@ Validate that a standalone Swift CLI using ScreenCaptureKit can:
 For this spike, execution is **interactive-only** — launchd `LaunchAgent` plists and daemonization are explicitly **out of scope** and will be validated in a later phase.
 This is **throwaway code** — isolated from the main Escribano pipeline. Delete after findings are incorporated into Phase 1 implementation.
 
-Analogous to: `scripts/poc-vllm-mlx/` (MLX-VLM proof-of-concept)
+Analogous to: earlier MLX-VLM proof-of-concept spike
 Outcome feeds into: `docs/adr/009-always-on-recorder.md` + Phase 1 implementation
 
 ---

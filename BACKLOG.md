@@ -35,13 +35,21 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ### Recorder MVP (ADR-009)
 
-#### Pre-Phase 1: ScreenCaptureKit Feasibility Spike (~half day)
-- [ ] Create `scripts/poc-screencapturekit/main.swift` — standalone CLI, no pipeline integration
-- [ ] Validate `SCScreenshotManager.captureImage` works headlessly (macOS 14+)
-- [ ] Validate all displays enumerated + captured from CLI binary
-- [ ] Test TCC permission behavior: grant, persist across restart, behavior after binary replace
-- [ ] Document results in `docs/SCREENCAPTUREKIT-POC-SPIKE.md` and confirm Phase 1 approach
-- See: `docs/SCREENCAPTUREKIT-POC-SPIKE.md` for full scope + validation checklist
+#### Pre-Phase 1: ScreenCaptureKit Feasibility Spike
+- [x] Create `scripts/poc-screencapturekit/main.swift` — standalone CLI, no pipeline integration
+- [x] Validate `SCScreenshotManager.captureImage` works headlessly (macOS 14+)
+- [x] Validate all displays enumerated + captured from CLI binary (single display tested)
+- [x] Test TCC permission behavior: grant, persist across restart, behavior after binary replace
+- [x] Document results in `docs/SCREENCAPTUREKIT-POC-SPIKE.md` and confirm Phase 1 approach
+- **Phase A complete (2026-03-12)** — Phase B (SCStream) pending
+- See: `docs/SCREENCAPTUREKIT-POC-SPIKE.md` for full results + learnings
+
+#### Pre-Phase 1b: SCStream Validation (~2-4h)
+- [ ] Extend POC to use `SCStream` instead of `SCScreenshotManager`
+- [ ] Validate `minimumFrameInterval` controls delivery rate (5s interval)
+- [ ] Validate `CMSampleBuffer` → `CGImage` conversion
+- [ ] Confirm stream delivers frames headlessly without Timer
+- [ ] See: `docs/SCREENCAPTUREKIT-POC-SPIKE.md` Phase B section for details
 
 #### Phase 1: Swift Capture Daemon (~3-4 days)
 - [ ] Set up `apps/recorder/` Swift package (Package.swift, Xcode project, basic structure)

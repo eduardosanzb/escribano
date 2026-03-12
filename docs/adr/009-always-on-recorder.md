@@ -312,18 +312,15 @@ This section documents critical architectural questions resolved during the revi
 - **Disk usage** — Continuous JPEG capture requires cleanup strategy (JPEG deleted after analysis, stale frame purge every 7 days)
 - **macOS-only** — ScreenCaptureKit locks capture layer to Apple platforms (intentional, cross-platform deferred)
 - **New entity** — `frames` table adds schema complexity (mitigated by clear FK chain: Frame → Observation → Segment)
-- **ScreenCaptureKit daemon feasibility unvalidated** — Must spike before committing to Phase 1 (blockers: launchd+UI access, TCC permission model, screenshot interval support)
+- **ScreenCaptureKit daemon feasibility** — **Phase A (SCScreenshotManager) validated**; Phase B (SCStream) pending. See `docs/SCREENCAPTUREKIT-POC-spike.md` for full results and blocking.
 
 ### Neutral
 - SQLite WAL handles concurrency (no Redis/message queue)
 - Existing VLM/LLM infrastructure unchanged (same MLX bridge)
 - Current batch pipeline continues to work alongside recorder
 
-## Validation Plan: ScreenCaptureKit Spike
-
-**Status**: Required before Phase 1
-
-**Goal**: Prove or disprove that ScreenCaptureKit can run in a launchd background agent without UI framework access.
+- **New entity** — `frames` table adds schema complexity (mitigated by clear FK chain: Frame → Observation → Segment)
+- **ScreenCaptureKit daemon feasibility** — **Phase A validated** (`SCScreenshotManager`), Phase B (`SCStream`) pending — see `docs/SCREENCAPTUREKIT-POC-SPIKE.md`
 
 **Approach**: Minimal Swift proof-of-concept in `apps/recorder-spike/`:
 

@@ -208,8 +208,7 @@ CREATE TABLE segments (
   created_at      TEXT DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_segments_recording ON segments(recording_id);
-CREATE INDEX idx_segments_time ON segments(start_time, end_time);
+-- Link segments to artifacts via `artifact_segments` join table (segment can appear in multiple artifacts)
 ```
 
 **Key changes from initial ADR:**

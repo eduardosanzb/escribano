@@ -54,3 +54,7 @@ batch-run.log
 .opencode/
 debug-mbair-machine/escribano.db
 debug-mbair-machine
+
+# ScreenCaptureKit POC build artifacts
+scripts/poc-screencapturekit/.build/
+scripts/poc-screencapturekit-stream/.build/

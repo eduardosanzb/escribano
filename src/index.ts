@@ -10,6 +10,10 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import pkg from '../package.json' with { type: 'json' };
 import type { CaptureSource } from './0_types.js';
+import {
+  recorderInstall,
+  recorderStatus,
+} from './actions/recorder-commands.js';
 import { createCapCaptureSource } from './adapters/capture.cap.adapter.js';
 import { createFilesystemCaptureSource } from './adapters/capture.filesystem.adapter.js';
 import {
@@ -132,6 +136,8 @@ interface ParsedArgs {
   includePersonal: boolean;
   copyToClipboard: boolean;
   printToStdout: boolean;
+  recorder: boolean;
+  recorderSubcommand: 'install' | 'status' | null;
 }
 
 function main(): void {
@@ -161,6 +167,26 @@ function main(): void {
     } else {
       showConfig();
     }
+    return;
+  }
+
+  if (args.recorder) {
+    if (args.recorderSubcommand === 'install') {
+      recorderInstall().catch((error) => {
+        console.error('Error:', (error as Error).message);
+        process.exit(1);
+      });
+      return;
+    }
+    if (args.recorderSubcommand === 'status') {
+      recorderStatus().catch((error) => {
+        console.error('Error:', (error as Error).message);
+        process.exit(1);
+      });
+      return;
+    }
+    console.error('Usage: escribano recorder <install|status>');
+    process.exit(1);
     return;
   }
 
@@ -233,6 +259,13 @@ function parseArgs(argsArray: string[]): ParsedArgs {
     includePersonal: argsArray.includes('--include-personal'),
     copyToClipboard: argsArray.includes('--copy'),
     printToStdout: argsArray.includes('--stdout'),
+    recorder: argsArray[0] === 'recorder',
+    recorderSubcommand:
+      argsArray[1] === 'install'
+        ? 'install'
+        : argsArray[1] === 'status'
+          ? 'status'
+          : null,
   };
 }
 
@@ -245,6 +278,8 @@ Usage:
   npx escribano doctor                    Check prerequisites
   npx escribano config                    Show current configuration
   npx escribano config --path             Show config file path
+  npx escribano recorder install         Build and install Fotógrafo capture agent
+  npx escribano recorder status          Show agent status, pending frames, disk usage
   npx escribano --file <path>             Process video from filesystem
   npx escribano --latest <dir>            Process latest video in directory
   npx escribano --file <path> --mic-audio <wav>   Use external mic audio

@@ -106,6 +106,16 @@ export async function recorderInstall(): Promise<void> {
 function generatePlist(binaryPath: string): string {
   const stdout = path.join(LOGS_DIR, 'fotografo.log');
   const stderr = path.join(LOGS_DIR, 'fotografo.error.log');
+
+  // Collect Escribano environment variables to inject into the LaunchAgent
+  const envVars = Object.entries(process.env)
+    .filter(([key]) => key.startsWith('ESCRIBANO_'))
+    .map(
+      ([key, value]) =>
+        `        <key>${key}</key>\n        <string>${value}</string>`
+    )
+    .join('\n');
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -116,6 +126,10 @@ function generatePlist(binaryPath: string): string {
     <array>
         <string>${binaryPath}</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+${envVars}
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>

@@ -15,6 +15,7 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     
     // Debugging configuration
     private let debugPHash: Bool
+    private let pHashThreshold: Int
 
     private var prevPHash:    UInt64? = nil
     private var frameCounter: Int     = 0
@@ -35,8 +36,9 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         self.store        = store
         self.backpressure = backpressure
         
-        // Read debug flag from environment
+        // Read debug flag and threshold from environment
         self.debugPHash = ProcessInfo.processInfo.environment["ESCRIBANO_DEBUG_PHASH"] == "true"
+        self.pHashThreshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "") ?? 4
         
         super.init()
 
@@ -116,19 +118,19 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
 
         let hash = pHasher.compute(cgImage)
         let hamming = prevPHash.map { (hash ^ $0).nonzeroBitCount } ?? 99
-        let isDuplicate = hamming <= 8
+        let isDuplicate = hamming <= pHashThreshold
         
         if debugPHash {
             let status = isDuplicate ? "SKIP" : "KEEP"
-            print("[pHash] frame=\(framesSeen) hamming=\(hamming) status=\(status)")
+            print("[pHash] frame=\(framesSeen) hamming=\(hamming) status=\(status) threshold=\(pHashThreshold)")
         }
         
         // Rolling stats every 100 frames seen
         if framesSeen % 100 == 0 {
             let kept = framesSeen - framesSkipped
             let skipPct = (Double(framesSkipped) / Double(framesSeen)) * 100.0
-            print(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept — last hamming=%d", 
-                framesSeen, framesSkipped, skipPct, kept, hamming))
+            print(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept — last hamming=%d threshold=%d", 
+                framesSeen, framesSkipped, skipPct, kept, hamming, pHashThreshold))
         }
 
         if isDuplicate {

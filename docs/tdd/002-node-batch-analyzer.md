@@ -6,10 +6,53 @@ This document specifies the design for the Node Batch Analyzer (Phase 2). It per
 table, claims unanalyzed frames, passes them through the existing `vlm-service.ts`, and creates `observations`
 with foreign keys to the frames.
 
-_review_note: we should have a diagram showing the flow from frames being captured, to being claimed by the
-analyzer, to being processed by the VLM, and finally resulting in observations. This would help clarify the
-architecture and data flow for readers who are more visually oriented. the diagram should use a timeline or
-squence flow_
+## 1.1 Data Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant LaunchAgent
+    participant Analyzer as analyze-frames.ts
+    participant FrameRepo as FrameRepository
+    participant DB as SQLite
+    participant VLM as vlm-service.ts
+    participant Disk as Filesystem
+
+    LaunchAgent->>Analyzer: spawn process (every 2 min)
+    Analyzer->>FrameRepo: releaseStaleLocks(10)
+    FrameRepo->>DB: UPDATE frames WHERE processing_started_at < 10m ago
+    Analyzer->>FrameRepo: claimFrames(20, lockId)
+    FrameRepo->>DB: UPDATE frames SET processing_lock_id=lockId, ...<br/>WHERE analyzed=0 AND lock IS NULL LIMIT 20
+    DB-->>FrameRepo: [frame records]
+    FrameRepo-->>Analyzer: [DbFrame[20]]
+    
+    alt 0 frames claimed
+        Analyzer->>Analyzer: exit(0)
+    else frames claimed
+        Analyzer->>Analyzer: Format frames for VLM
+        Analyzer->>VLM: describeFrames([...])
+        VLM->>VLM: Batch inference
+        VLM-->>Analyzer: [FrameDescription[...]]
+        
+        loop For each description
+            Analyzer->>DB: INSERT INTO observations (frame_id, vlm_description, ...)
+            Analyzer->>Disk: unlink(jpeg_path)
+            Disk-->>Analyzer: deleted
+        end
+        
+        alt All succeeded
+            Analyzer->>FrameRepo: markAnalyzed(ids)
+            FrameRepo->>DB: UPDATE frames SET analyzed=1, processing_lock_id=NULL
+        else Some failed
+            Analyzer->>FrameRepo: markFailed(id) for each
+            FrameRepo->>DB: UPDATE frames SET retry_count=retry_count+1 OR analyzed=2
+        end
+        
+        Analyzer->>VLM: unloadVlm()
+        Analyzer->>LaunchAgent: exit(0)
+    end
+```
+
+
 
 ## 2. Architecture & File Structure
 
@@ -23,14 +66,17 @@ squence flow_
 
 ### 3.1 Database Migration (015)
 
-_review_note: we should add more details on the rationale behind this migration, such as why we chose to add a
-foreign key to the frames table, and how this will help with data integrity and query performance when linking
-observations to their corresponding frames. Additionally, we could include a brief explanation of the indexing
-strategy and how it will optimize queries that join observations with frames._
+Adding `frame_id` as a foreign key to the `frames` table maintains referential integrity and enables efficient queries that cross-link observations back to their source frames. This is essential for the always-on recorder workflow, where:
+
+1. **Referential Integrity**: Every `observations` row created from a frame must reference a valid `frames` record. The FK constraint prevents orphaned observations if a frame is deleted.
+2. **Query Patterns**: With this FK, we can efficiently answer questions like:
+   - "Show me all observations derived from frames captured in the last hour" (filter observations by `frame_id`, then filter frames by timestamp)
+   - "Find all frames that failed to analyze" (query frames where `analyzed = 2`)
+3. **Indexing Strategy**: The index `idx_observations_frame_id` enables O(log N) lookup on `frame_id`, making joins fast. This is especially important when the artifact generation pipeline later queries observations by frame ID to include source context.
 
 ```sql
 ALTER TABLE observations ADD COLUMN frame_id TEXT REFERENCES frames(id);
-CREATE INDEX igx_observations_frame_id ON observations(frame_id);
+CREATE INDEX idx_observations_frame_id ON observations(frame_id);
 ```
 
 ### 3.2 Frame Repository (`FrameRepository`)
@@ -56,24 +102,176 @@ Defined in `src/db/repositories/frame.sqlite.ts`.
 
 ### 3.3 The Analyze Action (`analyze-frames.ts`)
 
-_review_note: here maybe we should add then the diagram; also what about the error handling? we should be
-explicit; show the pseudocode for teh try/catch/finally blocks and where we call markFailed, markAnalyzed, and
-releaseStaleLocks in case of different types of errors (VLM failure, file system errors, etc.)_
+**Process Model**: Each invocation is a single **ephemeral process** that claims frames, processes them, and exits. The launchd `StartInterval` provides the timing; the process itself is stateless.
 
-- **Trigger**: `escribano analyze`
-- **Step 1**: Run `releaseStaleLocks(10)` (10 minute timeout).
-- **Step 2**: Generate UUIDv7 for `lockId`.
-- **Step 3**: `claimFrames(20, lockId)`. If 0 frames, gracefully exit `0`.
-- **Step 4**: Format frames for VLM: map `image_path` and `timestamp`.
-- **Step 5**: Invoke `describeFrames(frames, intelligenceService)`.
-- **Step 6**: For each `FrameDescription`:
-  - Insert into `observations` (`type = 'visual'`, `frame_id = frame.id`, `vlm_description`, `activity_type`,
-    etc.).
-  - Remove JPEG from disk (`fs.unlink`).
-- **Step 7**: Call `markAnalyzed` on successful frame IDs. Catch errors and call `markFailed` for failed IDs.
-- **Step 8**: Unload model (`intelligenceService.unloadVlm()`).
+**Pseudocode with Error Handling**:
 
-### 3.4 LaunchAgent Plist (`com.escribano.analyze.plist`)
+```typescript
+// src/actions/analyze-frames.ts
+
+async function analyzeFrames() {
+  let claimedFrames: DbFrame[] = []
+  
+  try {
+    // Step 1: Release any stale locks from crashed runs (timeout: 10 min)
+    await frameRepository.releaseStaleLocks(10)
+    
+    // Step 2: Generate a unique lock ID for this run
+    const lockId = generateUUIDv7()
+    
+    // Step 3: Claim up to 20 unanalyzed frames
+    claimedFrames = await frameRepository.claimFrames(20, lockId)
+    
+    // If no frames to process, exit gracefully
+    if (claimedFrames.length === 0) {
+      console.log("No frames to analyze")
+      process.exit(0)
+    }
+    
+    console.log(`Analyzing ${claimedFrames.length} frames`)
+    
+    // Step 4: Format frames for VLM (map image_path and timestamp)
+    const framesToProcess = claimedFrames.map(f => ({
+      id: f.id,
+      imagePath: f.jpeg_path,
+      timestamp: f.timestamp
+    }))
+    
+    // Step 5: Invoke VLM batch inference
+    let descriptions: FrameDescription[] = []
+    try {
+      descriptions = await vlmService.describeFrames(framesToProcess)
+    } catch (vlmError) {
+      // VLM failure (OOM, parse error, timeout)
+      console.error("VLM inference failed:", vlmError.message)
+      
+      // Increment retry_count for all claimed frames
+      for (const frame of claimedFrames) {
+        try {
+          await frameRepository.markFailed(frame.id)
+          // markFailed increments retry_count; if >= 3, sets analyzed=2
+        } catch (markError) {
+          console.error(`Failed to mark frame ${frame.id} as failed:`, markError)
+          // Continue with next frame; stale lock cleanup will handle this on next run
+        }
+      }
+      
+      // Exit with error; launchd will retry on next StartInterval
+      throw new Error(`VLM inference failed, marked ${claimedFrames.length} frames for retry`)
+    }
+    
+    // Step 6: Insert observations and delete JPEGs
+    const failedIds: string[] = []
+    
+    for (let i = 0; i < claimedFrames.length; i++) {
+      const frame = claimedFrames[i]
+      const desc = descriptions[i]
+      
+      try {
+        // Insert observation with frame_id FK
+        await db.insert("observations", {
+          id: generateId(),
+          recording_id: "<synthetic-from-frames>", // Will be linked during segmentation
+          type: "visual",
+          frame_id: frame.id,
+          timestamp: frame.timestamp,
+          vlm_description: desc.description,
+          activity_type: desc.activity,
+          apps: JSON.stringify(desc.apps),
+          topics: JSON.stringify(desc.topics)
+        })
+        
+        // Delete JPEG from disk to free space
+        try {
+          await fs.promises.unlink(frame.jpeg_path)
+        } catch (fsError) {
+          console.warn(`Failed to delete ${frame.jpeg_path}:`, fsError.message)
+          // Non-critical; continue
+        }
+        
+      } catch (insertError) {
+        console.error(`Failed to insert observation for frame ${frame.id}:`, insertError)
+        failedIds.push(frame.id)
+      }
+    }
+    
+    // Step 7: Mark successfully processed frames as analyzed
+    const successIds = claimedFrames
+      .map(f => f.id)
+      .filter(id => !failedIds.includes(id))
+    
+    if (successIds.length > 0) {
+      await frameRepository.markAnalyzed(successIds)
+      console.log(`Marked ${successIds.length} frames as analyzed`)
+    }
+    
+    // If some frames failed to insert, try again next run
+    if (failedIds.length > 0) {
+      console.warn(`${failedIds.length} frames failed to insert; will retry on next run`)
+      // Frames remain locked; releaseStaleLocks on next run will free them
+      process.exit(1)
+    }
+    
+    console.log("Batch analysis complete")
+    process.exit(0)
+    
+  } catch (error) {
+    // Outer catch: unexpected error (DB crash, etc.)
+    console.error("Unexpected error during analysis:", error)
+    
+    // All claimed frames remain locked; releaseStaleLocks on the next run will free them
+    // This is safe because launchd will retry via StartInterval
+    
+    process.exit(1)
+    
+  } finally {
+    // Step 8: Always unload VLM model to free memory
+    try {
+      await intelligenceService.unloadVlm()
+    } catch (unloadError) {
+      console.error("Failed to unload VLM:", unloadError)
+    }
+  }
+}
+```
+
+**Error Handling Summary**:
+- **VLM Failure**: Caught at batch level. All claimed frames increment `retry_count`; if >= 3, marked as `analyzed = 2` (failed).
+- **DB Insert Failure**: Caught per-frame. Failed frame IDs remain locked; next run's `releaseStaleLocks(10)` frees them.
+- **Crash During Processing**: Stale lock cleanup on next run frees all claimed frames for retry.
+- **Memory Safety**: `finally` block ensures model is unloaded before exit, even if error occurs.
+
+### 3.4 Process Model: Ephemeral Execution
+
+**Ephemeral Execution (No Tick/Worker Split)**:
+
+Each launchd invocation spawns a **fresh, independent process** that:
+1. Claims frames (locked by `processing_lock_id`)
+2. Processes them (VLM inference)
+3. Marks them analyzed
+4. Unloads model
+5. Exits (process terminates)
+
+**Concurrency & Retry Safety**:
+- **launchd timing**: `StartInterval=120` means a new process is spawned every 2 minutes
+- **Double-claiming prevention**: If a new process starts while a previous one is still running:
+  - Both call `claimFrames()`
+  - Process A claims frames 1–20 (sets `processing_lock_id=<uuid-A>`)
+  - Process B calls `claimFrames()`, gets frames 21–40 (sets `processing_lock_id=<uuid-B>`)
+  - No conflict; the `WHERE processing_lock_id IS NULL` predicate ensures each frame is claimed only once
+- **Crash recovery**: If process A crashes mid-VLM:
+  - Frames 1–20 remain locked with `processing_lock_id=<uuid-A>` and stale `processing_started_at`
+  - Process B (on next StartInterval) calls `releaseStaleLocks(10)` and frees them
+  - Process C (or later) claims and retries frames 1–20
+
+**Why No Tick/Worker Split?**:
+- launchd already provides the **tick** (StartInterval scheduling)
+- Each ephemeral process **is** the worker
+- No need for internal event loop or background thread
+- Simpler state machine (no long-lived actor coordination)
+- Better resource management (model unloaded after every run, memory stays bounded)
+
+### 3.5 LaunchAgent Plist (`com.escribano.analyze.plist`)
 
 - Created during `escribano recorder install` (implemented in Phase 1 but used here).
 - `StartInterval=120` (runs every 2 minutes).
@@ -82,12 +280,12 @@ releaseStaleLocks in case of different types of errors (VLM failure, file system
 ## 4. Error Handling & Edge Cases
 
 - **VLM Failure**: If the VLM throws (OOM, parse error), catch at the batch level. Increment `retry_count`.
-  Max retries = 3.
+   Max retries = 3.
 - **Crash during VLM**: Handled by `releaseStaleLocks` on the next run.
 - **Disk Full during Observation Write**: SQLite will throw. VLM work is lost. Stale lock cleanup will retry
-  it later.
+   it later.
 - **Memory Footprint**: Process is ephemeral (spawned by launchd, runs VLM, unloads, exits). It does not leak
-  memory over days like a long-running Node process might.
+   memory over days like a long-running Node process might.
 
 ## 5. Test Specs
 
@@ -97,8 +295,4 @@ releaseStaleLocks in case of different types of errors (VLM failure, file system
 - **File Deletion**: Ensure successfully analyzed frames have their `image_path` file unlinked to save disk
   space.
 - **Retry limit**: Mock a VLM failure 3 times, verify frame state becomes `analyzed = 2`.
-
-_review_note: also did we consider splitting or im still not understantin lets say im running the analyuzer
-then it fills teh batcha nd starts; what with the next iteration of the analizer? does it spawas again? or did
-we block aor tis the same process? what if it fails? shall we not split actually in 2 process a "tick" and
-then the "worker"?_
+- **Concurrent claiming**: Verify two parallel `claimFrames()` calls (via separate DB connections) do not claim the same frame.

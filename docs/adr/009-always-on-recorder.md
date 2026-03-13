@@ -2,7 +2,12 @@
 
 ## Status
 
-Proposed (2026-03-12) | Updated (2026-03-12) — Blocking issues resolved, concurrency & schema refined via research spike | **Accepted (2026-03-12) — Phase A (SCScreenshotManager) + Phase B (SCStream) both validated; SCStream confirmed as Phase 1 capture API** | Revised (2026-03-12) — Backpressure, LaunchAgent terminology, segment semantics, and tech debt annotations added per architectural review
+| State    | Date       | Details                                                                                                                                                                                                                                  |
+|----------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Proposed | 2026-03-12 |                                                                                                                                                                                                                                          |
+| Updated  | 2026-03-12 | Blocking issues resolved, concurrency & schema refined via research spike                                                                                                                                                               |
+| Accepted | 2026-03-12 | **Phase A (SCScreenshotManager) + Phase B (SCStream) both validated; SCStream confirmed as Phase 1 capture API**                                                                                                                        |
+| Revised  | 2026-03-12 | Backpressure, LaunchAgent terminology, segment semantics, and tech debt annotations added per architectural review                                                                                                                      |
 
 ## Context
 

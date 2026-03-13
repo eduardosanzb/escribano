@@ -51,21 +51,31 @@ apps/recorder/
 
 **Threshold**: Skip frame if `(currentHash ^ prevHash).nonzeroBitCount <= 8`.
 
-**Libraries evaluated**: 
-- **ImageHash** (Swift, GitHub) — minimal maintenance, ~200 LOC implementation, requires separate dependency.
-- **Python imagehash** — reference implementation, but requires Python bridge (adds complexity).
+**Libraries evaluated** (Feb 2026 survey):
+- **SwiftImageHash** (9★, github.com/Eastwilding/swiftimagehash, last commit May 2024) — Pure Swift pHash implementation. **Blocker**: UIKit dependency (`import UIImage`), making it unsuitable for headless macOS daemons.
+- **CocoaImageHashing** (262★, github.com/ameingast/cocoaimagehashing, archived Sep 2021) — Objective-C framework with aHash/dHash/pHash. **Blockers**: Archived, no Swift 6 concurrency support, heavyweight Objective-C patterns.
 
-**Why DIY**: Accelerate.framework is available in all macOS distributions, zero extra dependencies. The algorithm is ~50 lines of Swift. We opted for DIY to minimize Package.swift dependencies and keep the capture agent lightweight and self-contained.
+No actively maintained, headless-compatible Swift pHash libraries exist.
+
+**Implementation**: The Escribano POC already contains a production-ready `PHash.swift` implementation (`scripts/poc-phash-dedup/Sources/PHash.swift`) using vDSP-accelerated DCT:
+- Caches vDSP DCT setup (expensive to create per call)
+- Implements full 32×32 → 8×8 DCT pipeline (2D: row-wise + column-wise passes)
+- Computes median of 64 low-frequency coefficients
+- Returns UInt64 hash with bit[i] = 1 if coefficient[i] > median
+- **Why reuse**: Already empirically validated (Phase C), uses no external deps, minimal maintenance burden.
+
+**Why DIY over libraries**: Accelerate.framework is available in all macOS distributions (zero extra dependencies). The vDSP DCT approach is hardware-accelerated on Apple Silicon. Library maintenance burden isn't worth the small codebase (~100 LOC total).
 
 ### 3.3 Database & Storage (`DB.swift`)
 
 - **Frames Location**: `~/.escribano/frames/{YYYY-MM-DD}/{timestamp}_{displayId}.jpg`
 - **SQLite Location**: `~/.escribano/escribano.db`
-- **WAL Mode Configuration**:
+- **WAL Mode Configuration** (matches Node.js `src/db/index.ts:42-45`):
   - `PRAGMA journal_mode = WAL;` — Write-Ahead Logging mode allows concurrent reads while writes are in progress. Reduces lock contention between the capture agent (writer) and the analyzer (reader).
+  - `PRAGMA synchronous = NORMAL;` — Less strict fsync behavior (vs FULL). Balances durability against write performance; acceptable for a single-machine local DB. **Source**: Node.js side already sets this; Swift agent must match to avoid conflicting pragma states.
+  - `PRAGMA foreign_keys = ON;` — Enforces referential integrity (frames → observations relationships). **Source**: Node.js side already sets this; Swift agent must match.
   - `PRAGMA busy_timeout = 5000;` — 5-second timeout for lock contention. Default is 0 (immediate failure). 5s allows the analyzer to complete a batch and release locks without causing the capture agent to stall.
-  - `PRAGMA wal_autocheckpoint = 1000;` — Checkpoint (merge WAL into main DB) after every 1000 frames. Default is 1000. Balances write throughput against checkpoint overhead. At 1fps, 1000 frames = ~17 min of continuous capture before a checkpoint; this is reasonable for keeping the WAL file size bounded.
-  - **Notes**: These values are conservative and tuned for a low-frequency (1fps) capture workload. If backpressure is applied and frames accumulate, the WAL file may grow larger, but it will be checkpointed on the next analyzer run.
+  - **WAL autocheckpoint**: Left at SQLite default (`PRAGMA wal_autocheckpoint = 1000 pages`, ~4MB WAL file size). Do **not** explicitly set in Swift agent. **Rationale**: (1) Node.js side doesn't set it (uses default), (2) 1000 WAL pages = ~4MB on disk, which at ~200 bytes per frame metadata means checkpoint occurs every ~20,000 frame inserts (~5.5 hours at 1fps). The default is reasonable for this workload.
 
 ### 3.4 Database Migration (014)
 
@@ -108,10 +118,24 @@ At installation time (`escribano recorder install`), the Node.js CLI ensures tha
 
 - **Mechanism**: Query `SELECT COUNT(*) FROM frames WHERE analyzed = 0` to count pending frames.
 - **Frequency**: Check every 10 frames (~10 seconds at 1fps) to avoid DB spam and excessive state transitions.
-- **Thresholds**:
-  - **High-water mark: 500 frames** — Stop capturing (`stream.stopCapture()`). Rationale: At 1fps with typical JPEG compression (~50–100 KB/frame), 500 frames = 25–50 MB unanalyzed. This leaves headroom before hitting memory/disk limits while still signaling that the analyzer is falling behind.
-  - **Low-water mark: 100 frames** — Resume capturing (`stream.startCapture()`). Hysteresis prevents thrashing on/off near a single threshold. 100 frames = ~5–10 MB, a comfortable operating point.
-  - **Trade-off**: These thresholds are conservative. If the analyzer is working normally (running every 2 minutes per Phase 2), this backpressure should rarely trigger. If it does trigger, it indicates the analyzer is stalled or the system is under extreme load. In such cases, pausing capture is safer than risking OOM.
+- **Configurable Thresholds** (environment variables):
+  - `ESCRIBANO_CAPTURE_HIGH_WATER` (default: 500 frames) — Stop capturing (`stream.stopCapture()`).
+  - `ESCRIBANO_CAPTURE_LOW_WATER` (default: 100 frames) — Resume capturing (`stream.startCapture()`).
+  
+- **Default Sizing Rationale**:
+  - **High-water: 500 frames** — ~25–50 MB unanalyzed (at typical JPEG compression ~50–100 KB/frame). Signals analyzer is falling behind without risking OOM.
+  - **Low-water: 100 frames** — ~5–10 MB, comfortable operating point. Hysteresis gap (500→100) prevents thrashing on/off near a single threshold.
+  - **Why these numbers**: Analyzer runs every 2 minutes (Phase 2 LaunchAgent `StartInterval=120`). At 1fps, 2 minutes = 120 frames captured. A high-water of 500 means the analyzer can miss 4+ runs before backpressure triggers. Conservative for MVP.
+  
+- **Configuration at runtime**: Set environment variables before starting the LaunchAgent:
+  ```bash
+  # For low-RAM systems (e.g., 16GB), reduce high-water mark
+  export ESCRIBANO_CAPTURE_HIGH_WATER=250
+  export ESCRIBANO_CAPTURE_LOW_WATER=50
+  # Then run: escribano recorder install
+  ```
+  
+- **Monitoring**: Use `escribano recorder status` to check real-time pending frame count and see if backpressure is active.
 
 ## 4. CLI Commands (Node.js Side)
 

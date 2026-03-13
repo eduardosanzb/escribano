@@ -3,9 +3,11 @@
 ## 1. Overview
 
 This document specifies the design for the Segmentation pipeline and CLI interactions (Phase 3). It introduces
-`segments` as an immutable, append-only record of work sessions, generates "synthetic recordings" for
+`segments` as an **append-only** record of work sessions, generates "synthetic recordings" for
 continuous capture, and adds the `escribano cut` command to generate session summaries from arbitrary time
 ranges.
+
+> **User-triggered segmentation**: Segments do not exist as queryable entities until a user explicitly invokes `escribano cut`. The continuous pipeline produces frames and observations; segmentation and artifact generation are user-initiated. This is distinct from the video-file pipeline where `topic_blocks` are created automatically during `process-recording-v3`.
 
 ### 1.1 Data Flow Diagram
 
@@ -272,6 +274,56 @@ async function cutSession(options: {
 
 **Naming Rationale**: Named `capture.fotografo.adapter.ts` to align with the Swift capture agent "Fotógrafo" (The Photographer). This reinforces the theme consistency across the recorder pipeline and makes the source clear at a glance.
 
+### 3.6 Segmentation Algorithm
+
+The `segmentByActivity()` function is implemented in `src/services/activity-segmentation.ts`. This section specifies its behavior for the recorder pipeline.
+
+**Grouping Logic**:
+- Filters to visual observations with VLM descriptions, sorted by timestamp
+- Extracts activity type from each observation's `vlm_description` using `extractActivityType()` (pattern matching against activity keywords: debugging, coding, review, meeting, research, reading, terminal, other)
+- Starts a new segment when activity type changes from the previous observation
+- Continues the current segment when activity type matches
+
+**Minimum Segment Duration**: 30 seconds (configurable via `minSegmentDuration`)
+- Segments shorter than this threshold are merged into their longest neighbor (previous or next)
+- Merge logic in `mergeShortSegments()` chooses the neighbor with greater duration
+- This prevents fragmented segments from rapid activity switching (e.g., coding → browser → coding in 3 minutes)
+
+**Interleaving**: Not explicitly handled
+- If activities interleave rapidly, you get multiple segments
+- The short-segment merge may collapse the middle one(s)
+- Example: `coding(2m) → browser(30s) → coding(2m)` → becomes `coding(4.5m)` if browser segment is merged
+
+**Apps/Topics Extraction**:
+- Extracted from VLM descriptions per observation
+- Aggregated per segment (union of all observation apps/topics in that segment)
+
+### 3.7 Time Argument Parsing (`parseTimeArg`)
+
+The `parseTimeArg()` function converts user-provided time arguments to Unix epoch seconds.
+
+**Supported Formats**:
+- **Relative (ago)**: `"2h"`, `"30m"`, `"90s"` — interpreted as `now - duration`
+- **Absolute**: ISO 8601 timestamp (e.g., `"2024-03-12T10:00:00Z"`)
+- **Special**: `"now"` — current time
+
+**Combined Formats**: Not supported for MVP
+- `"2h30m"` is rejected — user should use `"150m"` instead
+- Rationale: Keeps parsing simple; combined formats add complexity with minimal UX benefit
+
+**Timezone**: All times use local machine timezone
+- `Date.now()` for "now"
+- ISO timestamps without timezone are interpreted as local time
+- No `--timezone` flag for MVP
+
+**Error Handling**:
+- Invalid input: Print `"Invalid time argument: '<input>'. Use relative (e.g., '2h', '30m') or ISO 8601 timestamp."` and exit with code 1
+- Examples of invalid: `"2h30m"`, `"yesterday"`, `"next week"`, empty string
+
+**Default Behavior** (if arguments omitted):
+- `--from`: 4 hours ago (`Date.now() / 1000 - 4 * 3600`)
+- `--to`: now (`Date.now() / 1000`)
+
 ## 4. Artifact Compatibility Bridging
 
 Currently, `generate-summary-v3.ts` queries `DbTopicBlock`. For recorder runs (which produce `segments` instead of `topic_blocks`), we need a dispatch strategy at artifact generation time.
@@ -336,5 +388,6 @@ async function generateSummaryV3(recording: DbRecording, format: string) {
   1. A synthetic recording is created.
   2. Segments are accurately bounded.
   3. The generated artifact is linked in `artifact_segments`.
-- **Immutability**: Calling `cut` twice over overlapping time ranges should create _two independent_ synthetic
-  recordings, with _duplicated_ segments. This enforces the append-only rule.
+- **Append-only behavior**: Calling `cut` twice over overlapping time ranges should create _two independent_
+  synthetic recordings, with _duplicated_ segments. 
+  > **Note**: Overlapping cuts may summarize the same work twice in separate artifacts. This is intentional — each `cut` invocation represents a distinct user intent (e.g., daily standup vs weekly retrospective). The `artifact_segments` join table ensures each artifact references its own segments independently.

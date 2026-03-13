@@ -87,8 +87,41 @@ Adding `frame_id` as a foreign key to the `frames` table maintains referential i
 3. **Indexing Strategy**: The index `idx_observations_frame_id` enables O(log N) lookup on `frame_id`, making joins fast. This is especially important when the artifact generation pipeline later queries observations by frame ID to include source context.
 
 ```sql
-ALTER TABLE observations ADD COLUMN frame_id TEXT REFERENCES frames(id) ON DELETE SET NULL;
+-- Make recording_id nullable for recorder-origin observations
+-- Recorder observations are created before a synthetic recording exists.
+-- They are linked by time range during `escribano cut`, not by recording_id FK.
+-- Discriminator: observations with frame_id IS NOT NULL AND recording_id IS NULL are recorder-origin.
+--
+-- Note: SQLite does not support ALTER COLUMN. This migration recreates the observations table.
+-- See: https://www.sqlite.org/lang_altertable.html#otheralter
+ALTER TABLE observations RENAME TO observations_old;
+
+CREATE TABLE observations (
+  id TEXT PRIMARY KEY,
+  recording_id TEXT REFERENCES recordings(id) ON DELETE CASCADE,  -- NOW NULLABLE
+  type TEXT NOT NULL,
+  timestamp REAL NOT NULL,
+  end_timestamp REAL,
+  image_path TEXT,
+  ocr_text TEXT,
+  vlm_description TEXT,
+  vlm_raw_response TEXT,
+  activity_type TEXT,
+  apps TEXT,
+  topics TEXT,
+  text TEXT,
+  audio_source TEXT,
+  audio_type TEXT,
+  embedding BLOB,
+  frame_id TEXT REFERENCES frames(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+INSERT INTO observations SELECT * FROM observations_old;
+DROP TABLE observations_old;
+
 CREATE INDEX idx_observations_frame_id ON observations(frame_id);
+CREATE INDEX idx_observations_recording_id ON observations(recording_id);
 
 -- Process-level VLM concurrency control
 -- Prevents multiple analyzer instances from running VLM simultaneously (which would cause OOM/GPU thrash)
@@ -123,6 +156,8 @@ Defined in `src/db/repositories/frame.sqlite.ts`.
 ### 3.3 The Analyze Action (`analyze-frames.ts`)
 
 **Process Model**: Each invocation is a single **ephemeral process** that claims frames, processes them, and exits. The launchd `StartInterval` provides the timing; the process itself is stateless.
+
+**Configurable Batch Size**: The number of frames claimed per run is controlled by `ESCRIBANO_ANALYZE_BATCH_SIZE` (default: 20). This can be tuned for systems with different RAM constraints — lower values reduce peak memory usage during VLM inference.
 
 **Pseudocode with Error Handling**:
 
@@ -162,8 +197,9 @@ async function analyzeFrames() {
     // Step 2: Generate a unique lock ID for this run
     const lockId = generateUUIDv7()
     
-    // Step 3: Claim up to 20 unanalyzed frames
-    claimedFrames = await frameRepository.claimFrames(20, lockId)
+    // Step 3: Claim unanalyzed frames (batch size from config, default 20)
+    const batchSize = config.analyzeBatchSize ?? 20
+    claimedFrames = await frameRepository.claimFrames(batchSize, lockId)
     
     // If no frames to process, exit gracefully
     if (claimedFrames.length === 0) {
@@ -214,7 +250,7 @@ async function analyzeFrames() {
         // Insert observation with frame_id FK
         await db.insert("observations", {
           id: generateId(),
-          recording_id: "<synthetic-from-frames>", // Will be linked during segmentation
+          recording_id: null, // Recorder observations: no recording until user runs `cut`
           type: "visual",
           frame_id: frame.id,
           timestamp: frame.timestamp,

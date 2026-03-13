@@ -144,7 +144,18 @@ Added to `src/index.ts` via routing commands:
 
 ### 4.1 `escribano recorder install`
 
-- Compiles Fotógrafo binary: `cd apps/recorder && swift build -c release`.
+- **Prerequisite check**: Verifies `swift` is in PATH. If missing, prints:
+  ```
+  Error: Swift toolchain not found.
+  Install Xcode Command Line Tools: xcode-select --install
+  ```
+  and exits with code 1.
+
+- **Build step**: Compiles Fotógrafo binary: `cd apps/recorder && swift build -c release`.
+  - The first `swift build -c release` takes 30-60 seconds (subsequent builds are incremental). The CLI shows a progress indicator before invoking the build:
+  ```
+  console.log('Compiling Fotógrafo (this may take a minute)...')
+  ```
 - Generates LaunchAgent Plist: `~/Library/LaunchAgents/com.escribano.capture.plist`.
 - Plist contents: `RunAtLoad=true`, `KeepAlive=true`, `ProgramArguments=[<path_to_fotografo_binary>]`.
 - Executes: `launchctl load ...`

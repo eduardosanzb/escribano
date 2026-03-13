@@ -27,11 +27,11 @@
 
 ### Opportunity
 
-Owning the capture layer transforms Escribano from a batch video processor into a **streaming work memory system**:
+Owning the capture layer transforms Escribano from a batch video processor into a **continuous capture pipeline with batch analysis**:
 - Capture screenshots directly (skip FFmpeg frame extraction entirely)
 - Multi-monitor from day one (ScreenCaptureKit supports all displays)
 - Always-on recording with intelligent deduplication
-- Agent-native: structured observations available as VLM processes them
+- Agent-native: structured observations queryable by time range once analyzed
 
 ## Decision
 
@@ -70,7 +70,9 @@ Build an always-on screen capture process using **Swift ScreenCaptureKit**, mana
 
 1. **Swift Capture Process** (LaunchAgent) — Always-on, auto-starts on login via launchd LaunchAgent plist. Captures screenshots at configurable intervals, deduplicates via perceptual hash, writes JPEG + DB row. Implements backpressure: pauses capture when unanalyzed frame count exceeds a configurable high-water mark (see Backpressure section below).
 2. **Node Batch Analyzer** — Polls `frames` table (Phase 1–2: via launchd `StartInterval`; future: push-based trigger from capture process). When unanalyzed frame count exceeds a configurable threshold (e.g., 20 frames), triggers VLM batch analysis. Writes observations.
-3. **CLI / Menu Bar** — User-triggered. Runs activity segmentation on observations, suggests natural breaks, user confirms/adjusts, generates artifact.
+3. **CLI / Menu Bar** — **User-triggered** (not background). Runs activity segmentation on observations, suggests natural breaks, user confirms/adjusts, generates artifact.
+
+> **Implementation reality**: The first two processes (capture + analysis) run continuously/periodically in the background. The third (segmentation + artifact generation) is user-initiated via `escribano cut`. This is a batch polling architecture with a job queue table, not a real-time streaming system.
 
 > **Note on "daemon" terminology**: Throughout this document, "capture process" or "capture LaunchAgent" refers to the Swift process managed by launchd. We avoid the term "daemon" because in launchd terminology, a LaunchDaemon runs as root outside the user session — which is incompatible with ScreenCaptureKit's TCC requirements. The capture process is a LaunchAgent (runs in user session).
 
@@ -103,6 +105,8 @@ Frame                    Observation              Segment
 ```
 Frame → Observation → Segment → Subject → Artifact
 ```
+
+> **Automatic vs. user-triggered transitions**: The first two transitions (Frame → Observation) are automatic — the capture process writes frames, the batch analyzer writes observations. The remaining transitions (Observation → Segment → Subject → Artifact) are user-triggered via `escribano cut`. Segments do not exist as queryable entities until a user explicitly invokes the cut command.
 
 ### Multi-Display + Subject Grouping
 
@@ -233,7 +237,7 @@ CREATE INDEX idx_observations_frame_id ON observations(frame_id);
 
 -- New table: persisted segments (replaces in-memory segments + topic_blocks)
 --
--- Immutability convention: Segments are append-only. Re-cutting (e.g., adjusting a time
+-- Append-only convention: Segments are append-only. Re-cutting (e.g., adjusting a time
 -- range via `escribano cut`) creates NEW segment rows under a new synthetic recording.
 -- Existing segments are never updated or deleted. This is enforced by application convention,
 -- not database constraints. The `artifact_segments` join table ensures old artifacts continue
@@ -379,7 +383,7 @@ This eliminates the overlapping-spawn problem and reduces memory overhead. Not b
 - **Always-on** — Never forget to capture work
 - **Multi-monitor** — All displays captured natively via ScreenCaptureKit
 - **No FFmpeg extraction** — Screenshots are already frames (skip video → frame step entirely)
-- **Streaming-ready** — Observations available as VLM processes them
+- **Queryable** — Observations available after VLM batch analysis, queryable by time range
 - **Agent-native** — Structured observations in DB, queryable by time range
 
 ### Negative
@@ -409,7 +413,7 @@ This eliminates the overlapping-spawn problem and reduces memory overhead. Not b
 | **Swift binary distribution** | Dev-only local build for MVP; GitHub Releases + pre-built binaries post-validation |
 | **JPEG orphan reconciliation** | If analyzer crashes between disk write and DB commit, orphan JPEGs accumulate. Add a periodic reconciliation pass in Phase 4: walk `~/.escribano/frames/`, cross-reference against `frames.image_path WHERE analyzed = 1`, delete orphans. Low severity — the failure window is narrow and bounded by disk quota. |
 | **Read model separation** | The "agent-native" query layer currently targets SQLite (time-range, activity type, app filters). If semantic search or vector similarity queries are needed, separate the write model (capture + analysis pipeline) from a read model (Postgres + pgvector, sqlite-vec). The current schema supports streaming observations to a separate read replica without restructuring the write path. Defer until query requirements are concrete. |
-| **SQLite-as-IPC refactoring** | The `frames` table currently serves as storage, job queue, lock registry, and WIP tracker. This is acceptable at MVP throughput but if coordination logic grows complex (priority, throttling, complex retry), consider separating job lifecycle into a lightweight queue. The job columns (`processing_lock_id`, `processing_started_at`, `retry_count`) are cleanly separated from data columns and can be moved without touching the data schema. |
+| **SQLite-as-IPC refactoring** | The `frames` table currently serves as storage, job queue, lock registry, and WIP tracker. This is acceptable at MVP throughput. **Tradeoff acknowledged**: This trades correctness for simplicity. The failure window: if the analyzer crashes after VLM completes but before `markAnalyzed` runs, those frames remain locked until `releaseStaleLocks(10)` fires on the next invocation. At worst, this delays reprocessing by 10 minutes plus the launchd `StartInterval` (2 minutes). The lock timeout of 10 minutes was chosen to exceed the expected worst-case VLM batch duration (~14 seconds for 20 frames at 0.7s/frame), with margin for system-level stalls. If coordination logic grows complex (priority, throttling, complex retry), consider separating job lifecycle into a lightweight queue. The job columns (`processing_lock_id`, `processing_started_at`, `retry_count`) are cleanly separated from data columns and can be moved without touching the data schema. |
 | **SCFrameStatus as dedup layer** | Validated in Phase C POC (2026-03-12). SCFrameStatus fires ~1% of frames at 1fps capture intervals — useless at 5s intervals. Designed for 30/60fps streaming where it can detect "no change since last frame." At 5s intervals, something on macOS always changes within the window. **Dropped from Phase 1.** |
 | **VN FeaturePrint for dedup** | Validated in Phase C POC (2026-03-12). 4.5–6.5ms per frame on ANE vs ~0ms for pHash. Adds no value — pHash threshold=8 already cleanly separates noise from content. **Dropped from Phase 1.** |
 | **dHash as primary dedup** | Validated in Phase C POC (2026-03-12). dHash is blind to clock ticks (max=0 hamming in CLOCK_TICK scenario) because it compares horizontal gradients which don't change for localized digit updates in a 9×8 resize. pHash's DCT captures low-frequency structure changes correctly. **Dropped from Phase 1.** |

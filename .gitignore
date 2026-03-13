@@ -58,3 +58,4 @@ debug-mbair-machine
 # ScreenCaptureKit POC build artifacts
 scripts/poc-screencapturekit/.build/
 scripts/poc-screencapturekit-stream/.build/
+scripts/poc-phash-dedup/.build

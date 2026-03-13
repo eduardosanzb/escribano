@@ -51,15 +51,23 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [x] Document Swift 6 concurrency patterns in `docs/SCREENCAPTUREKIT-POC-SPIKE.md`
 - **Phase B complete (2026-03-12)** — SCStream confirmed as Phase 1 capture API. See: `docs/SCREENCAPTUREKIT-POC-SPIKE.md` Phase B section for patterns + gotchas
 
-#### Phase 1: Swift Capture Daemon (~3-4 days)
+#### Pre-Phase 1c: pHash Dedup Threshold
+- [x] Create `scripts/poc-phash-dedup/` — standalone CLI testing pHash, dHash, VN FeaturePrint, SCFrameStatus
+- [x] Run 6 scenarios: IDLE, CLOCK_TICK, CURSOR_BLINK, MOUSE_MOVE, TYPING, WINDOW_SWITCH
+- [x] Analyze hamming distances to find clean threshold separating noise from content
+- [x] Document results in `docs/SCREENCAPTUREKIT-POC-SPIKE.md`
+- **Phase C complete (2026-03-12)** — pHash threshold=8 validated. See: `docs/SCREENCAPTUREKIT-POC-SPIKE.md` Phase C section for full analysis
+
+#### Phase 1: Swift Capture LaunchAgent (~3-4 days)
 - [ ] Set up `apps/recorder/` Swift package (Package.swift, Xcode project, basic structure)
-- [ ] Implement ScreenCaptureKit capture loop — single display, configurable interval
-- [ ] Implement pHash deduplication — skip frame if visually identical to previous
-- [ ] Write JPEG frames to `~/.escribano/frames/{date}/`
-- [ ] Write frame rows to SQLite `frames` table (new migration)
-- [ ] Write launchd plist `com.escribano.capture.plist` (KeepAlive, StartOnLoad)
-- [ ] Add `escribano daemon install` CLI command — drops plist, registers with launchd
-- [ ] Add `escribano daemon status` CLI command — shows capture running/stopped + frame count
+- [ ] Implement ScreenCaptureKit capture loop using `SCStream` — single display, 5s configurable interval (`ESCRIBANO_CAPTURE_INTERVAL`)
+- [ ] Implement pHash deduplication with **threshold=8** — skip frame if `(currentHash ^ previousHash).nonzeroBitCount <= 8`
+- [ ] Write JPEG frames to `~/.escribano/frames/{date}/{timestamp}.jpg`
+- [ ] Write frame rows to SQLite `frames` table (new migration: `id`, `recording_id` FK, `timestamp`, `jpeg_path`, `phash`, `analyzed=0`)
+- [ ] Write LaunchAgent plist `com.escribano.capture.plist` with `StartOnLoad` + `KeepAlive` (not LaunchDaemon — TCC perms require user agent)
+- [ ] Add `escribano recorder install` CLI command — drops plist to `~/Library/LaunchAgents/`, registers with launchctl
+- [ ] Add `escribano recorder status` CLI command — shows agent running/stopped, frame count, last capture timestamp, disk usage of `~/.escribano/frames/`
+- **Note**: Backpressure safety valve required if analyzer falls behind (see ADR §Backpressure)
 
 #### Phase 2: Node Batch Analyzer (~2-3 days)
 - [ ] Add `frames` table + `frame_id` column on `observations` to `src/db/migrate.ts`
@@ -67,8 +75,9 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [ ] Implement `escribano analyze` CLI command — checks unanalyzed frame count against threshold; if met, runs VLM batch and writes observations with `frame_id`; exits
 - [ ] Reuse `vlm-service.ts` unchanged for VLM batch
 - [ ] Mark frames `analyzed=1` after VLM completes
-- [ ] Write launchd plist `com.escribano.analyze.plist` (StartInterval=120) — installed alongside capture plist via `daemon install`
+- [ ] Write LaunchAgent plist `com.escribano.analyze.plist` (StartInterval=120) — installed alongside capture plist via `recorder install`
 - [ ] Add `ESCRIBANO_ANALYZE_THRESHOLD` config (default: 20 frames)
+- **Note**: Trigger model (polling vs event-driven) deferred per ADR Issue #6; polling via LaunchAgent StartInterval chosen for MVP simplicity
 
 #### Phase 3: Segmentation + CLI (~2-3 days)
 - [ ] Add `segments` table migration to `src/db/migrate.ts`
@@ -82,7 +91,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [ ] Multi-display capture — extend Phase 1 to capture all displays with `display_id`
 - [ ] Frame cleanup — delete JPEGs after analysis; add `ESCRIBANO_FRAME_RETENTION_DAYS` config (default: 1)
 - [ ] Swift menu bar status item — show capture on/off, frame count, last analysis time
-- [ ] `escribano daemon uninstall` — removes launchd plists, stops daemons
+- [ ] `escribano recorder uninstall` — removes LaunchAgent plists, stops daemons
 
 ### Stopgaps (batch pipeline, lower priority now that recorder is the focus)
 

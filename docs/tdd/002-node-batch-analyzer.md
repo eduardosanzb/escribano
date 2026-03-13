@@ -46,8 +46,6 @@ sequenceDiagram
             
             loop For each description
                 Analyzer->>DB: INSERT INTO observations (frame_id, vlm_description, ...)
-                Analyzer->>Disk: unlink(jpeg_path)
-                Disk-->>Analyzer: deleted
             end
             
             alt All succeeded
@@ -82,14 +80,14 @@ sequenceDiagram
 
 Adding `frame_id` as a foreign key to the `frames` table maintains referential integrity and enables efficient queries that cross-link observations back to their source frames. This is essential for the always-on recorder workflow, where:
 
-1. **Referential Integrity**: Every `observations` row created from a frame must reference a valid `frames` record. The FK constraint prevents orphaned observations if a frame is deleted.
+1. **Referential Integrity**: Every `observations` row created from a frame references a `frames` record. With `ON DELETE SET null`, when the Phase 4 cleanup deletes old frame rows, observations retain their data but `frame_id` becomes `null`. This preserves the VLM analysis even after source images are cleaned up.
 2. **Query Patterns**: With this FK, we can efficiently answer questions like:
    - "Show me all observations derived from frames captured in the last hour" (filter observations by `frame_id`, then filter frames by timestamp)
    - "Find all frames that failed to analyze" (query frames where `analyzed = 2`)
 3. **Indexing Strategy**: The index `idx_observations_frame_id` enables O(log N) lookup on `frame_id`, making joins fast. This is especially important when the artifact generation pipeline later queries observations by frame ID to include source context.
 
 ```sql
-ALTER TABLE observations ADD COLUMN frame_id TEXT REFERENCES frames(id);
+ALTER TABLE observations ADD COLUMN frame_id TEXT REFERENCES frames(id) ON DELETE SET NULL;
 CREATE INDEX idx_observations_frame_id ON observations(frame_id);
 
 -- Process-level VLM concurrency control
@@ -178,7 +176,7 @@ async function analyzeFrames() {
     // Step 4: Format frames for VLM (map image_path and timestamp)
     const framesToProcess = claimedFrames.map(f => ({
       id: f.id,
-      imagePath: f.jpeg_path,
+      imagePath: f.image_path,
       timestamp: f.timestamp
     }))
     
@@ -226,13 +224,8 @@ async function analyzeFrames() {
           topics: JSON.stringify(desc.topics)
         })
         
-        // Delete JPEG from disk to free space
-        try {
-          await fs.promises.unlink(frame.jpeg_path)
-        } catch (fsError) {
-          console.warn(`Failed to delete ${frame.jpeg_path}:`, fsError.message)
-          // Non-critical; continue
-        }
+        // Note: JPEG retention is managed by Phase 4 cleanup task (ESCRIBANO_FRAME_RETENTION_DAYS)
+        // Frames are kept on disk to enable future OCR, screenshots in artifacts, and re-analysis
         
       } catch (insertError) {
         console.error(`Failed to insert observation for frame ${frame.id}:`, insertError)
@@ -362,8 +355,6 @@ This means launchd-managed processes are naturally serialized. **However**, user
 - **Mock DB Claiming**: Create a test DB with 25 pending frames. Assert `claimFrames` locks exactly 20.
 - **Stale locks recovery**: Set a frame's `processing_started_at` to 15 mins ago, ensure `releaseStaleLocks`
   frees it, and it gets claimed again.
-- **File Deletion**: Ensure successfully analyzed frames have their `image_path` file unlinked to save disk
-  space.
 - **Retry limit**: Mock a VLM failure 3 times, verify frame state becomes `analyzed = 2`.
 - **Concurrent claiming**: Verify two parallel `claimFrames()` calls (via separate DB connections) do not claim the same frame.
 - **Process lock - concurrent prevention**: Insert a `process_locks` row with an active PID (use current process). Start a second analyzer process. Assert it logs "Another analyzer running" and exits with code 0 (graceful, not error).

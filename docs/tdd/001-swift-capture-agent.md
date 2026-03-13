@@ -69,6 +69,7 @@ No actively maintained, headless-compatible Swift pHash libraries exist.
 ### 3.3 Database & Storage (`DB.swift`)
 
 - **Frames Location**: `~/.escribano/frames/{YYYY-MM-DD}/{timestamp}_{displayId}.jpg`
+- **Frame Format**: JPEG at quality 85. Balances file size (~50-100 KB/frame at 1024px width) with text fidelity for future OCR. Lossy compression is acceptable for VLM analysis (models are robust to mild artifacts) and keeps storage manageable (~200-500 MB/day before cleanup).
 - **SQLite Location**: `~/.escribano/escribano.db`
 - **WAL Mode Configuration** (matches Node.js `src/db/index.ts:42-45`):
   - `PRAGMA journal_mode = WAL;` — Write-Ahead Logging mode allows concurrent reads while writes are in progress. Reduces lock contention between the capture agent (writer) and the analyzer (reader).

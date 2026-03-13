@@ -12,42 +12,56 @@ with foreign keys to the frames.
 sequenceDiagram
     participant LaunchAgent
     participant Analyzer as analyze-frames.ts
+    participant ProcessLock as Process Lock Check
     participant FrameRepo as FrameRepository
     participant DB as SQLite
     participant VLM as vlm-service.ts
     participant Disk as Filesystem
 
     LaunchAgent->>Analyzer: spawn process (every 2 min)
-    Analyzer->>FrameRepo: releaseStaleLocks(10)
-    FrameRepo->>DB: UPDATE frames WHERE processing_started_at < 10m ago
-    Analyzer->>FrameRepo: claimFrames(20, lockId)
-    FrameRepo->>DB: UPDATE frames SET processing_lock_id=lockId, ...<br/>WHERE analyzed=0 AND lock IS NULL LIMIT 20
-    DB-->>FrameRepo: [frame records]
-    FrameRepo-->>Analyzer: [DbFrame[20]]
-    
-    alt 0 frames claimed
-        Analyzer->>Analyzer: exit(0)
-    else frames claimed
-        Analyzer->>Analyzer: Format frames for VLM
-        Analyzer->>VLM: describeFrames([...])
-        VLM->>VLM: Batch inference
-        VLM-->>Analyzer: [FrameDescription[...]]
+    Analyzer->>ProcessLock: Check if another analyzer is running
+    ProcessLock->>DB: SELECT * FROM process_locks WHERE name='analyzer'
+    alt Analyzer already running
+        ProcessLock-->>Analyzer: Existing PID is alive
+        Analyzer->>Analyzer: Log "another analyzer running", exit(0)
+    else No lock or stale lock
+        ProcessLock-->>Analyzer: OK to proceed (or stale lock cleaned)
+        Analyzer->>DB: INSERT INTO process_locks (name='analyzer', pid)
+        DB-->>Analyzer: Lock acquired
         
-        loop For each description
-            Analyzer->>DB: INSERT INTO observations (frame_id, vlm_description, ...)
-            Analyzer->>Disk: unlink(jpeg_path)
-            Disk-->>Analyzer: deleted
+        Analyzer->>FrameRepo: releaseStaleLocks(10)
+        FrameRepo->>DB: UPDATE frames WHERE processing_started_at < 10m ago
+        Analyzer->>FrameRepo: claimFrames(20, lockId)
+        FrameRepo->>DB: UPDATE frames SET processing_lock_id=lockId, ...<br/>WHERE analyzed=0 AND lock IS NULL LIMIT 20
+        DB-->>FrameRepo: [frame records]
+        FrameRepo-->>Analyzer: [DbFrame[20]]
+        
+        alt 0 frames claimed
+            Analyzer->>Analyzer: exit(0)
+        else frames claimed
+            Analyzer->>Analyzer: Format frames for VLM
+            Analyzer->>VLM: describeFrames([...])
+            VLM->>VLM: Batch inference
+            VLM-->>Analyzer: [FrameDescription[...]]
+            
+            loop For each description
+                Analyzer->>DB: INSERT INTO observations (frame_id, vlm_description, ...)
+                Analyzer->>Disk: unlink(jpeg_path)
+                Disk-->>Analyzer: deleted
+            end
+            
+            alt All succeeded
+                Analyzer->>FrameRepo: markAnalyzed(ids)
+                FrameRepo->>DB: UPDATE frames SET analyzed=1, processing_lock_id=NULL
+            else Some failed
+                Analyzer->>FrameRepo: markFailed(id) for each
+                FrameRepo->>DB: UPDATE frames SET retry_count=retry_count+1 OR analyzed=2
+            end
+            
+            Analyzer->>VLM: unloadVlm()
         end
         
-        alt All succeeded
-            Analyzer->>FrameRepo: markAnalyzed(ids)
-            FrameRepo->>DB: UPDATE frames SET analyzed=1, processing_lock_id=NULL
-        else Some failed
-            Analyzer->>FrameRepo: markFailed(id) for each
-            FrameRepo->>DB: UPDATE frames SET retry_count=retry_count+1 OR analyzed=2
-        end
-        
-        Analyzer->>VLM: unloadVlm()
+        Analyzer->>DB: DELETE FROM process_locks WHERE name='analyzer'
         Analyzer->>LaunchAgent: exit(0)
     end
 ```
@@ -77,6 +91,14 @@ Adding `frame_id` as a foreign key to the `frames` table maintains referential i
 ```sql
 ALTER TABLE observations ADD COLUMN frame_id TEXT REFERENCES frames(id);
 CREATE INDEX idx_observations_frame_id ON observations(frame_id);
+
+-- Process-level VLM concurrency control
+-- Prevents multiple analyzer instances from running VLM simultaneously (which would cause OOM/GPU thrash)
+CREATE TABLE IF NOT EXISTS process_locks (
+  name       TEXT PRIMARY KEY,       -- e.g., 'analyzer'
+  pid        INTEGER NOT NULL,
+  started_at TEXT DEFAULT (datetime('now'))
+);
 ```
 
 ### 3.2 Frame Repository (`FrameRepository`)
@@ -113,7 +135,30 @@ async function analyzeFrames() {
   let claimedFrames: DbFrame[] = []
   
   try {
-    // Step 1: Release any stale locks from crashed runs (timeout: 10 min)
+    // Step 0: Acquire process-level lock to prevent concurrent VLM execution
+    // (launchd won't spawn two instances, but manual CLI runs can overlap)
+    const existingLock = await db.get(
+      "SELECT * FROM process_locks WHERE name = 'analyzer'"
+    )
+    
+    if (existingLock) {
+      const isAlive = isProcessAlive(existingLock.pid)  // kill(pid, 0)
+      if (isAlive) {
+        console.log(`Another analyzer (PID ${existingLock.pid}) is running. Exiting.`)
+        process.exit(0)  // Graceful exit; not an error
+      }
+      // Stale lock from crashed process — clean it up
+      await db.run("DELETE FROM process_locks WHERE name = 'analyzer'")
+    }
+    
+    // Acquire lock for this process
+    await db.run(
+      "INSERT INTO process_locks (name, pid) VALUES ('analyzer', ?)",
+      [process.pid]
+    )
+    console.log(`Acquired analyzer lock (PID ${process.pid})`)
+    
+    // Step 1: Release any stale locks from crashed frame-level runs (timeout: 10 min)
     await frameRepository.releaseStaleLocks(10)
     
     // Step 2: Generate a unique lock ID for this run
@@ -225,7 +270,14 @@ async function analyzeFrames() {
     process.exit(1)
     
   } finally {
-    // Step 8: Always unload VLM model to free memory
+    // Step 9: Always release process lock and unload VLM model
+    try {
+      await db.run("DELETE FROM process_locks WHERE name = 'analyzer'")
+      console.log("Released analyzer lock")
+    } catch (lockError) {
+      console.error("Failed to release analyzer lock:", lockError)
+    }
+    
     try {
       await intelligenceService.unloadVlm()
     } catch (unloadError) {
@@ -241,28 +293,45 @@ async function analyzeFrames() {
 - **Crash During Processing**: Stale lock cleanup on next run frees all claimed frames for retry.
 - **Memory Safety**: `finally` block ensures model is unloaded before exit, even if error occurs.
 
-### 3.4 Process Model: Ephemeral Execution
+### 3.4 Process Model: Ephemeral Execution & VLM Concurrency Control
 
 **Ephemeral Execution (No Tick/Worker Split)**:
 
 Each launchd invocation spawns a **fresh, independent process** that:
-1. Claims frames (locked by `processing_lock_id`)
-2. Processes them (VLM inference)
-3. Marks them analyzed
-4. Unloads model
-5. Exits (process terminates)
+1. Acquires process-level lock (prevents concurrent VLM execution)
+2. Claims frames (locked by `processing_lock_id`)
+3. Processes them (VLM inference)
+4. Marks them analyzed
+5. Releases process lock
+6. Unloads model
+7. Exits (process terminates)
+
+**launchd Single-Instance Guarantee**:
+
+launchd with `StartInterval=120` will not spawn a second instance if the first is still running. From Apple's documentation:
+
+> If the job is already running when StartInterval fires, launchd does **not** launch a second instance.
+
+This means launchd-managed processes are naturally serialized. **However**, users can invoke `escribano analyze` manually from the CLI while the launchd agent is running, which would bypass this protection. That's why we add a **process-level VLM lock** in `process_locks` table:
+
+- When process A (launchd) starts VLM, it acquires the lock
+- If user runs `escribano analyze` (process B) in a terminal, B checks the lock and sees A's PID is alive
+- B gracefully exits with code 0 (not an error) and logs the message
+- This prevents two VLM instances from loading simultaneously and causing GPU OOM / thrash
 
 **Concurrency & Retry Safety**:
-- **launchd timing**: `StartInterval=120` means a new process is spawned every 2 minutes
-- **Double-claiming prevention**: If a new process starts while a previous one is still running:
+- **launchd timing**: `StartInterval=120` means a new process is spawned every 2 minutes (only if previous exited)
+- **VLM lock**: `process_locks` table with PID check prevents manual CLI + launchd overlap
+- **Frame-level double-claiming prevention**: If two processes somehow both acquired the VLM lock (e.g., both check PID at same instant):
   - Both call `claimFrames()`
   - Process A claims frames 1–20 (sets `processing_lock_id=<uuid-A>`)
   - Process B calls `claimFrames()`, gets frames 21–40 (sets `processing_lock_id=<uuid-B>`)
   - No conflict; the `WHERE processing_lock_id IS NULL` predicate ensures each frame is claimed only once
 - **Crash recovery**: If process A crashes mid-VLM:
-  - Frames 1–20 remain locked with `processing_lock_id=<uuid-A>` and stale `processing_started_at`
-  - Process B (on next StartInterval) calls `releaseStaleLocks(10)` and frees them
-  - Process C (or later) claims and retries frames 1–20
+  - Process lock row remains with stale PID
+  - Frame locks remain with stale `processing_lock_id` and `processing_started_at`
+  - Next analyzer run (process B) checks if PID is alive (it's not), cleans up the lock, and continues
+  - `releaseStaleLocks(10)` frees any frame locks older than 10 minutes
 
 **Why No Tick/Worker Split?**:
 - launchd already provides the **tick** (StartInterval scheduling)
@@ -270,6 +339,7 @@ Each launchd invocation spawns a **fresh, independent process** that:
 - No need for internal event loop or background thread
 - Simpler state machine (no long-lived actor coordination)
 - Better resource management (model unloaded after every run, memory stays bounded)
+- Process lock in SQLite is simpler than shared memory or OS-level mutexes
 
 ### 3.5 LaunchAgent Plist (`com.escribano.analyze.plist`)
 
@@ -296,3 +366,5 @@ Each launchd invocation spawns a **fresh, independent process** that:
   space.
 - **Retry limit**: Mock a VLM failure 3 times, verify frame state becomes `analyzed = 2`.
 - **Concurrent claiming**: Verify two parallel `claimFrames()` calls (via separate DB connections) do not claim the same frame.
+- **Process lock - concurrent prevention**: Insert a `process_locks` row with an active PID (use current process). Start a second analyzer process. Assert it logs "Another analyzer running" and exits with code 0 (graceful, not error).
+- **Process lock - stale lock recovery**: Insert a `process_locks` row with a dead PID (e.g., 99999999). Start analyzer. Assert it cleans up the stale lock, acquires a new one, and proceeds normally.

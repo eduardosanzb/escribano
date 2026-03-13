@@ -163,7 +163,7 @@ This requires: code signing, binary hosting, update mechanics, and clean uninsta
 
 - Checks if LaunchAgent is running.
 - Reports pending frames: `SELECT count(*) FROM frames WHERE analyzed=0`.
-- Reports disk usage of `~/.escribano/frames/`. _review_note: AMAZING IDEA!_
+- Reports disk usage of `~/.escribano/frames/`.
 
 ## 5. Test Specs
 

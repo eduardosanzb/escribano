@@ -1,0 +1,941 @@
+/* 
+ * LinkedIn Carousel CSS - Escribano AI-Built Codebase
+ * Based on apps/landing/assets/css/style.css
+ * Design: dark editorial-technical, muted amber/olive accents
+ */
+
+/* ==================== Design Tokens ==================== */
+
+:root {
+  /* Dark mode palette (carousel always dark) */
+  --ink: #E8E9EE;
+  --ink-soft: #9395A5;
+  --ink-muted: #5C5F72;
+  --parchment: #15171F;
+  --parchment-warm: #1C1F2B;
+  --parchment-deep: #2A2D3A;
+  --terracotta: #E8A838;
+  --terracotta-light: #F0BC5A;
+  --olive: #4A9E7A;
+  --olive-light: #7BC9A0;
+  --gold: #E8A838;
+  --cream: #0E0F14;
+  --surface: #15171F;
+  --surface-elevated: #1C1F2B;
+  --surface-highlight: rgba(255, 255, 255, 0.04);
+
+  /* Typography */
+  --serif: 'Cormorant Garamond', Georgia, serif;
+  --serif-body: 'Spectral', Georgia, serif;
+  --sans: 'DM Sans', system-ui, sans-serif;
+  --mono: 'Monaco', 'Courier New', monospace;
+  
+  /* Spacing */
+  --slide-padding: 80px;
+  --card-padding: 32px;
+  
+  /* Fixed dimensions for LinkedIn carousel */
+  --slide-width: 1080px;
+  --slide-height: 1080px;
+}
+
+/* ==================== Base Styles ==================== */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--serif-body);
+  font-weight: 300;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle noise texture overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 0.6;
+}
+
+/* ==================== Slide Container ==================== */
+
+.slide {
+  width: var(--slide-width);
+  height: var(--slide-height);
+  background: var(--parchment);
+  position: relative;
+  overflow: hidden;
+  page-break-after: always;
+  break-after: page;
+}
+
+.slide-content {
+  padding: var(--slide-padding);
+  padding-bottom: calc(var(--slide-padding) + 120px);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 1;
+}
+
+/* ==================== Typography ==================== */
+
+.eyebrow {
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--terracotta);
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 2rem;
+  height: 1px;
+  background: var(--terracotta);
+}
+
+.slide-title {
+  font-family: var(--serif);
+  font-size: 3.75rem;
+  font-weight: 300;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-bottom: 2rem;
+}
+
+.slide-title em {
+  font-style: italic;
+  color: var(--terracotta);
+}
+
+.slide-subtitle {
+  font-family: var(--mono);
+  font-size: 1.2rem;
+  color: var(--ink-muted);
+  margin-bottom: 1.5rem;
+  font-weight: 400;
+}
+
+.slide-body {
+  font-family: var(--serif-body);
+  font-size: 1.35rem;
+  color: var(--ink-soft);
+  line-height: 1.8;
+  max-width: 32ch;
+}
+
+.slide-caption {
+  font-family: var(--serif-body);
+  font-size: 1.1rem;
+  color: var(--ink-soft);
+  font-style: italic;
+  margin-top: auto;
+  padding-top: 2rem;
+}
+
+/* ==================== Editor Card ==================== */
+
+.editor-card {
+  background: #0a0a0f;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.4);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin: 2rem 0;
+}
+
+.editor-header {
+  background: rgba(255,255,255,0.08);
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.editor-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+}
+
+.editor-dot:first-child { background: #ff5f56; }
+.editor-dot:nth-child(2) { background: #ffbd2e; }
+.editor-dot:nth-child(3) { background: #27ca40; }
+
+.editor-title {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.5);
+  margin-left: 1rem;
+}
+
+.editor-body {
+  padding: 2rem;
+  font-family: var(--mono);
+  font-size: 1rem;
+  line-height: 1.9;
+  color: var(--ink);
+  overflow: hidden;
+  flex: 1;
+}
+
+.code-line {
+  margin-bottom: 0.25rem;
+  white-space: pre;
+}
+
+.code-line.highlight {
+  background: rgba(232, 168, 56, 0.1);
+  border-left: 3px solid var(--terracotta);
+  padding-left: 0.75rem;
+  margin-left: -0.75rem;
+}
+
+.code-comment { color: rgba(255,255,255,0.4); }
+.code-keyword { color: var(--terracotta-light); }
+.code-type { color: var(--olive-light); }
+.code-method { color: #93C5FD; }
+.code-indent { color: rgba(255,255,255,0.3); }
+.highlight-text { color: var(--terracotta); font-weight: 500; }
+
+/* ==================== Document Card ==================== */
+
+.doc-card {
+  background: var(--surface-elevated);
+  border: 1px solid var(--parchment-deep);
+  border-radius: 6px;
+  padding: var(--card-padding);
+  margin: 2rem 0;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+
+.doc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--parchment-deep);
+}
+
+.doc-title {
+  font-family: var(--serif);
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.doc-status {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.status-pill {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  padding: 0.35rem 0.75rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.status-pill.accepted {
+  background: rgba(74, 158, 122, 0.2);
+  color: var(--olive-light);
+  border: 1px solid var(--olive);
+}
+
+.status-pill.revised {
+  background: rgba(232, 168, 56, 0.2);
+  color: var(--terracotta-light);
+  border: 1px solid var(--terracotta);
+}
+
+.status-pill.validated {
+  background: rgba(74, 158, 122, 0.2);
+  color: var(--olive-light);
+  border: 1px solid var(--olive);
+}
+
+.doc-meta {
+  margin-bottom: 1.5rem;
+}
+
+.meta-row {
+  margin-bottom: 1rem;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.meta-label {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  min-width: 80px;
+}
+
+.meta-value {
+  font-family: var(--serif-body);
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.doc-decision {
+  background: var(--parchment);
+  border-radius: 4px;
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.decision-label {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--terracotta);
+  margin-bottom: 0.75rem;
+}
+
+.decision-text {
+  font-family: var(--serif-body);
+  font-size: 1rem;
+  color: var(--ink);
+  line-height: 1.7;
+}
+
+.decision-text strong {
+  color: var(--terracotta);
+  font-weight: 500;
+}
+
+/* ==================== Architecture Diagram ==================== */
+
+.architecture-diagram {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2rem;
+  justify-content: center;
+}
+
+.diagram-box {
+  background: var(--parchment-deep);
+  border: 1px solid var(--ink-muted);
+  border-radius: 4px;
+  padding: 0.75rem 1.25rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+
+.diagram-arrow {
+  color: var(--terracotta);
+  font-size: 1.5rem;
+}
+
+/* ==================== Interface Cards ==================== */
+
+.interface-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin: 2rem 0;
+  flex: 1;
+}
+
+.interface-card {
+  flex: 1;
+}
+
+.connector-note {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  justify-content: center;
+}
+
+.connector-arrow {
+  color: var(--terracotta);
+  font-size: 1.5rem;
+}
+
+.connector-text {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+/* ==================== Research Grid ==================== */
+
+.research-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 2rem;
+  margin: 2rem 0;
+  flex: 1;
+}
+
+.research-card {
+  margin: 0;
+}
+
+.findings-table {
+  margin-top: 1.5rem;
+}
+
+.finding-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--parchment-deep);
+}
+
+.finding-row:last-child {
+  border-bottom: none;
+}
+
+.finding-question {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.finding-result {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.25rem 0.75rem;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+
+.finding-result.confirmed {
+  background: rgba(74, 158, 122, 0.2);
+  color: var(--olive-light);
+}
+
+/* ==================== Review Cards ==================== */
+
+.review-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.review-card {
+  background: var(--surface-elevated);
+  border: 1px solid var(--parchment-deep);
+  border-radius: 4px;
+  padding: 1rem 1.25rem;
+}
+
+.review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.pr-number {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--terracotta);
+  font-weight: 500;
+}
+
+.pr-status {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--olive-light);
+  background: rgba(74, 158, 122, 0.2);
+  padding: 0.2rem 0.5rem;
+  border-radius: 2px;
+}
+
+.review-title {
+  font-family: var(--serif-body);
+  font-size: 0.9rem;
+  color: var(--ink);
+  margin-bottom: 0.35rem;
+}
+
+.review-stats {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+/* ==================== Artifact Panel ==================== */
+
+.artifact-panel {
+  background: var(--surface-elevated);
+  border: 1px solid var(--parchment-deep);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 2rem 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.artifact-header {
+  background: var(--parchment);
+  padding: 1.5rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--parchment-deep);
+}
+
+.artifact-title {
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.artifact-stamp {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--olive);
+  background: rgba(74, 158, 122, 0.15);
+  padding: 0.3rem 0.75rem;
+  border-radius: 2px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.artifact-blocks {
+  padding: 1.5rem 2rem;
+  flex: 1;
+}
+
+.artifact-block {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--parchment-deep);
+}
+
+.artifact-block:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.block-bar {
+  width: 4px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.block-bar.coding { background: var(--olive); }
+.block-bar.research { background: var(--terracotta); }
+.block-bar.review { background: #7a8fa6; }
+
+.block-content {
+  flex: 1;
+}
+
+.block-label {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 0.5rem;
+}
+
+.block-text {
+  font-family: var(--serif-body);
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  margin-bottom: 0.5rem;
+}
+
+.block-time {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.artifact-footer {
+  background: var(--ink);
+  padding: 1.25rem 2rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--parchment);
+}
+
+.terminal-line {
+  margin-bottom: 0.75rem;
+}
+
+.terminal-prompt {
+  color: var(--terracotta-light);
+  margin-right: 0.5rem;
+}
+
+.terminal-success {
+  color: var(--olive-light);
+}
+
+/* ==================== Floating Chips ==================== */
+
+.floating-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 3rem;
+}
+
+.chip {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  background: var(--surface-elevated);
+  border: 1px solid var(--parchment-deep);
+  padding: 0.6rem 1.2rem;
+  border-radius: 3px;
+}
+
+/* ==================== Callout Chips ==================== */
+
+.callout-chips {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.callout-chip {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--terracotta);
+  background: rgba(232, 168, 56, 0.1);
+  border: 1px solid var(--terracotta);
+  padding: 0.4rem 0.85rem;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+
+/* ==================== Drift Control ==================== */
+
+.drift-control {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding-top: 0;
+}
+
+.drift-label {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.drift-answer {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--terracotta);
+  font-weight: 500;
+}
+
+/* ==================== Slide Footer ==================== */
+
+.slide-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 2rem var(--slide-padding);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--parchment-deep);
+  background: var(--parchment);
+  z-index: 10;
+}
+
+.slide-counter {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.footer-tag {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ==================== Slide-Specific Styles ==================== */
+
+/* Slide 1: Cover */
+.slide-1 .slide-content {
+  justify-content: flex-start;
+  padding-top: 100px;
+}
+
+.slide-1 .slide-title {
+  font-size: 3.6rem;
+  margin-bottom: 1.5rem;
+}
+
+.slide-1 .slide-subtitle {
+  font-size: 1.15rem;
+  margin-bottom: 1.25rem;
+}
+
+.slide-1 .slide-body {
+  margin-top: 0;
+  margin-bottom: 2.5rem;
+  font-size: 1.2rem;
+  max-width: 35ch;
+}
+
+.slide-1-proof {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+  padding: 1.5rem;
+  background: var(--surface-elevated);
+  border-radius: 6px;
+  border: 1px solid var(--parchment-deep);
+}
+
+.proof-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.proof-label {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--terracotta);
+  font-weight: 500;
+}
+
+.proof-value {
+  font-family: var(--serif-body);
+  font-size: 1.05rem;
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+.slide-1-preview {
+  background: #0a0a0f;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 2rem 0;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+}
+
+.preview-header {
+  background: rgba(255,255,255,0.06);
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.preview-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+}
+
+.preview-dot:first-child { background: #ff5f56; }
+.preview-dot:nth-child(2) { background: #ffbd2e; }
+.preview-dot:nth-child(3) { background: #27ca40; }
+
+.preview-title {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.5);
+  margin-left: 1rem;
+}
+
+.preview-body {
+  padding: 1.25rem 1.5rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+.preview-line {
+  margin-bottom: 0.25rem;
+}
+
+.preview-prompt {
+  color: var(--terracotta-light);
+  margin-right: 0.5rem;
+}
+
+.slide-1-preview {
+  background: #0a0a0f;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 2rem 0;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+}
+
+.preview-header {
+  background: rgba(255,255,255,0.06);
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.preview-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+}
+
+.preview-dot:first-child { background: #ff5f56; }
+.preview-dot:nth-child(2) { background: #ffbd2e; }
+.preview-dot:nth-child(3) { background: #27ca40; }
+
+.preview-title {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.5);
+  margin-left: 1rem;
+}
+
+.preview-body {
+  padding: 1.25rem 1.5rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+.preview-line {
+  margin-bottom: 0.15rem;
+}
+
+.preview-prompt {
+  color: var(--terracotta-light);
+  margin-right: 0.5rem;
+}
+
+/* Slide 2: Structure */
+.slide-2 .editor-card {
+  max-height: 600px;
+}
+
+/* Slide 3: Interfaces */
+.slide-3 .interface-cards {
+  max-height: 550px;
+}
+
+/* Slide 4: Decisions */
+.slide-4 .doc-card {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Slide 5: Research */
+.slide-5 .research-grid {
+  max-height: 550px;
+}
+
+/* Slide 6: Output */
+.slide-6 .artifact-panel {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ==================== Print Styles ==================== */
+
+@media print {
+  @page {
+    size: 1080px 1080px;
+    margin: 0;
+  }
+  
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin: 0;
+    padding: 0;
+  }
+  
+  body::before {
+    display: none;
+  }
+  
+  .slide {
+    width: 1080px;
+    height: 1080px;
+    page-break-after: always;
+    break-after: page;
+    break-inside: avoid;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  
+  .slide:last-child {
+    page-break-after: avoid;
+  }
+  
+  .slide-footer {
+    position: absolute;
+  }
+}
+
+/* ==================== Font Import ==================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Spectral:ital,wght@0,300;0,400;1,300&family=DM+Sans:wght@300;400;500&display=swap');

@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LinkedIn Carousel - Escribano AI-Built Codebase</title>
+  <link rel="stylesheet" href="carousel.css">
+</head>
+<body>
+  
+  <!-- Slide 1: Hook -->
+  <div class="slide slide-1">
+    <div class="slide-content">
+      <div class="eyebrow">AI Engineering</div>
+      <h1 class="slide-title">What my AI-built<br>codebase <em>actually</em><br>looks like</h1>
+      <p class="slide-subtitle">Not 800 lines in index.js.</p>
+      <p class="slide-body">Escribano was built 100% with AI agents — but the code got more disciplined, not less. Structured like a real project.</p>
+      
+      <div class="slide-1-proof">
+        <div class="proof-item">
+          <div class="proof-label">Architecture</div>
+          <div class="proof-value">Clean, visible</div>
+        </div>
+        <div class="proof-item">
+          <div class="proof-label">Interfaces</div>
+          <div class="proof-value">Typed ports</div>
+        </div>
+        <div class="proof-item">
+          <div class="proof-label">Decisions</div>
+          <div class="proof-value">Documented</div>
+        </div>
+      </div>
+      
+      <div class="floating-chips">
+        <div class="chip">ADR-009</div>
+        <div class="chip">CaptureSource</div>
+        <div class="chip">PR #30</div>
+      </div>
+      
+      <div class="slide-1-preview">
+        <div class="preview-header">
+          <span class="preview-dot"></span>
+          <span class="preview-dot"></span>
+          <span class="preview-dot"></span>
+          <span class="preview-title">~/.escribano</span>
+        </div>
+        <div class="preview-body">
+          <div class="preview-line"><span class="preview-prompt">$</span> tree src/</div>
+          <div class="preview-line">├── actions/</div>
+          <div class="preview-line">├── adapters/</div>
+          <div class="preview-line">├── services/</div>
+          <div class="preview-line">└── domain/</div>
+        </div>
+      </div>
+      
+      <div class="drift-control">
+        <span class="drift-label">→ Drift control:</span>
+        <span class="drift-answer">explicit constraints</span>
+      </div>
+    </div>
+    
+    <div class="slide-footer">
+      <span class="slide-counter">01 / 06</span>
+      <span class="footer-tag">What keeps AI-built code from drifting?</span>
+    </div>
+  </div>
+  
+  <!-- Slide 2: Structure -->
+  <div class="slide slide-2">
+    <div class="slide-content">
+      <div class="eyebrow">Structure</div>
+      <h2 class="slide-title">1. Structure is explicit</h2>
+      
+      <div class="editor-card">
+        <div class="editor-header">
+          <span class="editor-dot"></span>
+          <span class="editor-dot"></span>
+          <span class="editor-dot"></span>
+          <span class="editor-title">AGENTS.md</span>
+        </div>
+        <div class="editor-body">
+          <div class="code-line"><span class="code-comment"># Current Implementation (Milestone 4 — VLM-First MVP)</span></div>
+          <div class="code-line">&nbsp;</div>
+          <div class="code-line highlight"><span class="code-keyword">src/</span></div>
+          <div class="code-line"><span class="code-keyword">├──</span> 0_types.ts                 <span class="code-comment"># Port interfaces</span></div>
+          <div class="code-line"><span class="code-keyword">├──</span> index.ts                   <span class="code-comment"># CLI</span></div>
+          <div class="code-line highlight"><span class="code-keyword">├──</span> <span class="highlight-text">actions/</span></div>
+          <div class="code-line"><span class="code-indent">│</span>  <span class="code-keyword">├──</span> process-recording-v3.ts  <span class="code-comment"># Pipeline</span></div>
+          <div class="code-line"><span class="code-indent">│</span>  <span class="code-keyword">└──</span> generate-summary-v3.ts   <span class="code-comment"># Summary</span></div>
+          <div class="code-line highlight"><span class="code-keyword">├──</span> <span class="highlight-text">adapters/</span></div>
+          <div class="code-line"><span class="code-indent">│</span>  <span class="code-keyword">├──</span> capture.*.adapter.ts     <span class="code-comment"># Port implementations</span></div>
+          <div class="code-line"><span class="code-indent">│</span>  <span class="code-keyword">├──</span> intelligence.*.adapter.ts</div>
+          <div class="code-line"><span class="code-indent">│</span>  <span class="code-keyword">└──</span> video.*.adapter.ts</div>
+          <div class="code-line highlight"><span class="code-keyword">├──</span> <span class="highlight-text">services/</span></div>
+          <div class="code-line"><span class="code-indent">│</span>  <span class="code-keyword">├──</span> vlm-service.ts</div>
+          <div class="code-line"><span class="code-indent">│</span>  <span class="code-keyword">└──</span> activity-segmentation.ts</div>
+          <div class="code-line highlight"><span class="code-keyword">└──</span> <span class="highlight-text">db/</span>, <span class="highlight-text">domain/</span>, <span class="code-comment">etc.</span></div>
+        </div>
+      </div>
+      
+      <div class="callout-chips">
+        <div class="callout-chip">ports</div>
+        <div class="callout-chip">business logic</div>
+        <div class="callout-chip">storage</div>
+      </div>
+      
+      <p class="slide-caption">Flat, readable, intentional. Every directory has one job.</p>
+      
+      <div class="drift-control">
+        <span class="drift-label">Drift control:</span>
+        <span class="drift-answer">visible structure</span>
+      </div>
+    </div>
+    
+    <div class="slide-footer">
+      <span class="slide-counter">02 / 06</span>
+      <span class="footer-tag">What keeps AI-built code from drifting?</span>
+    </div>
+  </div>
+  
+  <!-- Slide 3: Interfaces -->
+  <div class="slide slide-3">
+    <div class="slide-content">
+      <div class="eyebrow">Abstraction</div>
+      <h2 class="slide-title">2. External systems stay<br>behind typed ports</h2>
+      
+      <div class="interface-cards">
+        <div class="editor-card interface-card">
+          <div class="editor-header">
+            <span class="editor-dot"></span>
+            <span class="editor-dot"></span>
+            <span class="editor-dot"></span>
+            <span class="editor-title">src/0_types.ts:364</span>
+          </div>
+          <div class="editor-body">
+            <div class="code-line"><span class="code-keyword">export interface</span> <span class="code-type">CaptureSource</span> {</div>
+            <div class="code-line">  <span class="code-method">getLatestRecording</span>(): <span class="code-type">Promise</span>&lt;<span class="code-type">Recording</span> | <span class="code-keyword">null</span>&gt;;</div>
+            <div class="code-line">  <span class="code-method">listRecordings</span>(limit?: <span class="code-type">number</span>): <span class="code-type">Promise</span>&lt;<span class="code-type">Recording</span>[]&gt;;</div>
+            <div class="code-line">}</div>
+          </div>
+        </div>
+        
+        <div class="editor-card interface-card">
+          <div class="editor-header">
+            <span class="editor-dot"></span>
+            <span class="editor-dot"></span>
+            <span class="editor-dot"></span>
+            <span class="editor-title">src/0_types.ts:381</span>
+          </div>
+          <div class="editor-body">
+            <div class="code-line"><span class="code-keyword">export interface</span> <span class="code-type">IntelligenceService</span> {</div>
+            <div class="code-line">  <span class="code-method">classify</span>(transcript: <span class="code-type">Transcript</span>): <span class="code-type">Promise</span>&lt;<span class="code-type">Classification</span>&gt;;</div>
+            <div class="code-line">  <span class="code-method">describeImages</span>(images: <span class="code-type">Image[]</span>): <span class="code-type">Promise</span>&lt;<span class="code-type">Description[]</span>&gt;;</div>
+            <div class="code-line">}</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="connector-note">
+        <span class="connector-arrow">→</span>
+        <span class="connector-text">swap implementation, keep business logic</span>
+      </div>
+      
+      <p class="slide-caption">VLM, LLM, capture, transcription, video: all behind interfaces.</p>
+      
+      <div class="drift-control">
+        <span class="drift-label">Drift control:</span>
+        <span class="drift-answer">typed boundaries</span>
+      </div>
+    </div>
+    
+    <div class="slide-footer">
+      <span class="slide-counter">03 / 06</span>
+      <span class="footer-tag">What keeps AI-built code from drifting?</span>
+    </div>
+  </div>
+  
+  <!-- Slide 4: Decisions -->
+  <div class="slide slide-4">
+    <div class="slide-content">
+      <div class="eyebrow">Architecture</div>
+      <h2 class="slide-title">3. Architecture decisions<br>are written down</h2>
+      
+      <div class="doc-card">
+        <div class="doc-header">
+          <div class="doc-title">ADR-009: Always-On Screen Recorder</div>
+          <div class="doc-status">
+            <span class="status-pill accepted">Accepted</span>
+            <span class="status-pill revised">Revised</span>
+          </div>
+        </div>
+        
+        <div class="doc-meta">
+          <div class="meta-row">
+            <span class="meta-label">Status:</span>
+            <span class="meta-value">Accepted (2026-03-12) — Phase A + Phase B validated</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Context:</span>
+            <span class="meta-value">Escribano processes pre-recorded video files. No way to "always capture" — user must remember to start/stop recording.</span>
+          </div>
+        </div>
+        
+        <div class="doc-decision">
+          <div class="decision-label">Decision:</div>
+          <p class="decision-text">Build an always-on screen capture process using <strong>Swift ScreenCaptureKit</strong>, managed as a <strong>macOS LaunchAgent</strong>, with three independent processes communicating through SQLite.</p>
+        </div>
+        
+        <div class="architecture-diagram">
+          <div class="diagram-box">Swift Capture</div>
+          <div class="diagram-arrow">→</div>
+          <div class="diagram-box">SQLite WAL</div>
+          <div class="diagram-arrow">→</div>
+          <div class="diagram-box">Node Analyzer</div>
+          <div class="diagram-arrow">→</div>
+          <div class="diagram-box">CLI</div>
+        </div>
+      </div>
+      
+      <p class="slide-caption">Not just code. The why is documented too.</p>
+      
+      <div class="drift-control">
+        <span class="drift-label">Drift control:</span>
+        <span class="drift-answer">written decisions</span>
+      </div>
+    </div>
+    
+    <div class="slide-footer">
+      <span class="slide-counter">04 / 06</span>
+      <span class="footer-tag">What keeps AI-built code from drifting?</span>
+    </div>
+  </div>
+  
+  <!-- Slide 5: Research + Discipline -->
+  <div class="slide slide-5">
+    <div class="slide-content">
+      <div class="eyebrow">Validation</div>
+      <h2 class="slide-title">4. Important choices were<br>tested, not improvised</h2>
+      
+      <div class="research-grid">
+        <div class="doc-card research-card">
+          <div class="doc-header">
+            <div class="doc-title">ScreenCaptureKit POC Spike</div>
+            <div class="doc-status">
+              <span class="status-pill validated">Validated</span>
+            </div>
+          </div>
+          
+          <div class="findings-table">
+            <div class="finding-row">
+              <span class="finding-question">Headless CLI?</span>
+              <span class="finding-result confirmed">CONFIRMED</span>
+            </div>
+            <div class="finding-row">
+              <span class="finding-question">TCC persists?</span>
+              <span class="finding-result confirmed">CONFIRMED</span>
+            </div>
+            <div class="finding-row">
+              <span class="finding-question">SCStream efficient?</span>
+              <span class="finding-result confirmed">CONFIRMED</span>
+            </div>
+            <div class="finding-row">
+              <span class="finding-question">5s frame interval?</span>
+              <span class="finding-result confirmed">EXACT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="review-cards">
+          <div class="review-card">
+            <div class="review-header">
+              <span class="pr-number">#29</span>
+              <span class="pr-status merged">Merged</span>
+            </div>
+            <div class="review-title">Always-On Screen Recorder Architecture</div>
+            <div class="review-stats">+657 −16</div>
+          </div>
+          
+          <div class="review-card">
+            <div class="review-header">
+              <span class="pr-number">#30</span>
+              <span class="pr-status merged">Merged</span>
+            </div>
+            <div class="review-title">SCStream Phase B validation complete</div>
+            <div class="review-stats">+778 −152</div>
+          </div>
+          
+          <div class="review-card">
+            <div class="review-header">
+              <span class="pr-number">#25</span>
+              <span class="pr-status merged">Merged</span>
+            </div>
+            <div class="review-title">Remove dead V1/V2 code</div>
+            <div class="review-stats">+980 −4964</div>
+          </div>
+        </div>
+      </div>
+      
+      <p class="slide-caption">Research spike, validation notes, PR trail. AI speed only works if the process leaves receipts.</p>
+      
+      <div class="drift-control">
+        <span class="drift-label">Drift control:</span>
+        <span class="drift-answer">experiments + review</span>
+      </div>
+    </div>
+    
+    <div class="slide-footer">
+      <span class="slide-counter">05 / 06</span>
+      <span class="footer-tag">What keeps AI-built code from drifting?</span>
+    </div>
+  </div>
+  
+  <!-- Slide 6: It Ships -->
+  <div class="slide slide-6">
+    <div class="slide-content">
+      <div class="eyebrow">Output</div>
+      <h2 class="slide-title">5. Discipline is only useful<br>if it produces something real</h2>
+      
+      <div class="artifact-panel">
+        <div class="artifact-header">
+          <div class="artifact-title">Session Card - Feb 25, 2026</div>
+          <div class="artifact-stamp">Auto-generated</div>
+        </div>
+        
+        <div class="artifact-blocks">
+          <div class="artifact-block">
+            <div class="block-bar coding"></div>
+            <div class="block-content">
+              <div class="block-label">Escribano Pipeline Optimization</div>
+              <div class="block-text">Optimized the video processing pipeline by evaluating skip-frame strategies and removing scene detection for 180-minute videos.</div>
+              <div class="block-time">1h 53m</div>
+            </div>
+          </div>
+          
+          <div class="artifact-block">
+            <div class="block-bar research"></div>
+            <div class="block-content">
+              <div class="block-label">Frame Extraction & Scene Detection</div>
+              <div class="block-text">Developed TypeScript scripts for video frame extraction using FFmpeg. Debugged a critical parsing failure.</div>
+              <div class="block-time">19m</div>
+            </div>
+          </div>
+          
+          <div class="artifact-block">
+            <div class="block-bar review"></div>
+            <div class="block-content">
+              <div class="block-label">Research & System Analysis</div>
+              <div class="block-text">Reviewed GitHub Copilot pricing and Screenpipe repository architecture.</div>
+              <div class="block-time">22m</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="artifact-footer">
+          <span class="terminal-line"><span class="terminal-prompt">$</span> npx escribano --file session.mov</span>
+          <span class="terminal-success">Done! Artifact saved to ~/.escribano/artifacts/</span>
+        </div>
+      </div>
+      
+      <p class="slide-caption">The AI wrote the code. I wrote the constraints.</p>
+      
+      <div class="drift-control">
+        <span class="drift-label">Drift control:</span>
+        <span class="drift-answer">shipped output</span>
+      </div>
+    </div>
+    
+    <div class="slide-footer">
+      <span class="slide-counter">06 / 06</span>
+      <span class="footer-tag">What keeps AI-built code from drifting?</span>
+    </div>
+  </div>
+  
+</body>
+</html>

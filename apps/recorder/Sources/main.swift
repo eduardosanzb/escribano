@@ -12,8 +12,8 @@ let app = NSApplication.shared
 /// Coordinates database connection, backpressure, and capture orchestration.
 @MainActor
 final class FotografoDelegate: NSObject, NSApplicationDelegate {
-    private var capture:      StreamCapture?
-    private var store:        (any FrameStore)?
+    private var captures:    [StreamCapture] = []
+    private var store:       (any FrameStore)?
     private var backpressure: Backpressure?
 
     /// Called by NSApplication when the app has finished launching.
@@ -73,31 +73,42 @@ final class FotografoDelegate: NSObject, NSApplicationDelegate {
             exit(1)
         }
 
-        // MVP: capture the first display only. Multi-display is a future enhancement.
-        guard let display = content.displays.first else {
+        if content.displays.isEmpty {
             print("[fotografo] ERROR: No displays found")
             exit(1)
         }
 
-        // Capture Start: initializes the SCStream for the selected display.
-        let capture: StreamCapture
-        do {
-            capture = try await StreamCapture(display: display, store: store, backpressure: bp)
-        } catch {
-            print("[fotografo] ERROR: Failed to start capture: \(error.localizedDescription)")
-            exit(1)
+        print("[fotografo] Found \(content.displays.count) display(s). Starting capture for ALL.")
+
+        var captures: [StreamCapture] = []
+        for display in content.displays {
+            do {
+                let cap = try await StreamCapture(display: display, store: store, backpressure: bp)
+                captures.append(cap)
+            } catch {
+                print("[fotografo] ERROR: Failed to start capture for display \(display.displayID): \(error.localizedDescription)")
+            }
         }
-        self.capture = capture
+        self.captures = captures
 
-        // Event Wiring: link backpressure triggers to StreamCapture controls.
-        bp.onPause  = { [weak capture] in capture?.pause()  }
-        bp.onResume = { [weak capture] in capture?.resume() }
+        // Event Wiring: link backpressure triggers to all StreamCapture controls.
+        bp.onPause  = { [weak self] in 
+            self?.captures.forEach { $0.pause() }
+        }
+        bp.onResume = { [weak self] in 
+            self?.captures.forEach { $0.resume() }
+        }
 
-        print("[fotografo] Running. High-water=\(highWater) Low-water=\(lowWater)")
+        print("[fotografo] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "4") ?? 4)")
     }
 
     /// Cleans up resources before the process terminates.
     func applicationWillTerminate(_ notification: Notification) {
+        Task { @MainActor in
+            for cap in captures {
+                await cap.stop()
+            }
+        }
         store?.close()
     }
 }

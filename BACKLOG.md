@@ -58,38 +58,42 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [x] Document results in `docs/SCREENCAPTUREKIT-POC-SPIKE.md`
 - **Phase C complete (2026-03-12)** — pHash threshold=8 validated. See: `docs/SCREENCAPTUREKIT-POC-SPIKE.md` Phase C section for full analysis
 
-#### Phase 1: Swift Capture LaunchAgent (~3-4 days)
-- [ ] Set up `apps/recorder/` Swift package (Package.swift, Xcode project, basic structure)
-- [ ] Implement ScreenCaptureKit capture loop using `SCStream` — single display, 5s configurable interval (`ESCRIBANO_CAPTURE_INTERVAL`)
-- [ ] Implement pHash deduplication with **threshold=8** — skip frame if `(currentHash ^ previousHash).nonzeroBitCount <= 8`
-- [ ] Write JPEG frames to `~/.escribano/frames/{date}/{timestamp}.jpg`
-- [ ] Write frame rows to SQLite `frames` table (new migration: `id`, `recording_id` FK, `timestamp`, `jpeg_path`, `phash`, `analyzed=0`)
-- [ ] Write LaunchAgent plist `com.escribano.capture.plist` with `StartOnLoad` + `KeepAlive` (not LaunchDaemon — TCC perms require user agent)
-- [ ] Add `escribano recorder install` CLI command — drops plist to `~/Library/LaunchAgents/`, registers with launchctl
-- [ ] Add `escribano recorder status` CLI command — shows agent running/stopped, frame count, last capture timestamp, disk usage of `~/.escribano/frames/`
-- **Note**: Backpressure safety valve required if analyzer falls behind (see ADR §Backpressure)
+#### Phase 1: Fotógrafo Capture Agent (~3-4 days)
+- [ ] Set up `apps/recorder/` Swift package (`Package.swift`, `Sources/{main.swift, StreamCapture.swift, PHash.swift, DB.swift, Backpressure.swift}`)
+- [ ] Implement ScreenCaptureKit capture loop using `SCStream` — 1s interval, pHash dedup is the true throttle
+- [ ] Reuse `scripts/poc-phash-dedup/Sources/PHash.swift` — vDSP-accelerated DCT pHash with **threshold=8**
+- [ ] Write JPEG frames (quality 85) to `~/.escribano/frames/{YYYY-MM-DD}/{timestamp}_{displayId}.jpg`
+- [ ] Add migration `014_recorder_frames.sql` — `frames` table with `processing_lock_id`, `retry_count`, `failed_at`
+- [ ] Implement migration bootstrap — check `PRAGMA user_version` on startup, exit if schema stale
+- [ ] Implement backpressure — `ESCRIBANO_CAPTURE_HIGH_WATER=500`, `ESCRIBANO_CAPTURE_LOW_WATER=100`, check every 10 frames
+- [ ] Write LaunchAgent plist `com.escribano.capture.plist` with `RunAtLoad=true` + `KeepAlive=true`
+- [ ] Add `escribano recorder install` CLI command — builds Swift binary (`swift build -c release`), drops plist, registers with launchctl
+- [ ] Add `escribano recorder status` CLI command — shows agent status, pending frames, disk usage
+- **Ref**: `docs/tdd/001-swift-capture-agent.md`
 
 #### Phase 2: Node Batch Analyzer (~2-3 days)
-- [ ] Add `frames` table + `frame_id` column on `observations` to `src/db/migrate.ts`
-- [ ] Add `frames` repository to `src/db/repositories/`
-- [ ] Implement `escribano analyze` CLI command — checks unanalyzed frame count against threshold; if met, runs VLM batch and writes observations with `frame_id`; exits
+- [ ] Add migration `015_observations_frame_fk.sql` — nullable `recording_id`, `frame_id` FK, `process_locks` table
+- [ ] Add `FrameRepository` to `src/db/repositories/frame.sqlite.ts` — `claimFrames`, `markAnalyzed`, `markFailed`, `releaseStaleLocks`
+- [ ] Implement `escribano analyze` CLI command — process-level lock check, claims batch, runs VLM, writes observations, exits
 - [ ] Reuse `vlm-service.ts` unchanged for VLM batch
-- [ ] Mark frames `analyzed=1` after VLM completes
-- [ ] Write LaunchAgent plist `com.escribano.analyze.plist` (StartInterval=120) — installed alongside capture plist via `recorder install`
-- [ ] Add `ESCRIBANO_ANALYZE_THRESHOLD` config (default: 20 frames)
-- **Note**: Trigger model (polling vs event-driven) deferred per ADR Issue #6; polling via LaunchAgent StartInterval chosen for MVP simplicity
+- [ ] Add `ESCRIBANO_ANALYZE_BATCH_SIZE` config (default: 20 frames)
+- [ ] Write LaunchAgent plist `com.escribano.analyze.plist` (StartInterval=120) — installed via `recorder install`
+- **Ref**: `docs/tdd/002-node-batch-analyzer.md`
 
 #### Phase 3: Segmentation + CLI (~2-3 days)
-- [ ] Add `segments` table migration to `src/db/migrate.ts`
-- [ ] Add `segments` repository (replaces in-memory segments + topic_blocks for recorder path)
-- [ ] Add `capture.recorder.adapter.ts` — new `CaptureSource` adapter for recorder frames
-- [ ] Update `activity-segmentation.ts` to persist segments to DB when invoked from recorder path
-- [ ] Implement `escribano cut` CLI command — runs segmentation on a time range, suggests breaks, generates artifact
-- [ ] Link segments to artifacts via `artifact_segments` join table after generation
+- [ ] Add migration `016_segments.sql` — `segments` table + `artifact_segments` join table
+- [ ] Add `SegmentRepository` to `src/db/repositories/segment.sqlite.ts`
+- [ ] Add `capture.fotografo.adapter.ts` — new `CaptureSource` adapter for recorder frames
+- [ ] Implement artifact compatibility bridge in `generate-summary-v3.ts` — dispatch on `sourceType`, adapt segments to ITopicBlock
+- [ ] Implement `escribano cut` CLI command — `--from`/`--to` time args (default: 4h ago to now), `--format`, `--stdout`, `--copy`
+- [ ] Create synthetic recordings with `sourceType='recorder'` on each `cut` invocation
+- [ ] Link artifacts to segments via `artifact_segments` join table
+- **Ref**: `docs/tdd/003-segmentation-cli.md`
 
 #### Phase 4: Polish (~2-3 days)
 - [ ] Multi-display capture — extend Phase 1 to capture all displays with `display_id`
 - [ ] Frame cleanup — delete JPEGs after analysis; add `ESCRIBANO_FRAME_RETENTION_DAYS` config (default: 1)
+- [ ] JPEG orphan reconciliation — walk `~/.escribano/frames/`, cross-reference DB, delete orphans
 - [ ] Swift menu bar status item — show capture on/off, frame count, last analysis time
 - [ ] `escribano recorder uninstall` — removes LaunchAgent plists, stops daemons
 
@@ -140,8 +144,10 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ### 2026-03
 
+- **pHash Dedup POC (Phase C)** — Validated pHash threshold=8 cleanly separates noise (0-4 bits) from content (10+ bits) across 6 scenarios; dHash, VN FeaturePrint, SCFrameStatus all rejected as primary dedup
 - **SCStream POC (Phase B)** — Validated `SCStream` with Swift 6 concurrency patterns (`@MainActor`, `sampleHandlerQueue: .main`, `MainActor.assumeIsolated`, `nonisolated(unsafe) let`); 5s frame interval confirmed exact; SCStream chosen as Phase 1 capture API
 - **ScreenCaptureKit Spike (Phase A)** — ADR-009 architecture decision for always-on screen recorder (Swift ScreenCaptureKit + SQLite WAL)
+- **TDDs published** — `docs/tdd/001-swift-capture-agent.md`, `002-node-batch-analyzer.md`, `003-segmentation-cli.md`
 - **MLX-LM migration** — Unified VLM + LLM backend, 17 recordings validated, 100% success
 - **Production benchmarks** — 25.6 hours processed, ~2.2 min/video average
 - **Config file support** — Auto-create `~/.escribano/.env`

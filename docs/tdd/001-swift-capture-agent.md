@@ -1,14 +1,14 @@
-# TDD-001: Swift Capture Agent
+# TDD-001: Fotógrafo Capture Agent
 
 ## 1. Overview
 
-This document specifies the design for the Always-On Swift Capture Agent (Phase 1). It is a headless macOS
-LaunchAgent that captures screenshots using `SCStream`, deduplicates them using a perceptual hash (pHash), and
-writes them to a SQLite database in WAL mode.
+This document specifies the design for the Always-On Swift Capture Agent (Phase 1), codenamed **Fotógrafo** (The Photographer). It is a headless macOS LaunchAgent that captures screenshots using `SCStream`, deduplicates them using a perceptual hash (pHash), and writes them to a SQLite database in WAL mode.
 
 ## 2. Architecture & File Structure
 
-**Location**: `apps/recorder/` **Language**: Swift 6.0 (macOS 15.0 target minimum)
+**Location**: `apps/recorder/` **Language**: Swift 6.0 (macOS 14.0 minimum deployment target)
+
+_Rationale_: macOS 14 (Sonoma) covers ~80% of Mac users (Statcounter, early 2024) and provides all essential ScreenCaptureKit APIs. `SCStream` has been available since macOS 12.3, so we are not limited by version constraints on the core capture API. macOS 15-only features (`SCContentSharingPicker`, HDR capture, monthly privacy prompts) are non-blocking enhancements and can be adopted via `@available` checks in a future iteration without compromising MVP functionality.
 
 ```
 apps/recorder/
@@ -27,8 +27,10 @@ apps/recorder/
 
 - **API**: `SCStream`
 - **Configuration**:
-  - `minimumFrameInterval = CMTime(value: 5, timescale: 1)` (5s interval)
+  - `minimumFrameInterval = CMTime(value: 1, timescale: 1)` (1s interval, capped by pHash dedup)
+    - Default is 1s to avoid missing high-activity frames. **The true throttle is pHash deduplication** (§3.2): frames within a hamming distance of 8 bits are skipped before reaching the DB, so visually identical frames are automatically discarded. Backpressure (§3.5) then pauses/resumes the capture stream based on unanalyzed frame count, not a fixed interval. This design captures high-frequency activity while automatically filtering noise.
   - `pixelFormat = kCVPixelFormatType_32BGRA`
+    - A 32-bit pixel format where each pixel is stored as Blue, Green, Red, Alpha (4 bytes, in that order). ScreenCaptureKit delivers frames natively in this format on Apple Silicon, so we use it directly to avoid a pixel format conversion step. The raw pixel buffer feeds directly into the pHash DCT pipeline (which converts to grayscale internally), minimizing CPU overhead before deduplication.
 - **Concurrency**: `@MainActor` class, `sampleHandlerQueue: .main`, `nonisolated(unsafe) let` for
   `CMSampleBuffer` to cross isolation boundary cleanly.
 - **Multi-display**: Creates one `SCStream` per display, keyed by `CGDirectDisplayID` (to be robust across
@@ -36,21 +38,34 @@ apps/recorder/
 
 ### 3.2 pHash Deduplication (`PHash.swift`)
 
-- **Algorithm**: DCT-based pHash.
-  - Resize to 32x32 grayscale.
-  - 2D DCT via vDSP.
-  - Extract top-left 8x8.
-  - Median of 64 values -> 64-bit UInt64 hash.
-- **Threshold**: Skip frame if `(currentHash ^ prevHash).nonzeroBitCount <= 8`.
+**Rationale**: Perceptual hashing identifies near-duplicate frames across the 1-second capture interval. From ADR-009 Phase C (docs/SCREENCAPTUREKIT-POC-SPIKE.md), empirical testing across 6 real-world scenarios (IDLE, clock ticks, cursor blinks, mouse movement, typing, window switches) showed that pHash with threshold ≤ 8 **cleanly separates noise from meaningful visual changes**: noise produces hamming distances of 0–4 bits, while real activity produces 10+ bits, leaving a clean margin. Alternative deduplication methods were evaluated and rejected:
+- **dHash**: Blind to localized digit changes (e.g., clock changing 10:00 → 10:01), unsuitable for time-aware analysis.
+- **VN FeaturePrint** (Vision.framework): Adds 4.5–6.5ms overhead per frame at 1fps, too heavy for real-time capture.
+- **SCFrameStatus**: Only fires ~1% of frames at 1fps, unreliable for sparse capture.
+
+**Algorithm**: DCT-based pHash.
+  - Resize frame to 32×32 grayscale.
+  - Compute 2D DCT via vDSP (Accelerate.framework).
+  - Extract top-left 8×8 DCT coefficients (64 values).
+  - Median of 64 values → 64-bit UInt64 hash.
+
+**Threshold**: Skip frame if `(currentHash ^ prevHash).nonzeroBitCount <= 8`.
+
+**Libraries evaluated**: 
+- **ImageHash** (Swift, GitHub) — minimal maintenance, ~200 LOC implementation, requires separate dependency.
+- **Python imagehash** — reference implementation, but requires Python bridge (adds complexity).
+
+**Why DIY**: Accelerate.framework is available in all macOS distributions, zero extra dependencies. The algorithm is ~50 lines of Swift. We opted for DIY to minimize Package.swift dependencies and keep the capture agent lightweight and self-contained.
 
 ### 3.3 Database & Storage (`DB.swift`)
 
 - **Frames Location**: `~/.escribano/frames/{YYYY-MM-DD}/{timestamp}_{displayId}.jpg`
 - **SQLite Location**: `~/.escribano/escribano.db`
-- **WAL Mode Constraints**:
-  - `PRAGMA journal_mode = WAL;`
-  - `PRAGMA busy_timeout = 5000;`
-  - `PRAGMA wal_autocheckpoint = 1000;`
+- **WAL Mode Configuration**:
+  - `PRAGMA journal_mode = WAL;` — Write-Ahead Logging mode allows concurrent reads while writes are in progress. Reduces lock contention between the capture agent (writer) and the analyzer (reader).
+  - `PRAGMA busy_timeout = 5000;` — 5-second timeout for lock contention. Default is 0 (immediate failure). 5s allows the analyzer to complete a batch and release locks without causing the capture agent to stall.
+  - `PRAGMA wal_autocheckpoint = 1000;` — Checkpoint (merge WAL into main DB) after every 1000 frames. Default is 1000. Balances write throughput against checkpoint overhead. At 1fps, 1000 frames = ~17 min of continuous capture before a checkpoint; this is reasonable for keeping the WAL file size bounded.
+  - **Notes**: These values are conservative and tuned for a low-frequency (1fps) capture workload. If backpressure is applied and frames accumulate, the WAL file may grow larger, but it will be checkpointed on the next analyzer run.
 
 ### 3.4 Database Migration (014)
 
@@ -78,13 +93,25 @@ CREATE INDEX idx_frames_captured ON frames(timestamp);
 CREATE INDEX idx_frames_processing ON frames(processing_lock_id);
 ```
 
+**Migration Bootstrap Strategy**:
+
+The Swift capture agent cannot run migrations (no Node.js runtime). To prevent the agent from running against a stale schema:
+
+1. **On startup**, the agent queries `PRAGMA user_version` from the SQLite database.
+2. **If version is below expected**, the agent logs an error: `"Database schema out of date. Run 'escribano recorder install' from Node.js."` and exits with code 1.
+3. **LaunchAgent plist** has `KeepAlive=true`, so launchd will retry the agent every few seconds, but it will keep failing until the user runs `escribano recorder install` from the Node.js side (which triggers all pending migrations).
+4. **This makes the dependency explicit and observable**: the agent will not silently corrupt data on a stale schema.
+
+At installation time (`escribano recorder install`), the Node.js CLI ensures that all migrations have been applied before starting the LaunchAgent.
+
 ### 3.5 Backpressure
 
-- **Mechanism**: Query `SELECT COUNT(*) FROM frames WHERE analyzed = 0`.
-- **Frequency**: Check every 10 frames (~50 seconds) to avoid DB spam.
-- **Limits**:
-  - _High-water mark_: 500 frames. Pause capture (`stream.stopCapture()`).
-  - _Low-water mark_: 100 frames. Resume capture (`stream.startCapture()`).
+- **Mechanism**: Query `SELECT COUNT(*) FROM frames WHERE analyzed = 0` to count pending frames.
+- **Frequency**: Check every 10 frames (~10 seconds at 1fps) to avoid DB spam and excessive state transitions.
+- **Thresholds**:
+  - **High-water mark: 500 frames** — Stop capturing (`stream.stopCapture()`). Rationale: At 1fps with typical JPEG compression (~50–100 KB/frame), 500 frames = 25–50 MB unanalyzed. This leaves headroom before hitting memory/disk limits while still signaling that the analyzer is falling behind.
+  - **Low-water mark: 100 frames** — Resume capturing (`stream.startCapture()`). Hysteresis prevents thrashing on/off near a single threshold. 100 frames = ~5–10 MB, a comfortable operating point.
+  - **Trade-off**: These thresholds are conservative. If the analyzer is working normally (running every 2 minutes per Phase 2), this backpressure should rarely trigger. If it does trigger, it indicates the analyzer is stalled or the system is under extreme load. In such cases, pausing capture is safer than risking OOM.
 
 ## 4. CLI Commands (Node.js Side)
 
@@ -92,16 +119,26 @@ Added to `src/index.ts` via routing commands:
 
 ### 4.1 `escribano recorder install`
 
-- Compiles Swift binary: `cd apps/recorder && swift build -c release`.
+- Compiles Fotógrafo binary: `cd apps/recorder && swift build -c release`.
 - Generates LaunchAgent Plist: `~/Library/LaunchAgents/com.escribano.capture.plist`.
-- Plist contents: `RunAtLoad=true`, `KeepAlive=true`, `ProgramArguments=[<path_to_binary>]`.
+- Plist contents: `RunAtLoad=true`, `KeepAlive=true`, `ProgramArguments=[<path_to_fotografo_binary>]`.
 - Executes: `launchctl load ...`
+
+**Scope (MVP — Dev Mode)**:
+This implementation is a development-mode solution suitable for open-source users with Xcode toolchain installed (`swift` available in PATH). The Node.js CLI compiles from source via `swift build -c release`.
+
+**Production Path (Deferred)**:
+A production installer would ship a pre-compiled universal binary (ARM64 + x86_64) via one of:
+- **Signed `.pkg` installer**: Distributes the binary with auto-updates.
+- **npm `postinstall` script**: Runs on `npm install`, downloads pre-built binary from GitHub Releases.
+
+This requires: code signing, binary hosting, update mechanics, and clean uninstall (removing LaunchAgent plist). These are deferred to a later phase. For MVP, requiring Xcode is acceptable.
 
 ### 4.2 `escribano recorder status`
 
 - Checks if LaunchAgent is running.
 - Reports pending frames: `SELECT count(*) FROM frames WHERE analyzed=0`.
-- Reports disk usage of `~/.escribano/frames/`.
+- Reports disk usage of `~/.escribano/frames/`. _review_note: AMAZING IDEA!_
 
 ## 5. Test Specs
 
@@ -109,4 +146,12 @@ Added to `src/index.ts` via routing commands:
   - Test `PHash.compute()` produces consistent output for identical images.
   - Test backpressure state machine transitions correctly.
 - **Integration (Node)**:
-  - Test `recorder install` correctly templates the plist and detects missing Swift compiler toolchain.
+  - Test `recorder install` correctly templates the plist, finds Fotógrafo binary, and detects missing Swift compiler toolchain.
+
+## 6. Naming
+
+**Fotógrafo** (The Photographer) continues Escribano's Spanish naming theme:
+- **Escribano** (The Scribe) — captures and transcribes work sessions
+- **Fotógrafo** (The Photographer) — photographs (captures visually) screen activity
+
+This naming is consistent, thematic, and human-readable across the CLI (`escribano recorder`, `fotógrafo` binary).

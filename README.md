@@ -315,6 +315,7 @@ The config file (`~/.escribano/.env`) is organized by category with inline comme
 | **Quality** | Scene detection, token budget |
 | **Models** | VLM model, LLM model, subject grouping model |
 | **Debugging** | Verbose logging, VLM/Ollama debug output |
+| **Recorder** | pHash threshold, debug logging, backpressure watermarks |
 | **Advanced** | Socket path, timeouts, Python path |
 
 Environment variables always take priority over the config file. For full reference, see [AGENTS.md](AGENTS.md#configuration).

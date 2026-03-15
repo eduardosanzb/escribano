@@ -59,17 +59,18 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - **Phase C complete (2026-03-12)** — pHash threshold=8 validated. See: `docs/SCREENCAPTUREKIT-POC-SPIKE.md` Phase C section for full analysis
 
 #### Phase 1: Fotógrafo Capture Agent (~3-4 days)
-- [ ] Set up `apps/recorder/` Swift package (`Package.swift`, `Sources/{main.swift, StreamCapture.swift, PHash.swift, DB.swift, Backpressure.swift}`)
-- [ ] Implement ScreenCaptureKit capture loop using `SCStream` — 1s interval, pHash dedup is the true throttle
-- [ ] Reuse `scripts/poc-phash-dedup/Sources/PHash.swift` — vDSP-accelerated DCT pHash with **threshold=8**
-- [ ] Write JPEG frames (quality 85) to `~/.escribano/frames/{YYYY-MM-DD}/{timestamp}_{displayId}.jpg`
-- [ ] Add migration `014_recorder_frames.sql` — `frames` table with `processing_lock_id`, `retry_count`, `failed_at`
-- [ ] Implement migration bootstrap — check `PRAGMA user_version` on startup, exit if schema stale
-- [ ] Implement backpressure — `ESCRIBANO_CAPTURE_HIGH_WATER=500`, `ESCRIBANO_CAPTURE_LOW_WATER=100`, check every 10 frames
-- [ ] Write LaunchAgent plist `com.escribano.capture.plist` with `RunAtLoad=true` + `KeepAlive=true`
-- [ ] Add `escribano recorder install` CLI command — builds Swift binary (`swift build -c release`), drops plist, registers with launchctl
-- [ ] Add `escribano recorder status` CLI command — shows agent status, pending frames, disk usage
-- **Ref**: `docs/tdd/001-swift-capture-agent.md`
+- [x] Set up `apps/recorder/` Swift package (`Package.swift`, `Sources/{main.swift, StreamCapture.swift, PHash.swift, DB.swift, Backpressure.swift}`)
+- [x] Implement ScreenCaptureKit capture loop using `SCStream` — 1s interval, pHash dedup is the true throttle
+- [x] Reuse `scripts/poc-phash-dedup/Sources/PHash.swift` — vDSP-accelerated DCT pHash with **threshold=4**
+- [x] Write JPEG frames (quality 85) to `~/.escribano/frames/{YYYY-MM-DD}/{timestamp}_{displayId}.jpg`
+- [x] Add migration `014_recorder_frames.sql` — `frames` table with `processing_lock_id`, `retry_count`, `failed_at`
+- [x] Implement migration bootstrap — check `PRAGMA user_version` on startup, exit if schema stale
+- [x] Implement backpressure — `ESCRIBANO_CAPTURE_HIGH_WATER=500`, `ESCRIBANO_CAPTURE_LOW_WATER=100`, check every 10 frames
+- [x] Write LaunchAgent plist `com.escribano.capture.plist` with `RunAtLoad=true` + `KeepAlive=true`
+- [x] Add `escribano recorder install` CLI command — builds Swift binary (`swift build -c release`), drops plist, registers with launchctl
+- [x] Add `escribano recorder status` CLI command — shows agent status, pending frames, disk usage
+- [x] Multi-display capture — extend Phase 1 to capture all displays with `display_id`
+- **Phase 1 complete (2026-03-13)**
 
 #### Phase 2: Node Batch Analyzer (~2-3 days)
 - [ ] Add migration `015_observations_frame_fk.sql` — nullable `recording_id`, `frame_id` FK, `process_locks` table
@@ -78,24 +79,9 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [ ] Reuse `vlm-service.ts` unchanged for VLM batch
 - [ ] Add `ESCRIBANO_ANALYZE_BATCH_SIZE` config (default: 20 frames)
 - [ ] Write LaunchAgent plist `com.escribano.analyze.plist` (StartInterval=120) — installed via `recorder install`
+- [ ] **pHash Sensitivity Tuning** — Calibrate threshold for edge cases (dark mode, partial overlays); define test suite with representative screenshots
+- [ ] **Resource Usage README Update** — Update README with CPU/memory usage stats once more real-world data is collected
 - **Ref**: `docs/tdd/002-node-batch-analyzer.md`
-
-#### Phase 3: Segmentation + CLI (~2-3 days)
-- [ ] Add migration `016_segments.sql` — `segments` table + `artifact_segments` join table
-- [ ] Add `SegmentRepository` to `src/db/repositories/segment.sqlite.ts`
-- [ ] Add `capture.fotografo.adapter.ts` — new `CaptureSource` adapter for recorder frames
-- [ ] Implement artifact compatibility bridge in `generate-summary-v3.ts` — dispatch on `sourceType`, adapt segments to ITopicBlock
-- [ ] Implement `escribano cut` CLI command — `--from`/`--to` time args (default: 4h ago to now), `--format`, `--stdout`, `--copy`
-- [ ] Create synthetic recordings with `sourceType='recorder'` on each `cut` invocation
-- [ ] Link artifacts to segments via `artifact_segments` join table
-- **Ref**: `docs/tdd/003-segmentation-cli.md`
-
-#### Phase 4: Polish (~2-3 days)
-- [ ] Multi-display capture — extend Phase 1 to capture all displays with `display_id`
-- [ ] Frame cleanup — delete JPEGs after analysis; add `ESCRIBANO_FRAME_RETENTION_DAYS` config (default: 1)
-- [ ] JPEG orphan reconciliation — walk `~/.escribano/frames/`, cross-reference DB, delete orphans
-- [ ] Swift menu bar status item — show capture on/off, frame count, last analysis time
-- [ ] `escribano recorder uninstall` — removes LaunchAgent plists, stops daemons
 
 ### Stopgaps (batch pipeline, lower priority now that recorder is the focus)
 

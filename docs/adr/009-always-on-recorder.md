@@ -68,7 +68,7 @@ Build an always-on screen capture process using **Swift ScreenCaptureKit**, mana
 
 **Three processes, one shared database:**
 
-1. **Swift Capture Process** (LaunchAgent) — Always-on, auto-starts on login via launchd LaunchAgent plist. Captures screenshots at configurable intervals, deduplicates via perceptual hash, writes JPEG + DB row. Implements backpressure: pauses capture when unanalyzed frame count exceeds a configurable high-water mark (see Backpressure section below).
+1. **Swift Capture Process** (LaunchAgent) — Always-on, auto-starts on login via launchd LaunchAgent plist. Captures screenshots at configurable intervals, deduplicates via perceptual hash (threshold 4 bits), writes JPEG + DB row. Implements backpressure: pauses capture when unanalyzed frame count exceeds a configurable high-water mark (see Backpressure section below).
 2. **Node Batch Analyzer** — Polls `frames` table (Phase 1–2: via launchd `StartInterval`; future: push-based trigger from capture process). When unanalyzed frame count exceeds a configurable threshold (e.g., 20 frames), triggers VLM batch analysis. Writes observations.
 3. **CLI / Menu Bar** — **User-triggered** (not background). Runs activity segmentation on observations, suggests natural breaks, user confirms/adjusts, generates artifact.
 
@@ -372,7 +372,7 @@ This eliminates the overlapping-spawn problem and reduces memory overhead. Not b
 |-------|-------|----------|
 | **Spike: ScreenCaptureKit Feasibility** | Minimal Swift CLI proof-of-concept (LaunchAgent, no UI window, single frame capture). Validates LaunchAgent + TCC permission model + screenshot mode. **Complete.** | ~2-4h |
 | **Spike: pHash Dedup Threshold** | 6-scenario POC testing pHash, dHash, VN FeaturePrint, SCFrameStatus across IDLE, CLOCK_TICK, CURSOR_BLINK, MOUSE_MOVE, TYPING, WINDOW_SWITCH. **Complete (2026-03-12)** — pHash threshold=8 validated. | ~4h |
-| **1. Swift Capture Process** | SCStream capture loop, pHash dedup (threshold=8 — validated by POC), JPEG + SQLite write (with locking columns), **backpressure** (pause at high-water mark), LaunchAgent plist auto-start. Single display first. WAL pragmas. **Validate TCC in LaunchAgent context** (not just interactive terminal). | ~3-4 days |
+| **1. Swift Capture Process** | SCStream capture loop, pHash dedup (threshold=4 tuned via Phase D spike), multi-display natively supported, JPEG + SQLite write (via FrameStore Port/Adapter), backpressure, LaunchAgent plist. **Complete.** | ~3-4 days |
 | **2. Node Batch Analyzer** | Poll `frames` table with row-level locking, VLM batch on threshold, write observations with `frame_id` + index, mark frames analyzed. Reuses `vlm-service.ts`. Stale lock cleanup. | ~2-3 days |
 | **3. Segmentation + CLI** | `capture.recorder.adapter.ts` (new CaptureSource), reuse `activity-segmentation.ts`, persist segments (append-only convention), synthetic recording creation with documented discriminator. `escribano cut` + `escribano analyze` commands. | ~2-3 days |
 | **4. Menu Bar + Polish** | macOS menu bar status item (Swift, dev-only), frame cleanup cron, **JPEG orphan reconciliation**, disk quota warning, `escribano doctor` checks. | ~2-3 days |

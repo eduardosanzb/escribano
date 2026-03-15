@@ -376,6 +376,14 @@ This means launchd-managed processes are naturally serialized. **However**, user
 - `StartInterval=120` (runs every 2 minutes).
 - `ProgramArguments`: `[node, <path_to_escribano_dist>, analyze]`.
 
+### 3.6 VLM Input Rate Limiting (Deferred)
+
+Before sending claimed frames to the VLM, a time-based decimation filter may be implemented. Even if frames pass the pHash deduplication in the capture agent, sending frames too frequently (e.g., < 5 seconds apart) may be redundant for activity segmentation and costly in terms of inference time and tokens.
+
+**Rationale for Deferral**: The optimal decimation threshold is directly coupled to the specific VLM's inference speed and the user's workload. We will implement Phase 2 without hardcoded decimation first, measure the typical backlog pressure and segmentation quality, and then determine if a pre-VLM filter is necessary.
+
+**Decision Signal**: If VLM processing consistently falls behind capture rate despite pHash deduplication, or if segmentation produces excessive noise from high-frequency changes, a 5-10s minimum interval filter will be added.
+
 ## 4. Error Handling & Edge Cases
 
 - **VLM Failure**: If the VLM throws (OOM, parse error), catch at the batch level. Increment `retry_count`.

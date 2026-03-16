@@ -22,7 +22,15 @@ import { ensureDb } from '../db/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = path.resolve(path.dirname(__filename), '..', '..');
 const RECORDER_DIR = path.join(PACKAGE_ROOT, 'apps', 'recorder');
-const BINARY_SRC = path.join(RECORDER_DIR, '.build', 'release', 'escribano');
+const BINARY_SRC = path.join(
+  RECORDER_DIR,
+  '.build',
+  'xcode',
+  'Build',
+  'Products',
+  'Release',
+  'escribano'
+);
 const BIN_DIR = path.join(homedir(), '.escribano', 'bin');
 const BINARY_DEST = path.join(BIN_DIR, 'escribano');
 const PLIST_LABEL = 'com.escribano.capture';
@@ -39,11 +47,16 @@ const DB_PATH = path.join(homedir(), '.escribano', 'escribano.db');
 // ── install ──────────────────────────────────────────────────────────────────
 
 export async function recorderInstall(): Promise<void> {
-  // 1. Check Swift toolchain
-  const swiftCheck = spawnSync('swift', ['--version'], { encoding: 'utf8' });
-  if (swiftCheck.error || swiftCheck.status !== 0) {
-    console.error('Error: Swift toolchain not found.');
-    console.error('Install Xcode Command Line Tools: xcode-select --install');
+  // 1. Check for full Xcode (xcodebuild required)
+  const xcodebuildCheck = spawnSync('xcodebuild', ['-version'], {
+    encoding: 'utf8',
+  });
+  if (xcodebuildCheck.error || xcodebuildCheck.status !== 0) {
+    console.error('Error: xcodebuild not found.');
+    console.error(
+      'Full Xcode is required — Command Line Tools alone cannot embed Metal shaders.'
+    );
+    console.error('Install Xcode from: https://developer.apple.com/xcode/');
     process.exit(1);
   }
 
@@ -63,15 +76,22 @@ export async function recorderInstall(): Promise<void> {
 
   // 4. Build Swift binary
   console.log(
-    'Compiling escribano-recorder (this may take a minute on first build)...'
+    'Compiling escribano-recorder with xcodebuild (first build downloads MLX and may take several minutes)...'
   );
-  const build = spawnSync('swift', ['build', '-c', 'release'], {
-    cwd: RECORDER_DIR,
-    stdio: 'inherit',
-    encoding: 'utf8',
-  });
+  const build = spawnSync(
+    'xcodebuild',
+    [
+      '-scheme',
+      'escribano',
+      '-configuration',
+      'Release',
+      '-derivedDataPath',
+      '.build/xcode',
+    ],
+    { cwd: RECORDER_DIR, stdio: 'inherit', encoding: 'utf8' }
+  );
   if (build.status !== 0) {
-    console.error('Error: Swift build failed.');
+    console.error('Error: xcodebuild failed. See output above.');
     process.exit(1);
   }
 

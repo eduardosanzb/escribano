@@ -94,7 +94,8 @@ The config file is auto-created on first run with sensible defaults and inline c
 
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
-| `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis | `mlx-community/Qwen3-VL-2B-Instruct-4bit` |
+| `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis. Batch pipeline default: `mlx-community/Qwen3-VL-2B-Instruct-bf16`. Always-on recorder default: `mlx-community/Qwen3-VL-4B-Instruct-4bit`. | see description |
+| `ESCRIBANO_ANALYZE_BATCH_SIZE` | Batch size (frames) claimed by the recorder VLM analyzer each cycle. | `20` |
 | `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `2` |
 | `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
 | `ESCRIBANO_LLM_BACKEND` | LLM backend: `mlx` (default) or `ollama` | `mlx` |

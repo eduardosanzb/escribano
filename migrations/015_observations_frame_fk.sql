@@ -1,7 +1,8 @@
 -- ============================================================================
 -- Migration 015: Frame Analysis Integration
 -- ============================================================================
--- Adds foreign key and lock table for the Node batch analyzer.
+-- Adds foreign key for the recorder pipeline (observations linked to frames).
+-- Note: process_locks table not needed — VLM analysis now in-process (ADR-010).
 
 -- 1. Create a temporary table with the desired schema
 CREATE TABLE observations_new (
@@ -45,14 +46,3 @@ CREATE INDEX idx_obs_recording_time ON observations(recording_id, timestamp);
 CREATE INDEX idx_observations_frame ON observations(frame_id);
 CREATE UNIQUE INDEX idx_obs_audio_unique ON observations(recording_id, type, timestamp, audio_source)
 WHERE type = 'audio' AND recording_id IS NOT NULL;
-
--- 5. Create process_locks table for coordinated batch processing
-CREATE TABLE IF NOT EXISTS process_locks (
-  id          TEXT PRIMARY KEY,
-  type        TEXT NOT NULL,          -- e.g. 'vlm_analysis'
-  locked_at   TEXT DEFAULT (datetime('now')),
-  expires_at  TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_process_locks_type ON process_locks(type);
-CREATE INDEX IF NOT EXISTS idx_process_locks_expiry ON process_locks(expires_at);

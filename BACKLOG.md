@@ -72,16 +72,17 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [x] Multi-display capture — extend Phase 1 to capture all displays with `display_id`
 - **Phase 1 complete (2026-03-13)**
 
-#### Phase 2: Node Batch Analyzer (~2-3 days)
-- [ ] Add migration `015_observations_frame_fk.sql` — nullable `recording_id`, `frame_id` FK, `process_locks` table
-- [ ] Add `FrameRepository` to `src/db/repositories/frame.sqlite.ts` — `claimFrames`, `markAnalyzed`, `markFailed`, `releaseStaleLocks`
-- [ ] Implement `escribano analyze` CLI command — process-level lock check, claims batch, runs VLM, writes observations, exits
-- [ ] Reuse `vlm-service.ts` unchanged for VLM batch
-- [ ] Add `ESCRIBANO_ANALYZE_BATCH_SIZE` config (default: 20 frames)
-- [ ] Write LaunchAgent plist `com.escribano.analyze.plist` (StartInterval=120) — installed via `recorder install`
-- [ ] **pHash Sensitivity Tuning** — Calibrate threshold for edge cases (dark mode, partial overlays); define test suite with representative screenshots
-- [ ] **Resource Usage README Update** — Update README with CPU/memory usage stats once more real-world data is collected
-- **Ref**: `docs/tdd/002-node-batch-analyzer.md`
+#### Phase 2: Swift VLM Analyzer (~2-3 days) — ADR-010
+- [ ] Add `mlx-swift-lm` dependency to `apps/recorder/Package.swift`
+- [ ] Create `VLMAnalyzer.swift` — async task that polls frames, claims batch, runs VLM, writes observations
+- [ ] Create `ResponseParser.swift` — parse "Frame N: description: X | activity: Y | apps: Z | topics: W" format (ported from `intelligence.mlx.adapter.ts`)
+- [ ] Create `ObservationStore.swift` (port) + `SQLiteObservationStore.swift` (adapter) — decoupled DB access
+- [ ] Enhance `VLMRunner.swift` from POC — integrate with `ResponseParser`, support pre-loaded model container
+- [ ] Update migration `015_observations_frame_fk.sql` — remove `process_locks` table (not needed for in-process VLM)
+- [ ] Update `main.swift` — spawn both capture + VLM analyzer tasks concurrently
+- [ ] Add VLM model lifecycle — load once at startup, keep in memory, release at shutdown
+- [ ] Update config docs: `ESCRIBANO_ANALYZE_BATCH_SIZE`, `ESCRIBANO_VLM_MODEL`
+- [ ] **Ref**: `docs/adr/010-swift-native-visual-intelligence.md` + `docs/tdd/001-swift-capture-agent.md` Phase 2
 
 #### Release Prerequisite: Apple Developer ID Signing
 - [ ] **Sign `escribano` binary with Apple Developer ID certificate** — stable Team ID signature survives rebuilds for all users

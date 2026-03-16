@@ -152,8 +152,12 @@ Built for developers: understands the difference between debugging, coding, read
 
 ## How it works
 
+Two modes, same output.
+
+### Mode 1: Process a recording (batch)
+
 ```
-Screen recording
+Screen recording (video file)
      │
      ├──► Audio: Silero VAD → Whisper → transcripts
      │
@@ -173,6 +177,26 @@ Activity segmentation → temporal audio alignment → TopicBlocks
      ▼
 LLM summary (MLX-LM, auto-detected) → Markdown artifact
 ```
+
+### Mode 2: Always-on recorder
+
+```
+Your screen (live, all displays)
+     │
+     ▼
+ScreenCaptureKit (Swift) → 1s interval → pHash dedup → frames DB
+     │                                   (skips identical frames)
+     ▼
+Node.js batch analyzer → VLM inference (every 2 min)
+     │
+     ▼
+Activity segmentation → TopicBlocks
+     │
+     ▼
+LLM summary → Markdown artifact
+```
+
+Never forget to hit record. The recorder runs as a background agent, capturing only when your screen changes.
 
 Uses VLM-first visual understanding, not OCR + text clustering. OCR fails for developer work because all code screens produce similar tokens. VLMs understand the *activity*, not just the text.
 
@@ -225,6 +249,39 @@ Output: `~/.escribano/artifacts/`
 
 ---
 
+## Always-On Recorder
+
+Never forget to hit record. Install the background capture agent once and it runs automatically on every login.
+
+```bash
+# Requires: Xcode Command Line Tools (swift must be in PATH)
+xcode-select --install  # if not already installed
+
+# Build and install the capture agent
+npx escribano recorder install
+
+# Check agent status
+npx escribano recorder status
+```
+
+On first run, macOS will ask for Screen Recording permission. Grant it — the agent only captures frames when your screen changes (pHash dedup skips identical frames).
+
+### What it does
+
+- Captures all displays at 1-second intervals
+- Skips identical frames using perceptual hashing (pHash) — typically 80-95% of frames are skipped
+- Stores unique frames to `~/.escribano/frames/` with timestamps
+- Runs as a LaunchAgent — starts on login, restarts on crash
+
+### What it doesn't do yet
+
+- VLM analysis of captured frames (Phase 2, coming soon)
+- Automatic artifact generation from live sessions
+
+Until Phase 2 is complete, the recorder captures and stores frames. You can process a specific time window manually once VLM analysis is wired up.
+
+---
+
 ## CLI
 
 ### Flags
@@ -250,6 +307,8 @@ Output: `~/.escribano/artifacts/`
 | `doctor` | Check prerequisites and system requirements |
 | `config` | Show current configuration (merged from all sources) |
 | `config --path` | Show path to config file (`~/.escribano/.env`) |
+| `recorder install` | Build and install the always-on capture agent |
+| `recorder status` | Show agent state, pending frames, disk usage |
 
 ### Formats
 
@@ -289,6 +348,7 @@ npx escribano config --path
 | Cap recording | Auto-detected in `~/Movies/Cap/` |
 | Any MP4/MOV | `--file /path/to/video.mp4` |
 | External audio | `--mic-audio mic.wav --system-audio system.wav` |
+| Always-on recorder | Auto-detected after `recorder install` |
 
 ---
 
@@ -351,7 +411,8 @@ Full architecture: [docs/architecture.md](docs/architecture.md)
 - [x] Activity segmentation
 - [x] Multiple artifact formats
 - [x] Auto-detect best LLM model
-- [ ] Own recording pipeline (multi-monitor, always-on)
+- [x] Always-on recorder — Phase 1 (capture + pHash dedup + LaunchAgent)
+- [ ] Always-on recorder — Phase 2 (VLM analysis + auto artifact generation)
 - [ ] MCP server for AI assistants
 - [ ] Auto-detect ffmpeg hardware acceleration
 - [ ] OCR on keyframes for code/URLs

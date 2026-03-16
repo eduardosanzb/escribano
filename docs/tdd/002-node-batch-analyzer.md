@@ -1,8 +1,28 @@
 # TDD-002: Node Batch Analyzer
 
-## 1. Overview
+> **🚫 SUPERSEDED (2026-03-16)**
+> 
+> This design is replaced by **ADR-010 (Swift-Native Visual Intelligence)**. VLM inference now runs as an in-process async task within the Swift capture agent (see **TDD-001 Phase 2**), eliminating the need for a separate Node.js analyzer.
+> 
+> **What changed:**
+> - VLM runs in Swift, not Node.js
+> - No process polling or `process_locks` coordination needed
+> - Model stays loaded in memory (4GB), no startup per batch
+> - Simpler concurrency model (single process, two async tasks)
+> - Same database schema (frames + observations tables unchanged)
+> 
+> **Why the change:**
+> - MLX-Swift POC (March 15, 2026) validated native Swift matches Python perf with 17% less memory
+> - Eliminates Python bridge dependency for always-on recorder
+> - Removes unnecessary IPC boundary (Swift → Node → Python)
+> 
+> **For reference:** The analysis work described below remains architecturally sound; it's just now implemented in Swift within `VLMAnalyzer.swift` (see TDD-001 Phase 2 for the updated design).
 
-This document specifies the design for the Node Batch Analyzer (Phase 2). It periodically polls the `frames`
+---
+
+## Original Content (Deprecated)
+
+
 table, claims unanalyzed frames, passes them through the existing `vlm-service.ts`, and creates `observations`
 with foreign keys to the frames.
 

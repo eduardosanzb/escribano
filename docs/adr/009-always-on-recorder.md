@@ -9,6 +9,7 @@
 | Accepted | 2026-03-12 | **Phase A (SCScreenshotManager) + Phase B (SCStream) both validated; SCStream confirmed as Phase 1 capture API**                                                                                                                        |
 | Revised  | 2026-03-12 | Backpressure, LaunchAgent terminology, segment semantics, and tech debt annotations added per architectural review                                                                                                                      |
 | Phase 1 complete | 2026-03-13 | Swift capture agent shipped as `escribano` binary; multi-display capture, pHash dedup (threshold=4), backpressure, LaunchAgent `install`/`status` commands all implemented and validated; dev workflow confirmed: TCC permission granted to Terminal.app persists across `swift build` rebuilds |
+| Phase 2 superseded | 2026-03-16 | **TDD-002 (Node Batch Analyzer) replaced by ADR-010 (Swift-Native Visual Intelligence). VLM inference now in-process async task, not separate Node process. See ADR-010 + TDD-001 Phase 2.** |
 
 ## Context
 
@@ -53,24 +54,26 @@ Build an always-on screen capture process using **Swift ScreenCaptureKit**, mana
 │       │               │               │                │            │
 └───────┼───────────────┼───────────────┼────────────────┼────────────┘
         │               │               │                │
-   ┌────┴──────┐   ┌────┴───────┐  ┌────┴────────────────┴───────┐
-   │  Swift    │   │   Node     │  │       CLI / Menu Bar         │
-   │  Capture  │   │   Batch    │  │                              │
-   │  Daemon   │   │   Analyzer │  │  • Segment + generate       │
-   │           │   │            │  │  • Manual time range cut     │
-   │ • Screenshot  │ • Poll DB  │  │  • Confirm suggested breaks  │
-   │   every Ns    │ • VLM when │  │  • Format selection          │
-   │ • pHash       │   threshold│  └──────────────────────────────┘
-   │   dedup       │   reached  │
-   │ • Write       │ • Write    │
-   │   frames      │   obs      │
-   └───────────────┘ └──────────┘
+   ┌────┴────────┐  ┌────┴──────┐  ┌────┴────────────────┴───────┐
+   │  Swift      │  │  TypeScript│  │       CLI / Menu Bar         │
+   │  Capture    │  │  Pipeline  │  │                              │
+   │  Process    │  │            │  │  • Segment + generate       │
+   │             │  │ • SegTask  │  │  • Manual time range cut     │
+   │ • Frame cap │  │ • LLMTask  │  │  • Confirm suggested breaks  │
+   │   (1s)      │  │ • Artifact │  │  • Format selection          │
+   │ • pHash     │  │   gen      │  │  • Publish to Outline       │
+   │   dedup     │  │            │  └──────────────────────────────┘
+   │ • VLM task  │  │ (reads obs │
+   │   (NEW)     │  │  from DB)  │
+   └─────────────┘  └────────────┘
 ```
 
-**Three processes, one shared database:**
+> **Phase 2 Update (2026-03-16)**: The "Node Batch Analyzer" box is now **Swift VLM analyzer task** (in-process with capture). See **ADR-010** for the decision. TDD-001 Phase 2 specifies the implementation.
 
-1. **Swift Capture Process** (LaunchAgent) — Always-on, auto-starts on login via launchd LaunchAgent plist. Captures screenshots at configurable intervals, deduplicates via perceptual hash (threshold 4 bits), writes JPEG + DB row. Implements backpressure: pauses capture when unanalyzed frame count exceeds a configurable high-water mark (see Backpressure section below).
-2. **Node Batch Analyzer** — Polls `frames` table (Phase 1–2: via launchd `StartInterval`; future: push-based trigger from capture process). When unanalyzed frame count exceeds a configurable threshold (e.g., 20 frames), triggers VLM batch analysis. Writes observations.
+**Single Swift process now with two async tasks:**
+
+1. **Swift Capture Process** (LaunchAgent) — Always-on, auto-starts on login via launchd LaunchAgent plist. **Task 1 (StreamCapture)**: Captures screenshots at configurable intervals, deduplicates via perceptual hash (threshold 4 bits), writes JPEG + DB row. Implements backpressure: pauses capture when unanalyzed frame count exceeds a configurable high-water mark. **Task 2 (VLMAnalyzer, NEW in Phase 2)**: Async task that polls frames, claims batch, runs VLM inference (stays in memory), parses response, writes observations. No separate process needed.
+2. **Node Pipeline** — **No longer includes analyzer.** TypeScript layer reads observations from DB, runs activity segmentation, LLM subject grouping, generates artifacts (unchanged).
 3. **CLI / Menu Bar** — **User-triggered** (not background). Runs activity segmentation on observations, suggests natural breaks, user confirms/adjusts, generates artifact.
 
 > **Implementation reality**: The first two processes (capture + analysis) run continuously/periodically in the background. The third (segmentation + artifact generation) is user-initiated via `escribano cut`. This is a batch polling architecture with a job queue table, not a real-time streaming system.
@@ -374,7 +377,7 @@ This eliminates the overlapping-spawn problem and reduces memory overhead. Not b
 | **Spike: ScreenCaptureKit Feasibility** | Minimal Swift CLI proof-of-concept (LaunchAgent, no UI window, single frame capture). Validates LaunchAgent + TCC permission model + screenshot mode. **Complete.** | ~2-4h |
 | **Spike: pHash Dedup Threshold** | 6-scenario POC testing pHash, dHash, VN FeaturePrint, SCFrameStatus across IDLE, CLOCK_TICK, CURSOR_BLINK, MOUSE_MOVE, TYPING, WINDOW_SWITCH. **Complete (2026-03-12)** — pHash threshold=8 validated. | ~4h |
 | **1. Swift Capture Process** | SCStream capture loop, pHash dedup (threshold=4 tuned via Phase D spike), multi-display natively supported, JPEG + SQLite write (via FrameStore Port/Adapter), backpressure, LaunchAgent plist. **Complete.** | ~3-4 days |
-| **2. Node Batch Analyzer** | Poll `frames` table with row-level locking, VLM batch on threshold, write observations with `frame_id` + index, mark frames analyzed. Reuses `vlm-service.ts`. Stale lock cleanup. | ~2-3 days |
+| **2. Swift VLM Analyzer** | In-process async task (replaces TDD-002 Node analyzer). mlx-swift-lm dependency, VLM batch inference, response parsing (decoupled), observations table writes. See ADR-010 + TDD-001 Phase 2. | ~2-3 days |
 | **3. Segmentation + CLI** | `capture.recorder.adapter.ts` (new CaptureSource), reuse `activity-segmentation.ts`, persist segments (append-only convention), synthetic recording creation with documented discriminator. `escribano cut` + `escribano analyze` commands. | ~2-3 days |
 | **4. Menu Bar + Polish** | macOS menu bar status item (Swift, dev-only), frame cleanup cron, **JPEG orphan reconciliation**, disk quota warning, `escribano doctor` checks. | ~2-3 days |
 

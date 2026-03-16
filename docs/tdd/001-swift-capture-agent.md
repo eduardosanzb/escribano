@@ -149,3 +149,249 @@ The capture agent binary is named **`escribano`** (same as the CLI tool), keepin
 
 - `escribano recorder install` — build and register the background capture agent
 - `escribano recorder status` — inspect agent state and pending frame count
+
+---
+
+## 7. Phase 2: VLM Analysis (Swift-Native Visual Intelligence)
+
+**Status:** Defined in ADR-010  
+**Supersedes:** TDD-002 (Node Batch Analyzer)
+
+Phase 2 extends the capture agent to include **in-process VLM inference**. Instead of a separate Node.js analyzer polling the database (TDD-002), VLM runs as a second async task within the same Swift process.
+
+### 7.1 Architecture
+
+**Single process, two concurrent async tasks:**
+
+```
+┌────────────────────────────────────────┐
+│  Capture Agent (Swift, single binary)  │
+├────────────────────────────────────────┤
+│  Task 1: StreamCapture    Task 2: VLMAnalyzer
+│  (existing)               (new)
+│                                        │
+│  • Capture frames 1s       • Poll frames table
+│  • pHash dedup             • Claim batch
+│  • Backpressure check ◄─────► Run VLM
+│  • Write JPEGs + DB        • Parse response
+│                            • Write observations
+└────────────────────────────────────────┘
+         │
+         ▼
+    SQLite database
+    (no process_locks needed — single process)
+```
+
+### 7.2 New Files
+
+```
+apps/recorder/Sources/
+├── VLMAnalyzer.swift              # NEW: Async task for VLM analysis
+├── VLMRunner.swift                # ENHANCED: From POC with batch + decoupled parsing
+├── ResponseParser.swift           # NEW: Parse "Frame N: description: X | activity: Y | ..." format
+├── ObservationStore.swift         # NEW: Port protocol for observations DB access
+├── SQLiteObservationStore.swift  # NEW: SQLite adapter for ObservationStore
+└── ... (other existing files)
+```
+
+### 7.3 Package.swift Dependency
+
+Add `mlx-swift-lm` for native VLM inference (same POC dependency):
+
+```swift
+let package = Package(
+    name: "escribano-recorder",
+    platforms: [.macOS(.v14)],
+    dependencies: [
+        .package(url: "https://github.com/ml-explore/mlx-swift.git", .upToNextMinor(from: "0.1.0"))
+    ],
+    targets: [
+        .executableTarget(
+            name: "escribano",
+            dependencies: [
+                .product(name: "MLXVLM", package: "mlx-swift"),
+                .product(name: "MLXLMCommon", package: "mlx-swift")
+            ],
+            path: "Sources",
+            linkerSettings: [
+                .linkedLibrary("sqlite3")
+            ]
+        )
+    ]
+)
+```
+
+### 7.4 Process Lifecycle
+
+**main.swift updates:**
+
+```swift
+@main
+struct EscribanoRecorder {
+    static func main() async {
+        // 1. Initialize database
+        let frameStore = SQLiteFrameStore(dbPath: "~/.escribano/escribano.db")
+        let obsStore = SQLiteObservationStore(frameStore: frameStore)
+        
+        // 2. Load VLM model once (stays in memory)
+        let vlmAnalyzer = VLMAnalyzer(obsStore: obsStore)
+        try await vlmAnalyzer.loadModel()
+        
+        // 3. Spawn both async tasks
+        async let captureTask = streamCapture(frameStore: frameStore)
+        async let analyzeTask = vlmAnalyzer.analyzeLoop()
+        
+        // 4. Both tasks run concurrently until signal or error
+        _ = try await [captureTask, analyzeTask]
+    }
+}
+```
+
+### 7.5 VLMAnalyzer Task
+
+**VLMAnalyzer.swift:**
+
+Implements the continuous analysis loop that:
+- Polls the `frames` table for unanalyzed frames (WHERE analyzed = 0)
+- Claims a batch (default: 20 frames, configurable via `ESCRIBANO_ANALYZE_BATCH_SIZE`)
+- Runs batch VLM inference via enhanced `VLMRunner`
+- Parses response via `ResponseParser.parseInterleavedOutput()`
+- Inserts observations into DB via `ObservationStore`
+- Marks frames as analyzed
+- Retries on transient errors; gives up after 3 failures per frame
+
+**Error handling:**
+- VLM inference failure: catch at batch level, increment `retry_count`, mark as failed after 3 attempts
+- DB insert failure: catch per-frame, leave frame unanalyzed for retry next cycle
+- No process-level lock needed (single process)
+- Backpressure from capture task prevents runaway frame accumulation
+
+### 7.6 Response Parsing (Decoupled)
+
+**ResponseParser.swift:**
+
+Extracted logic from `intelligence.mlx.adapter.ts:740` (Python bridge parsing), ported to Swift:
+
+- **parseInterleavedOutput()**: Convert "Frame 1: description: X | activity: Y | apps: Z | topics: W" format into structured `FrameDescription[]`
+- **normalizeActivity()**: Synonym mapping (debug → debugging, code → coding, etc.)
+- **stripThinkingTags()**: Remove `<think>...</think>` tags if present
+- **parseList()**: Convert "[app1, app2]" JSON-like format to `[String]`
+
+No coupling to VLM runner — can be tested independently, reused elsewhere.
+
+### 7.7 ObservationStore (Port/Adapter Pattern)
+
+**Port (ObservationStore.swift):**
+
+```swift
+protocol ObservationStore: Sendable {
+    func claimFrames(batchSize: Int) async throws -> [DbFrame]
+    func saveObservations(from frames: [DbFrame], descriptions: [FrameDescription]) async throws
+    func markFramesAnalyzed(ids: [String]) async throws
+    func markFrameFailed(id: String) async throws
+}
+```
+
+**Adapter (SQLiteObservationStore.swift):**
+
+Implements `ObservationStore` using SQLite:
+- `claimFrames()`: `SELECT * FROM frames WHERE analyzed = 0 LIMIT batchSize`
+- `saveObservations()`: `INSERT INTO observations (frame_id, vlm_description, activity_type, apps, topics, ...)`
+- `markFramesAnalyzed()`: `UPDATE frames SET analyzed = 1 WHERE id IN (...)`
+- `markFrameFailed()`: `UPDATE frames SET retry_count = retry_count + 1, analyzed = 2 WHERE id = ? AND retry_count >= 3`
+
+No locking needed — single process, no concurrent analyzer.
+
+### 7.8 Model Lifecycle
+
+- **Load**: Once at process startup (via `vlmAnalyzer.loadModel()` in main)
+- **Lifetime**: Stays in memory (~4GB for Qwen3-VL-4B-Instruct-4bit)
+- **Unload**: On process shutdown (implicit via Swift runtime)
+- **No reload per batch**: Single model instance shared by VLM analyzer task
+
+Configuration: `ESCRIBANO_VLM_MODEL` (default: `mlx-community/Qwen3-VL-4B-Instruct-4bit`)
+
+### 7.9 Batch Processing
+
+**VLMRunner.swift enhancements:**
+
+- `runBatch(imagePaths: [String], container: ModelContainer) -> [FrameDescription]`
+  - Takes pre-loaded model (no reload)
+  - Accepts array of frame paths
+  - Returns structured descriptions
+  - Integrates with `ResponseParser.parseInterleavedOutput()`
+
+Uses same interleaved message format as current Python bridge:
+```
+Frame 1: [image]
+Frame 2: [image]
+...
+Frame N: [image]
+[batch prompt with N substituted]
+```
+
+### 7.10 Integration with Capture Task
+
+Both tasks share:
+- **Database**: SQLite in WAL mode (concurrent reads by both tasks)
+- **Backpressure**: Capture task still checks `SELECT COUNT(*) WHERE analyzed = 0` to pause if analyzer falls behind
+- **pHash dedup**: Unaffected; capture task filters before write
+
+No IPC needed — both tasks are in-process async/await.
+
+### 7.11 Configuration
+
+New environment variables (in addition to Phase 1 vars):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ESCRIBANO_ANALYZE_BATCH_SIZE` | Frames per VLM batch | `20` |
+| `ESCRIBANO_VLM_MODEL` | Model identifier | `mlx-community/Qwen3-VL-4B-Instruct-4bit` |
+| `ESCRIBANO_VLM_MODEL_DIR` | Cache directory | `~/.cache/huggingface/hub/...` |
+
+### 7.12 Build & Installation
+
+No change to user workflow:
+
+```bash
+npx escribano recorder install    # Builds Swift binary with Phase 2 included
+```
+
+The `swift build -c release` step now includes VLM analyzer compilation.
+
+### 7.13 Database Schema
+
+**No `process_locks` table** — single process, no concurrent analyzer risk.
+
+Migration 015 adjusted: remove `process_locks` creation (frames + observations tables unchanged).
+
+### 7.14 Testing
+
+- **Unit Tests (Swift)**:
+  - `ResponseParser`: Test parsing of all format variants (description, activity, apps, topics)
+  - `ObservationStore` mock: Test frame claiming, observation insertion, mark-analyzed logic
+- **Integration (Swift)**:
+  - Insert mock frames into DB, trigger analyzer task, verify observations created and frames marked
+- **E2E**:
+  - Run recorder for 5 minutes, verify observations match expected activities
+
+### 7.15 Dependencies on Phase 1
+
+- ✅ `frames` table with `analyzed` status
+- ✅ Backpressure mechanism (already in Phase 1)
+- ✅ `observations` table with `frame_id` FK (migration 015)
+
+### 7.16 Comparison: TDD-002 vs ADR-010 Phase 2
+
+| Aspect | TDD-002 (Node Batch Analyzer) | ADR-010 Phase 2 (Swift VLM) |
+|--------|--------------------------------|----------------------------|
+| Process | Separate Node.js process | In-process Swift task |
+| IPC | SQLite job queue + socket to Python bridge | None (async/await) |
+| Model lifecycle | Load/unload per batch | Load once, stays in memory |
+| Concurrency guard | `process_locks` table + PID checks | None needed (single process) |
+| Language | TypeScript | Swift |
+| Dependencies | Node runtime, Python bridge | mlx-swift-lm (SPM) |
+| Startup | Slow (launchd spawn, new process) | Instant (same process) |
+| Memory | ~200MB Node + ~1.5GB Python bridge | ~1.3GB VLM only (17% less) |
+
+---

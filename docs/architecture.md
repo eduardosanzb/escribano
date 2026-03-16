@@ -46,9 +46,26 @@ State changes emit domain events, enabling loose coupling and event-driven autom
 - `SessionClassified`: The AI has determined the session type.
 - `ArtifactGenerated`: A document has been created.
 
-## Domain Model (v3: VLM-First)
+## Domain Model (v3: VLM-First + Swift-Native Recorder)
 
 > **Note**: This model evolves the v2 model to a VLM-first approach. See ADR-005 for rationale.
+> **Recorder**: Phase 2 (ADR-010) adds Swift-native in-process VLM analysis alongside the batch pipeline.
+
+### Processing Topology
+
+Escribano now runs in **two parallel paths**, sharing the same database and domain model:
+
+1. **Batch Pipeline (TypeScript)**: `--file` mode, Cap recordings, etc.
+   - Audio: Silero VAD → Whisper → observations
+   - Video: FFmpeg → frames → (Python bridge) MLX-VLM → observations
+   - Segmentation: observations → TopicBlocks → LLM artifacts
+
+2. **Always-On Recorder (Swift)**: LaunchAgent, continuous capture
+   - Capture: SCStream → frames table (pHash dedup)
+   - Analysis: Swift-native MLX-VLM → observations (in-process, no Python bridge)
+   - Segmentation: Same TS logic as batch (observations → TopicBlocks)
+
+**Key insight**: The `observations` table is the canonical intermediate output. Both paths write to it, and all downstream logic (segmentation, artifacts) reads from it, enabling unified processing.
 
 ### Aggregate Roots
 
@@ -57,6 +74,8 @@ Escribano uses four separate aggregate roots to enable cross-recording queries a
 ```mermaid
 erDiagram
     Recording ||--o{ Observation : contains
+    Recording ||--o{ Frame : "captures"
+    Frame ||--o| Observation : "analyzed into"
     Observation }o--o{ Context : "tagged via"
     Context ||--o{ TopicBlock : "referenced by"
     TopicBlock }o--|| Recording : "belongs to"
@@ -74,9 +93,22 @@ erDiagram
         string sourceType "cap|file"
     }
 
+    Frame {
+        string id PK
+        string displayId
+        string capturedAt
+        number timestamp "Unix epoch seconds"
+        string imagePath
+        string phash "nullable hex"
+        integer analyzed "0=pending 1=done 2=failed"
+        string processingLockId "nullable"
+        integer retryCount
+    }
+
     Observation {
         string id PK "UUIDv7"
-        string recordingId FK
+        string recordingId FK "nullable"
+        string frameId FK "nullable"
         string type "visual|audio"
         number timestamp
         string imagePath "nullable"
@@ -316,16 +348,24 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 
 | Port | Adapter | Purpose |
 |------|---------|---------|
+| **Batch Pipeline** | | |
 | `CaptureSource` | `capture.cap.adapter.ts` | Watch for Cap recordings |
 | `CaptureSource` | `capture.filesystem.adapter.ts` | Direct file input |
 | `TranscriptionService` | `transcription.whisper.adapter.ts` | Audio → Text (whisper.cpp) |
 | `VideoService` | `video.ffmpeg.adapter.ts` | Frame extraction, visual indexing |
 | `AudioPreprocessor` | `audio.silero.adapter.ts` | VAD segmentation & cleanup |
-| `IntelligenceService` | `intelligence.mlx.adapter.ts` | **Unified MLX adapter**: VLM (frame analysis) + LLM (text generation) |
+| `IntelligenceService` | `intelligence.mlx.adapter.ts` | **Unified MLX adapter**: VLM (frame analysis via Python bridge) + LLM (text generation) |
 | `IntelligenceService` | `intelligence.ollama.adapter.ts` | **Alternative**: LLM inference for summary generation (configurable backend) |
-| `EmbeddingService` | `embedding.ollama.adapter.ts` | **(deprecated in V3, kept for future)** |
+| **Always-On Recorder (Swift)** | | |
+| `FrameStore` | `SQLiteFrameStore.swift` | Swift-native frame storage + batch claiming |
+| `ObservationStore` | `SQLiteObservationStore.swift` | Swift-native observation persistence |
+| `VLMRunner` | `VLMRunner.swift` | MLX-Swift-LM in-process inference (Phase 2) |
+| `ResponseParser` | `ResponseParser.swift` | Decoupled VLM output parsing |
+| **Publishing** | | |
 | `PublishingService` | `publishing.outline.adapter.ts` | Outline wiki publishing |
-| `StorageService` | `storage.fs.adapter.ts` | **(deprecated in V3, V1 only)** |
+| **Deprecated** | | |
+| `EmbeddingService` | `embedding.ollama.adapter.ts` | **(V3: disabled, kept for future)** |
+| `StorageService` | `storage.fs.adapter.ts` | **(V1 only)** |
 
 ### MLX Intelligence Architecture
 
@@ -435,3 +475,165 @@ When `summary-v3.md` was used with only 3 of 6 variables replaced, the LLM:
 3. Copied the example pattern and invented matching details
 
 **Solution:** Route narrative through `generate-summary-v3.ts` which correctly builds all required variables from TopicBlocks.
+
+---
+
+## Always-On Recorder Architecture
+
+> **Status**: Phase 1 complete (Swift capture agent). Phase 2 (Swift-native VLM analyzer) in progress.
+> See [ADR-009](adr/009-always-on-recorder.md) and [ADR-010](adr/010-swift-native-visual-intelligence.md) for the full decision records.
+
+Alongside the batch video pipeline, Escribano has a second operating mode: **continuous screen capture** via a Swift LaunchAgent with **in-process VLM analysis**, sharing the same SQLite database. This unified architecture eliminates the Python bridge for always-on capture, running inference entirely in Swift on Apple Silicon.
+
+### Single-Process Design (Phase 2)
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Swift Capture Agent (LaunchAgent)                 │
+│                                                                      │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │            Two Concurrent Async Tasks                        │  │
+│  │                                                               │  │
+│  │  ┌────────────────────┐      ┌──────────────────────────┐    │  │
+│  │  │  Capture Task      │      │  VLM Analyzer Task       │    │  │
+│  │  │                    │      │                          │    │  │
+│  │  │ • SCStream 1s      │      │ • Poll frames (analyzed)  │    │  │
+│  │  │ • pHash dedup      │      │ • Claim batch            │    │  │
+│  │  │ • Write JPEG       │      │ • MLX-VLM inference      │    │  │
+│  │  │ • Insert frames DB │◄────►│ • Parse response         │    │  │
+│  │  │                    │      │ • Write observations     │    │  │
+│  │  │ (Backpressure)     │      │ • Mark analyzed = 1      │    │  │
+│  │  └────────────────────┘      └──────────────────────────┘    │  │
+│  │                                                               │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│           │                                                         │
+└───────────┼─────────────────────────────────────────────────────────┘
+            │
+    ┌───────┴────────────────────────────────────────┐
+    │                                                │
+    ▼                                                ▼
+┌──────────────────────────────────────┐   ┌─────────────────────────┐
+│      SQLite (WAL mode)               │   │   Node.js CLI           │
+│                                      │   │  (batch pipeline)       │
+│  ┌────────┐  ┌──────────────────┐   │   │                         │
+│  │ frames │  │  observations    │   │   │ •escribano [--file]     │
+│  │        │  │  (phase 1+2)     │   │   │ •recorder install       │
+│  ├────────┤  ├──────────────────┤   │   │ •recorder status        │
+│  │contexts│  │ topic_blocks/    │   │   │                         │
+│  │        │  │ artifacts        │   │   │ (batch processing)      │
+│  └────────┘  └──────────────────┘   │   └─────────────────────────┘
+│                                      │
+└──────────────────────────────────────┘
+```
+
+**Swift Capture Agent** (`apps/recorder/`, `com.escribano.capture` LaunchAgent):
+- Single executable with two concurrent async tasks (no process spawning)
+- Capture task: 1-second intervals via `SCStream`, pHash dedup (threshold=4), writes JPEG + `frames` row
+- Backpressure: pauses at `ESCRIBANO_CAPTURE_HIGH_WATER=500`, resumes at `ESCRIBANO_CAPTURE_LOW_WATER=100`
+- VLM Analyzer task: polls `frames WHERE analyzed=0`, claims batch, runs MLX-VLM inference in-process, writes `observations` with `frame_id` FK, marks `analyzed=1`
+- VLM model: loaded once at startup, stays in memory (~2GB), not unloaded until process exit
+- Decoupled parsing: `ResponseParser` separates VLM output format from parsing logic
+
+**Node.js CLI** (`src/index.ts`, `src/actions/`):
+- `escribano recorder install` — builds Swift binary, installs LaunchAgent plist, registers with launchctl
+- `escribano recorder status` — reports agent state, pending frame count, disk usage
+- `escribano [--file]` — batch video pipeline (unchanged, still uses Python bridge for `--file` mode)
+
+### Frame Lifecycle
+
+```text
+Swift Capture Task
+     │
+     │  pHash dedup passes (Hamming > threshold)
+     ▼
+frames table (analyzed=0, frame_id stored)
+     │
+     │  Swift VLM Analyzer Task polls & claims batch
+     ▼
+VLM inference (mlx-swift-lm, Qwen3-VL-2B-4bit, ~0.7s/frame)
+     │
+     ├── Success → observations (frame_id FK, vlm_description, activity_type, apps, topics)
+     │             frames (analyzed=1)
+     │
+     └── Failure → frames (analyzed=2, retry_count++ if <3)
+     │
+     ▼
+Activity Segmentation (TS, reuses existing logic from batch pipeline)
+     │
+     ▼
+TopicBlocks + Artifact Generation (TS, reuses existing logic)
+```
+
+### Architecture Rationale (ADR-010)
+
+**Why Swift-native for always-on?**
+- **Single process** — No Python bridge, no IPC overhead, no separate process coordination
+- **Simpler backpressure** — Both capture and VLM analysis in same event loop, shared memory
+- **Lower startup cost** — MLX-Swift already running; no spawning Python interpreter on each batch
+- **Batch processing** — VLM Analyzer task runs asynchronously, doesn't block capture task
+
+**Why keep Python bridge for batch?**
+- `--file` mode already works well with existing pipeline (Whisper → VLM → Segmentation)
+- Python bridge migration for batch would be a breaking refactor with diminishing returns
+- Batch is not latency-sensitive (user already waiting for 9 minutes for output)
+
+**Separation of concerns:**
+- **Swift**: Perception layer (capture + raw VLM inference)
+- **TypeScript**: Reasoning layer (segmentation + LLM synthesis + artifacts)
+- LLM inference can migrate to Swift later if needed (tracked in BACKLOG.md)
+
+### Model Lifecycle
+
+```text
+Swift Capture Agent starts
+     │
+     ▼
+ [VLM] Load model (mlx-swift-lm)
+   • Qwen3-VL-2B-4bit (~2GB)
+   • Kept in memory for process lifetime
+   • Not unloaded between batches
+     │
+     ▼
+ Capture + VLM Analyzer tasks run concurrently
+     │
+     ▼
+ Process terminates (launchd restart on crash, or manual kill)
+     │
+     ▼
+ [VLM] Model unloaded → memory freed
+```
+
+### Dev Workflow
+
+TCC (Screen Recording permission) is granted to **Terminal.app**, not the binary. This means:
+- Permission persists across `swift build` rebuilds — the CDHash changes each time, but Terminal.app's grant remains
+- No `.app` bundle or codesign required during development
+
+```bash
+# Dev mode: build and run directly in terminal
+pnpm recorder:dev      # swift build -c release + run with ESCRIBANO_DEBUG_PHASH=true
+
+# Production mode: install as LaunchAgent
+npx escribano recorder install   # build, install plist, launchctl load
+npx escribano recorder status    # agent state, pending frames, disk usage
+```
+
+### Swift Adapter Pattern (Ports & Adapters in Swift)
+
+Following the same clean architecture principles as TypeScript, Swift adapters use protocol-based decoupling:
+
+```swift
+// Port: abstraction
+protocol FrameStore {
+  func savePending(frame: CapturedFrame) throws
+  func claimBatch(limit: Int, lockId: UUID) throws -> [Frame]
+  func markAnalyzed(_ frameId: String, observations: [Observation]) throws
+}
+
+// Adapter: SQLite implementation
+class SQLiteFrameStore: FrameStore {
+  // Implementation details hidden
+}
+```
+
+This enables future storage backends (Turso, PostgreSQL) without changing VLM analyzer or capture task logic.

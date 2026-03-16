@@ -63,6 +63,7 @@ actor FrameAnalyzer {
                     for frame in frames {
                         try? await obsStore.markFrameFailed(id: frame.id)
                     }
+                    try? await Task.sleep(for: .seconds(pollInterval))
                     continue
                 }
                 let elapsed = String(format: "%.1f", Date().timeIntervalSince(t0))
@@ -71,6 +72,7 @@ actor FrameAnalyzer {
                     try await obsStore.saveObservations(from: frames, descriptions: descriptions)
                 } catch {
                     print("[FrameAnalyzer] DB write error: \(error.localizedDescription)")
+                    try? await Task.sleep(for: .seconds(pollInterval))
                     continue
                 }
                 let analyzedCount = min(frames.count, descriptions.count)

@@ -17,6 +17,7 @@
 - **VLM**: MLX-VLM (local, Qwen3-VL-2B) - frame analysis (~0.7s/frame with 4bit)
 - **LLM**: MLX-LM (local, Qwen3.5) or Ollama (local, auto-detected based on RAM) - summary generation
 - **Package Manager**: `uv` for Python dependencies (fast, reliable lockfiles)
+- **Process naming**: Python bridge optionally uses `setproctitle` so `ps`/Activity Monitor show `escribano-bridge-vlm`
 
 ## Development Environment
 
@@ -106,6 +107,7 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
 | `ESCRIBANO_MLX_TIMEOUT` | MLX bridge startup & generation timeout (ms) | `120000` |
 | `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-setup (`~/.escribano/venv`) |
+| `ESCRIBANO_BRIDGE_PATH` | Override which `mlx_bridge.py` script is launched (used for dev mode) | `~/.escribano/scripts/mlx_bridge.py` |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
@@ -125,6 +127,7 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_DEBUG_PHASH` | Log every pHash comparison + rolling stats every 100 frames | `false` |
 | `ESCRIBANO_CAPTURE_HIGH_WATER` | Pause capture when this many frames are pending analysis | `500` |
 | `ESCRIBANO_CAPTURE_LOW_WATER` | Resume capture when pending frames drop below this | `100` |
+| `RESOURCE_MONITOR_INTERVAL_MS` | Refresh interval for `pnpm recorder:monitor` | `2000` |
 
 **Note:** Recorder variables are injected into the LaunchAgent plist at install time. If you change these values in `~/.escribano/.env`, you must re-run `npx escribano recorder install` for the changes to take effect in the background agent.
 
@@ -160,8 +163,8 @@ src/
 │   ├── transcription.whisper.adapter.ts # Audio → Text (whisper-cli)
 │   ├── audio.silero.adapter.ts        # VAD preprocessing (Python)
 │   ├── video.ffmpeg.adapter.ts        # Frame extraction + scene detection
-│   ├── intelligence.ollama.adapter.ts # LLM inference (Ollama, for summary generation)
-│   └── intelligence.mlx.adapter.ts    # VLM & LLM inference (MLX-VLM for frames, MLX-LM for text)
+│   ├── intelligence.ollama.adapter.ts # LLM inference (Ollama, summary generation)
+│   └── intelligence.mlx.adapter.ts    # VLM + LLM inference (MLX-VLM for frames)
 ├── services/                          # Pure business logic (no I/O)
 │   ├── frame-sampling.ts              # Adaptive frame reduction
 │   ├── vlm-service.ts                 # VLM orchestration (backend-agnostic)
@@ -178,6 +181,22 @@ src/
 │   └── context.ts                     # AsyncLocalStorage observability
 └── utils/
     └── index.ts                       # Buffer utilities
+
+apps/recorder/Sources/
+├── main.swift                           # Entry point: capture loop + FrameAnalyzer scheduler
+├── StreamCapture.swift                  # ScreenCaptureKit SCStream capture + pHash dedup
+├── PHash.swift                          # vDSP-accelerated DCT pHash implementation
+├── Backpressure.swift                   # High/low water pause/resume and timer polling
+├── FrameAnalyzer.swift                  # Claims frames, submits batches via VLMInferenceService
+├── VLMInferenceService.port.swift       # Port: backend-agnostic VLM interface for adapters
+├── PythonBridge.vlm.adapter.swift       # Adapter: spawns mlx_bridge.py over Unix socket
+├── Prompts.swift                        # Prompt templates for batch NDJSON inference
+├── ResponseParser.swift                 # Parse `Frame N: description: ...` NDJSON responses
+├── FrameStore.port.swift                # Port for claiming/analyzing frames in the DB
+├── FrameStore.sqlite.adapter.swift      # SQLite implementation for the frame store
+├── ObservationStore.port.swift          # Port for writing observations (type visual/audio)
+├── ObservationStore.sqlite.adapter.swift # SQLite implementation writing frames → observations
+└── DB.swift                             # SQLite connection + migration bootstrap (includes `frames` table)
 ```
 
 ### Deprecated (V2)
@@ -207,6 +226,10 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
 - **IntelligenceService**: `intelligence.ollama.adapter.ts`
 - **VideoService**: `video.ffmpeg.adapter.ts`
 - **AudioPreprocessor**: `audio.silero.adapter.ts`
+
+### Recorder VLM Bridge
+
+Frame analysis for the always-on recorder is implemented in Swift but outsources inference to the Python bridge (`scripts/mlx_bridge.py`). The recorder spawns `mlx_bridge.py --mode vlm` via `PythonBridge.vlm.adapter.swift`, communicates over a Unix domain socket (NDJSON protocol), and writes `observations` rows linked by `frame_id` back to SQLite. The bridge now installs `setproctitle` in the managed Python environment so macOS shows the process as `escribano-bridge-vlm`. `FrameAnalyzer.swift` keeps the pipeline running: it claims batched frames via `FrameStore.port.swift`, sends them to `VLMInferenceService.port.swift`, parses the NDJSON responses with `ResponseParser.swift`, and writes metadata through `ObservationStore.port.swift`.
 
 ## V3 Pipeline Flow
 
@@ -292,6 +315,7 @@ npx escribano --version                 # Show version number
 pnpm quality-test                       # Process all 7 videos with summary (dev)
 pnpm quality-test:fast                  # Process without summary generation (dev)
 pnpm dashboard                          # Start web dashboard at http://localhost:3456
+pnpm recorder:monitor                  # Live resource tail for recorder + bridge processes
 ```
 
 ### Options
@@ -343,6 +367,9 @@ Opens at `http://localhost:3456` with:
 - **Overview** (`/overview.html`) — Aggregate stats, recordings table, summary viewer
 - **Debug** (`/debug.html`) — Frame-by-frame inspection with VLM descriptions
 - **Stats** (`/stats.html`) — Processing run history and phase breakdowns
+# Added dashboard sections for artifact review and observations
+- **Review** (`/review.html`) — Artifact-focused three-panel view (artifact markdown, subject tree/timeline, frame list) with subject highlighting and modal frames.
+- **Observations** (`/observations.html`) — Cross-recording explorer with filters (source, activity, apps, recording, timestamps, search) + pagination to inspect recorder vs batch observations.
 
 ## Resume Safety
 
@@ -361,6 +388,7 @@ The pipeline saves progress aggressively to enable crash recovery:
 ### Active Tables (V3)
 
 - **recordings** — One row per recording with metadata
+- **frames** — Captured screen frames, claimed by `FrameAnalyzer` and tied to observations
 - **observations** — Visual frames (vlm_description) + audio transcripts
 - **contexts** — Semantic labels (app, topic) — created but not yet used for queries
 - **observation_contexts** — Join table (created but not yet used)

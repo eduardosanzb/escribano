@@ -23,11 +23,15 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGTERM) { _ in
             print("[escribano-recorder] SIGTERM — shutting down")
-            exit(0)
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
         }
         signal(SIGINT) { _ in
             print("[escribano-recorder] SIGINT — shutting down")
-            exit(0)
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
         }
 
         Task { @MainActor in

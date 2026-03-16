@@ -28,6 +28,11 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
+try:
+    import setproctitle  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    setproctitle = None
+
 # Configuration from environment (all defaults come from TypeScript config.ts)
 MODEL_NAME = os.environ.get(
     "ESCRIBANO_VLM_MODEL", "mlx-community/Qwen3-VL-2B-Instruct-4bit"
@@ -596,6 +601,12 @@ def main() -> None:
     )
     args = parser.parse_args()
     BRIDGE_MODE = args.mode
+
+    if setproctitle is not None:
+        try:
+            setproctitle.setproctitle(f"escribano-bridge-{BRIDGE_MODE}")
+        except Exception as err:  # pragma: no cover - best effort
+            log(f"Failed to set process title: {err}", "debug")
 
     # Adjust socket path based on mode (VLM and LLM use separate sockets)
     base_socket = SOCKET_PATH.replace(".sock", "")

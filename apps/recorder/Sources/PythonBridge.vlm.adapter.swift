@@ -1,5 +1,4 @@
 import Foundation
-import Dispatch
 // MARK: - PythonBridgeVLMAdapter
 //
 // Adapter that implements VLMInferenceService by spawning mlx_bridge.py as a
@@ -27,22 +26,16 @@ import Dispatch
 //   calls from racing on the socket write/read state.
 actor PythonBridgeVLMAdapter: VLMInferenceService {
     // MARK: - Configuration
-    private let socketPath:     String  // e.g. /tmp/escribano-recorder-vlm.sock
-    private let bridgePath:     String  // absolute path to mlx_bridge.py
-    private let pythonPath:     String  // python3 executable to use
-    private let modelId:        String  // e.g. mlx-community/Qwen3-VL-2B-Instruct-4bit
-    private let maxTokens:      Int     // token budget per batch
-    private let inferenceTimeout: TimeInterval
+    private let socketPath:   String  // e.g. /tmp/escribano-recorder-vlm.sock
+    private let bridgePath:   String  // absolute path to mlx_bridge.py
+    private let pythonPath:   String  // python3 executable to use
+    private let modelId:      String  // e.g. mlx-community/Qwen3-VL-2B-Instruct-4bit
+    private let maxTokens:    Int     // token budget per batch
     // MARK: - Mutable state (protected by actor isolation)
     private var process:      Process?
     private var fileHandle:   FileHandle?
     private var requestId:    Int = 0
     private var isStarted:    Bool = false
-    // PID stored nonisolated so applicationWillTerminate can kill the bridge
-    // synchronously without an async context. nonisolated(unsafe) is safe here
-    // because storedPID is only written once (in start()) before any concurrent
-    // reads, and reads in terminateSync() are always after that write.
-    nonisolated(unsafe) private var storedPID: Int32 = 0
     // MARK: - Init
     init() {
         self.socketPath = ProcessInfo.processInfo.environment["ESCRIBANO_MLX_RECORDER_SOCKET"]
@@ -72,19 +65,13 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         self.modelId = ProcessInfo.processInfo.environment["ESCRIBANO_VLM_MODEL"]
             ?? "mlx-community/Qwen3-VL-2B-Instruct-4bit"
         self.maxTokens = Int(ProcessInfo.processInfo.environment["ESCRIBANO_VLM_MAX_TOKENS"] ?? "") ?? 2000
-        if let timeoutString = ProcessInfo.processInfo.environment["ESCRIBANO_VLM_TIMEOUT"],
-           let parsed = Double(timeoutString) {
-            self.inferenceTimeout = parsed
-        } else {
-            self.inferenceTimeout = 180.0
-        }
     }
     func start() async throws {
         guard !isStarted else { return }
-        log("[PythonBridge] Starting mlx_bridge.py (VLM mode)...")
-        log("[PythonBridge] Python: \(pythonPath)")
-        log("[PythonBridge] Bridge: \(bridgePath)")
-        log("[PythonBridge] Model: \(modelId)")
+        print("[PythonBridge] Starting mlx_bridge.py (VLM mode)...")
+        print("[PythonBridge] Python: \(pythonPath)")
+        print("[PythonBridge] Bridge: \(bridgePath)")
+        print("[PythonBridge] Model: \(modelId)")
         if FileManager.default.fileExists(atPath: socketPath) {
             try? FileManager.default.removeItem(atPath: socketPath)
         }
@@ -94,15 +81,14 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         proc.environment  = buildEnv()
         let stdoutPipe = Pipe()
         proc.standardOutput = stdoutPipe
-        proc.standardError = Pipe()
+        proc.standardError = FileHandle.standardError
         try proc.run()
         self.process = proc
-        self.storedPID = proc.processIdentifier
-        log("[PythonBridge] Python PID: \(proc.processIdentifier)")
+        print("[PythonBridge] Python PID: \(proc.processIdentifier)")
         try await waitForReady(stdout: stdoutPipe)
         try connectSocket()
         isStarted = true
-        log("[PythonBridge] Ready. Socket connected at \(socketPath)")
+        print("[PythonBridge] Ready. Socket connected at \(socketPath)")
     }
     func runBatch(frames: [DbFrame]) async throws -> [FrameDescription] {
         guard isStarted else {
@@ -130,25 +116,17 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         ]
         let rawText = try await sendAndReceive(request: request)
         let descriptions = ResponseParser.parseInterleavedOutput(rawText)
-        log("[PythonBridge] Parsed \(descriptions.count)/\(frames.count) frame descriptions")
+        print("[PythonBridge] Parsed \(descriptions.count)/\(frames.count) frame descriptions")
         return descriptions
     }
     func stop() async {
-        log("[PythonBridge] Shutting down...")
+        print("[PythonBridge] Shutting down...")
         fileHandle?.closeFile()
         fileHandle = nil
         process?.terminate()
         process = nil
         isStarted = false
         try? FileManager.default.removeItem(atPath: socketPath)
-    }
-    /// Synchronous bridge kill for use in applicationWillTerminate where async is not available.
-    /// Sends SIGTERM directly to the stored PID — reliable regardless of socket path or env vars.
-    nonisolated func terminateSync() {
-        let pid = storedPID
-        guard pid > 0 else { return }
-        kill(pid, SIGTERM)
-        log("[PythonBridge] terminateSync: sent SIGTERM to PID \(pid)")
     }
     private func buildEnv() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
@@ -157,28 +135,14 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         env["ESCRIBANO_MLX_SOCKET_PATH"] = socketPath.replacingOccurrences(
             of: "-vlm.sock", with: ".sock"
         )
-        let home = ProcessInfo.processInfo.environment["HOME"] ?? "/tmp"
-        env["ESCRIBANO_MLX_LOG_FILE"] = home + "/.escribano/logs/mlx-bridge-recorder-vlm.log"
         return env
     }
     private func waitForReady(stdout: Pipe) async throws {
-        log("[PythonBridge] Waiting for model load (may take 30-120s on first run)...")
+        print("[PythonBridge] Waiting for model load (may take 30-120s on first run)...")
+        let deadline = Date().addingTimeInterval(180)
         try await withCheckedThrowingContinuation { continuation in
             let buffer = LineBuffer()
             let resumed = ResumeFlag()
-            // Arm an independent timer BEFORE reading stdout so the 180s timeout fires
-            // unconditionally — even if the Python process hangs silently and produces
-            // no output (the old Date-check-inside-readabilityHandler never fired then).
-            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
-            timer.schedule(deadline: .now() + 180)
-            timer.setEventHandler {
-                guard resumed.trySet() else { return }
-                stdout.fileHandleForReading.readabilityHandler = nil
-                timer.cancel()
-                log("[PythonBridge] Startup timed out after 180s waiting for 'ready' signal")
-                continuation.resume(throwing: PythonBridgeError.startupTimeout)
-            }
-            timer.resume()
             stdout.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
@@ -192,12 +156,17 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let status = json["status"] as? String,
                        status == "ready" {
-                        guard resumed.trySet() else { return }
+                        guard !resumed.value else { return }
+                        resumed.value = true
                         stdout.fileHandleForReading.readabilityHandler = nil
-                        timer.cancel()
                         continuation.resume(returning: ())
                         return
                     }
+                }
+                if Date() > deadline && !resumed.value {
+                    resumed.value = true
+                    stdout.fileHandleForReading.readabilityHandler = nil
+                    continuation.resume(throwing: PythonBridgeError.startupTimeout)
                 }
             }
         }
@@ -225,7 +194,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                 connected = true
                 break
             }
-            log("[PythonBridge] Socket connect attempt \(attempt)/5 failed (errno=\(errno)), retrying...")
+            print("[PythonBridge] Socket connect attempt \(attempt)/5 failed (errno=\(errno)), retrying...")
             Thread.sleep(forTimeInterval: 0.5)
         }
         guard connected else {
@@ -233,7 +202,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
             throw PythonBridgeError.socketError("connect() failed after 5 attempts")
         }
         self.fileHandle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-        log("[PythonBridge] Socket connected (fd=\(fd))")
+        print("[PythonBridge] Socket connected (fd=\(fd))")
     }
     private func sendAndReceive(request: [String: Any]) async throws -> String {
         guard let fh = fileHandle else {
@@ -248,50 +217,41 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         return try await withCheckedThrowingContinuation { continuation in
             let buffer = LineBuffer()
             let resumed = ResumeFlag()
-            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
-            timer.schedule(deadline: .now() + inferenceTimeout)
-            timer.setEventHandler { [weak fh] in
-                guard let handle = fh, resumed.trySet() else { return }
-                handle.readabilityHandler = nil
-                log("[PythonBridge] Inference timed out after \(Int(self.inferenceTimeout))s")
-                timer.cancel()
-                continuation.resume(throwing: PythonBridgeError.inferenceTimeout(self.inferenceTimeout))
-            }
-            timer.resume()
             fh.readabilityHandler = { handle in
                 let data = handle.availableData
                 if data.isEmpty {
-                    guard resumed.trySet() else { return }
+                    guard !resumed.value else { return }
+                    resumed.value = true
                     handle.readabilityHandler = nil
                     continuation.resume(throwing: PythonBridgeError.bridgeDied)
                     return
                 }
-            buffer.text += String(data: data, encoding: .utf8) ?? ""
-            while let newlineRange = buffer.text.range(of: "\n") {
-                let line = String(buffer.text[..<newlineRange.lowerBound])
-                buffer.text.removeSubrange(..<newlineRange.upperBound)
-                guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
-                guard let jsonData = line.data(using: .utf8),
-                      let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
-                else { continue }
-                if let error = json["error"] as? String {
-                    guard resumed.trySet() else { return }
-                    handle.readabilityHandler = nil
-                    timer.cancel()
-                    continuation.resume(throwing: PythonBridgeError.inferenceError(error))
-                    return
-                }
-                if let done = json["done"] as? Bool, done {
-                    let text = json["text"] as? String ?? ""
-                    guard resumed.trySet() else { return }
-                    handle.readabilityHandler = nil
-                    timer.cancel()
-                    continuation.resume(returning: text)
-                    return
+                buffer.text += String(data: data, encoding: .utf8) ?? ""
+                while let newlineRange = buffer.text.range(of: "\n") {
+                    let line = String(buffer.text[..<newlineRange.lowerBound])
+                    buffer.text.removeSubrange(..<newlineRange.upperBound)
+                    guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+                    guard let jsonData = line.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
+                    else { continue }
+                    if let error = json["error"] as? String {
+                        guard !resumed.value else { return }
+                        resumed.value = true
+                        handle.readabilityHandler = nil
+                        continuation.resume(throwing: PythonBridgeError.inferenceError(error))
+                        return
+                    }
+                    if let done = json["done"] as? Bool, done {
+                        let text = json["text"] as? String ?? ""
+                        guard !resumed.value else { return }
+                        resumed.value = true
+                        handle.readabilityHandler = nil
+                        continuation.resume(returning: text)
+                        return
+                    }
                 }
             }
         }
-    }
     }
 }
 // MARK: - PythonBridgeError
@@ -302,7 +262,6 @@ enum PythonBridgeError: Error, LocalizedError {
     case socketError(String)
     case serializationFailed
     case inferenceError(String)
-    case inferenceTimeout(TimeInterval)
     var errorDescription: String? {
         switch self {
         case .notStarted:              return "PythonBridge not started — call start() first"
@@ -311,7 +270,6 @@ enum PythonBridgeError: Error, LocalizedError {
         case .socketError(let m):      return "Unix socket error: \(m)"
         case .serializationFailed:     return "Failed to serialize request to JSON"
         case .inferenceError(let m):   return "VLM inference error from Python: \(m)"
-        case .inferenceTimeout(let t): return "VLM inference timed out after \(Int(t))s"
         }
     }
 }
@@ -322,23 +280,6 @@ private final class LineBuffer: @unchecked Sendable {
     var text: String = ""
 }
 
-/// Thread-safe one-shot flag used to ensure a continuation is resumed exactly once.
-///
-/// Both the DispatchSourceTimer and the FileHandle.readabilityHandler run on different
-/// dispatch queues and race to resume the same continuation. NSLock makes the
-/// false→true transition atomic so only one caller wins, preventing the fatal
-/// "Cannot resume a continuation twice" crash.
 private final class ResumeFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _value: Bool = false
-
-    /// Atomically transitions false → true. Returns true only for the first caller;
-    /// subsequent callers get false and must not resume the continuation.
-    func trySet() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !_value else { return false }
-        _value = true
-        return true
-    }
+    var value: Bool = false
 }

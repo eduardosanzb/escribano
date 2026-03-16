@@ -11,7 +11,6 @@
     "dist",
     "migrations",
     "prompts",
-    "bin",
     "scripts/mlx_bridge.py",
     "src/scripts/audio_preprocessor.py",
     "src/scripts/visual_observer_base.py"
@@ -34,11 +33,9 @@
     "dashboard": "node tools/dashboard/server.js",
     "db:reset": "rm -f ~/.escribano/escribano.db*",
     "ollama": "OLLAMA_NUM_PARALLEL=4 OLLAMA_MAX_LOADED_MODELS=3 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=262144 ollama serve",
+    "ollama-2": "OLLAMA_NUM_PARALLEL=1 OLLAMA_HOST=127.0.0.1.11435 OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=262144 ollama serve",
     "index:rebuild": "tsx --env-file=.env src/scripts/rebuild-index.ts",
-    "build:recorder": "bash scripts/build-recorder.sh",
-    "recorder:dev": "tsx scripts/ensure-python-env.ts && swift build --package-path apps/recorder -c release && pkill -f 'apps/recorder/.build/release/escribano' 2>/dev/null; sleep 0.5; ESCRIBANO_DEBUG_PHASH=true ESCRIBANO_BRIDGE_PATH=./scripts/mlx_bridge.py apps/recorder/.build/release/escribano",
-    "recorder:install": "npx . recorder install",
-    "recorder:monitor": "tsx scripts/monitor-resources.ts"
+    "recorder:dev": "swift build --package-path apps/recorder -c release && ESCRIBANO_DEBUG_PHASH=true ESCRIBANO_BRIDGE_PATH=./scripts/mlx_bridge.py ESCRIBANO_PYTHON_PATH=~/.venv/bin/python3 apps/recorder/.build/release/escribano"
   },
   "keywords": [
     "ai",

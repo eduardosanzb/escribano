@@ -16,7 +16,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var store: (any FrameStore)?
     private var backpressure: Backpressure?
     private var obsStore: (any ObservationStore)?
-    private var analyzer: VLMAnalyzer?
+    private var analyzer: FrameAnalyzer?
     private var analyzerTask: Task<Void, Never>?
 
     /// Called by NSApplication when the app has finished launching.
@@ -120,16 +120,18 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             exit(1)
         }
         self.obsStore = obsStore
-        // 2. Create analyzer. loadModel() runs first (downloads the 4B model ~30-60s),
-        //    then analyzeLoop() polls continuously. Both run in a background Task so the
-        //    capture loop (@MainActor) is never blocked.
-        let analyzer = VLMAnalyzer(obsStore: obsStore)
+        // 2. Create the VLM adapter (Python bridge) and inject it into FrameAnalyzer.
+        //    This wires the port (VLMInferenceService) to its concrete adapter.
+        let vlmService = PythonBridgeVLMAdapter()
+        let analyzer = FrameAnalyzer(obsStore: obsStore, vlmService: vlmService)
         self.analyzer = analyzer
+        // 3. Start the analyzer in a background Task. start() blocks until the Python
+        //    process is ready, then analyzeLoop() runs forever without blocking capture.
         self.analyzerTask = Task {
             do {
-                try await analyzer.loadModel()
+                try await analyzer.start()
             } catch {
-                print("[VLMAnalyzer] Failed to load model: \(error.localizedDescription)")
+                print("[FrameAnalyzer] Failed to start: \(error.localizedDescription)")
                 return
             }
             await analyzer.analyzeLoop()

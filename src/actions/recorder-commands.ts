@@ -43,6 +43,9 @@ const PLIST_PATH = path.join(
 const LOGS_DIR = path.join(homedir(), '.escribano', 'logs');
 const FRAMES_DIR = path.join(homedir(), '.escribano', 'frames');
 const DB_PATH = path.join(homedir(), '.escribano', 'escribano.db');
+const BRIDGE_SRC = path.join(PACKAGE_ROOT, 'scripts', 'mlx_bridge.py');
+const SCRIPTS_DIR = path.join(homedir(), '.escribano', 'scripts');
+const BRIDGE_DEST = path.join(SCRIPTS_DIR, 'mlx_bridge.py');
 
 // ── install ──────────────────────────────────────────────────────────────────
 
@@ -106,7 +109,10 @@ export async function recorderInstall(): Promise<void> {
   execSync(`chmod +x "${BINARY_DEST}"`);
   console.log(`Binary installed: ${BINARY_DEST}`);
 
-  // 6. Generate LaunchAgent plist
+  // 6. Copy mlx_bridge.py for the Python VLM bridge
+  copyBridgeScript();
+
+  // 7. Generate LaunchAgent plist
   mkdirSync(LOGS_DIR, { recursive: true });
   mkdirSync(path.dirname(PLIST_PATH), { recursive: true });
   const plist = generatePlist(BINARY_DEST);
@@ -162,6 +168,17 @@ ${envVars}
 </dict>
 </plist>
 `;
+}
+
+function copyBridgeScript(): void {
+  if (!existsSync(BRIDGE_SRC)) {
+    console.error(`Error: mlx_bridge.py not found at ${BRIDGE_SRC}`);
+    process.exit(1);
+  }
+  mkdirSync(SCRIPTS_DIR, { recursive: true });
+  execSync(`cp -f "${BRIDGE_SRC}" "${BRIDGE_DEST}"`);
+  execSync(`chmod +x "${BRIDGE_DEST}"`);
+  console.log(`Bridge script copied: ${BRIDGE_DEST}`);
 }
 
 // ── status ───────────────────────────────────────────────────────────────────

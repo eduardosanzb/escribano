@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Observations Explorer - Escribano</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    :root {
+      --pico-font-size: 14px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--pico-muted-border-color);
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
+
+    .nav-links {
+      margin-left: auto;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .nav-links a {
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: background 0.2s;
+    }
+
+    .nav-links a:hover {
+      background: var(--pico-muted-background-color);
+    }
+
+    .nav-links a.active {
+      background: var(--pico-primary-background);
+      color: var(--pico-primary-inverse);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .controls > * {
+      min-width: 200px;
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem;
+      flex: 1;
+    }
+
+    .results {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1rem;
+    }
+
+    .observation-card {
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      transition: box-shadow 0.2s;
+      background: var(--pico-card-background-color);
+      position: relative;
+    }
+
+    .observation-card:hover {
+      box-shadow: 0 8px 18px rgba(0,0,0,0.12);
+    }
+
+    .observation-image {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      background: #000;
+      cursor: pointer;
+    }
+
+    .observation-content {
+      padding: 0.75rem;
+    }
+
+    .observation-timestamp {
+      font-size: 0.8rem;
+      color: var(--pico-muted-color);
+    }
+
+    .observation-description {
+      margin: 0.5rem 0;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    .badges {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      padding: 0.15rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      border: 1px solid transparent;
+      background: var(--pico-muted-background-color);
+    }
+
+    .badge-source {
+      border-color: var(--pico-primary);
+      color: var(--pico-primary);
+    }
+
+    .badge-activity {
+      border-color: #2563eb;
+      color: #1d4ed8;
+    }
+
+    .badge-app {
+      border-color: #16a34a;
+      color: #15803d;
+    }
+
+    .badge-topic {
+      border-color: #9a3412;
+      color: #7c2d12;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1rem;
+    }
+
+    .pagination button {
+      border-radius: 4px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: var(--pico-muted-color);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 2rem;
+      color: var(--pico-muted-color);
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal img {
+      max-width: 90%;
+      max-height: 90%;
+      object-fit: contain;
+    }
+
+    .filter-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid var(--pico-muted-border-color);
+      font-size: 0.75rem;
+      background: var(--pico-background-color);
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--pico-primary-background);
+      color: var(--pico-primary-inverse);
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+      font-size: 0.9rem;
+      z-index: 1100;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <div class="header">
+      <h1>🔎 Observations Explorer</h1>
+      <nav class="nav-links">
+        <a href="/overview.html">Overview</a>
+        <a href="/debug.html">Debug</a>
+        <a href="/stats.html">Stats</a>
+        <a href="/review.html">Review</a>
+        <a href="/observations.html" class="active">Observations</a>
+      </nav>
+    </div>
+
+    <div class="controls">
+      <div class="filters">
+        <label>
+          Source
+          <select id="source-select">
+            <option value="all">All</option>
+            <option value="recorder">Recorder (frame_id)</option>
+            <option value="batch">Batch (no frame_id)</option>
+          </select>
+        </label>
+        <label>
+          Activities
+          <select id="activity-select" multiple size="3"></select>
+        </label>
+        <label>
+          Apps
+          <select id="app-select" multiple size="3"></select>
+        </label>
+        <label>
+          Recording
+          <select id="recording-select">
+            <option value="">All recordings</option>
+          </select>
+        </label>
+        <label>
+          Timestamp from
+          <input type="datetime-local" id="start-ts">
+        </label>
+        <label>
+          Timestamp to
+          <input type="datetime-local" id="end-ts">
+        </label>
+        <label>
+          Search
+          <input type="search" id="search" placeholder="Search descriptions or transcripts">
+        </label>
+      </div>
+      <div>
+        <button class="contrast" onclick="resetFilters()">Reset filters</button>
+        <button onclick="loadObservations()">Refresh</button>
+      </div>
+    </div>
+
+    <div id="active-filters" class="filter-controls"></div>
+
+    <div id="observations" class="results">
+      <div class="loading">Loading observations...</div>
+    </div>
+
+    <div class="pagination">
+      <button onclick="prevPage()" id="prev-btn">Previous</button>
+      <div id="pagination-info">Page 1</div>
+      <button onclick="nextPage()" id="next-btn">Next</button>
+    </div>
+  </main>
+
+  <div class="modal" id="image-modal" onclick="closeModal(event)">
+    <img id="modal-image" src="" alt="Full observation image">
+  </div>
+
+  <script>
+    const pageSize = 50;
+    let currentPage = 0;
+    let totalObservations = 0;
+
+    async function initFilters() {
+      try {
+        const res = await fetch('/api/observations/filters');
+        const data = await res.json();
+
+        const activitySelect = document.getElementById('activity-select');
+        activitySelect.innerHTML = data.activity_types.map(type => `<option value="${type}">${type}</option>`).join('');
+
+        const appSelect = document.getElementById('app-select');
+        appSelect.innerHTML = data.apps.map(app => `<option value="${app}">${app}</option>`).join('');
+
+        const recordingSelect = document.getElementById('recording-select');
+        data.recordings.forEach(rec => {
+          const option = document.createElement('option');
+          option.value = rec.id;
+          option.textContent = `${new Date(rec.captured_at).toLocaleString()} • ${rec.id}`;
+          recordingSelect.appendChild(option);
+        });
+      } catch (err) {
+        document.getElementById('observations').innerHTML = `<div class="error">Failed to load filters: ${err.message}</div>`;
+      }
+    }
+
+    function getFilters() {
+      const activitySelect = document.getElementById('activity-select');
+      const appSelect = document.getElementById('app-select');
+      return {
+        source: document.getElementById('source-select').value,
+        recording_id: document.getElementById('recording-select').value,
+        activity_type: Array.from(activitySelect.selectedOptions).map(o => o.value).join(','),
+        app: Array.from(appSelect.selectedOptions).map(o => o.value).join(','),
+        start_ts: document.getElementById('start-ts').value ? Math.floor(new Date(document.getElementById('start-ts').value).getTime() / 1000) : null,
+        end_ts: document.getElementById('end-ts').value ? Math.floor(new Date(document.getElementById('end-ts').value).getTime() / 1000) : null,
+        search: document.getElementById('search').value
+      };
+    }
+
+    async function loadObservations() {
+      const filters = getFilters();
+      const params = new URLSearchParams();
+      if (filters.source && filters.source !== 'all') params.set('source', filters.source);
+      if (filters.recording_id) params.set('recording_id', filters.recording_id);
+      if (filters.activity_type) params.set('activity_type', filters.activity_type);
+      if (filters.app) params.set('app', filters.app);
+      if (filters.start_ts) params.set('start_ts', filters.start_ts);
+      if (filters.end_ts) params.set('end_ts', filters.end_ts);
+      if (filters.search) params.set('search', filters.search);
+      params.set('limit', pageSize);
+      params.set('offset', currentPage * pageSize);
+
+      const query = params.toString();
+      document.getElementById('observations').innerHTML = '<div class="loading">Loading observations...</div>';
+
+      try {
+        const res = await fetch(`/api/observations?${query}`);
+        const data = await res.json();
+        totalObservations = data.total;
+        renderObservations(data.observations);
+        updatePagination();
+        renderActiveFilters(filters);
+      } catch (err) {
+        document.getElementById('observations').innerHTML = `<div class="error">${err.message}</div>`;
+      }
+    }
+
+    function renderObservations(observations) {
+      if (!observations || observations.length === 0) {
+        document.getElementById('observations').innerHTML = '<div class="empty-state"><p>No observations match the current filters.</p></div>';
+        return;
+      }
+
+      const grid = document.createElement('div');
+      grid.className = 'results';
+
+      observations.forEach(obs => {
+        const card = document.createElement('article');
+        card.className = 'observation-card';
+
+        const sourceBadge = obs.frame_id ? 'Recorder' : 'Batch';
+        const sourceHtml = `<span class="badge badge-source">${sourceBadge}</span>`;
+
+        const activityHtml = obs.activity_type ? `<span class="badge badge-activity">${obs.activity_type}</span>` : '';
+        const appBadges = (obs.apps || []).map(app => `<span class="badge badge-app">${app}</span>`).join('');
+        const topicBadges = (obs.topics || []).map(topic => `<span class="badge badge-topic">${topic}</span>`).join('');
+
+        const imagePath = resolveImage(obs.image_path);
+        const imageHtml = obs.image_path && imagePath ? `<img class="observation-image" src="${imagePath}" alt="Frame ${obs.id}" onclick="openModal('${imagePath}')">` : `<div style="height:180px;display:flex;align-items:center;justify-content:center;color:#666;background:#f3f4f6;">No image</div>`;
+
+        card.innerHTML = `
+          ${imageHtml}
+          <div class="observation-content">
+            <div class="observation-timestamp">${formatTimestamp(obs.timestamp)} • ${obs.recording_id}</div>
+            <div class="badges">${sourceHtml}${activityHtml}${appBadges}${topicBadges}</div>
+            <p class="observation-description">${obs.vlm_description || obs.text || 'No description'}</p>
+          </div>
+        `;
+
+        grid.appendChild(card);
+      });
+
+      const container = document.getElementById('observations');
+      container.innerHTML = '';
+      container.appendChild(grid);
+    }
+
+    function resolveImage(path) {
+      if (!path) return null;
+      if (path.startsWith('/var/folders/')) {
+        return '/frames-temp' + path.substring('/var/folders'.length);
+      }
+      if (path.includes('/.escribano')) {
+        return path.replace(/\/Users\/.+?\/.escribano/, '/frames');
+      }
+      return null;
+    }
+
+    function formatTimestamp(sec) {
+      if (!sec) return '00:00';
+      const date = new Date(sec * 1000);
+      return date.toLocaleString();
+    }
+
+    function updatePagination() {
+      const info = document.getElementById('pagination-info');
+      const totalPages = Math.ceil(totalObservations / pageSize) || 1;
+      info.textContent = `Page ${currentPage + 1} of ${totalPages}`;
+      document.getElementById('prev-btn').disabled = currentPage === 0;
+      document.getElementById('next-btn').disabled = (currentPage + 1) >= totalPages;
+    }
+
+    function prevPage() {
+      if (currentPage > 0) {
+        currentPage -= 1;
+        loadObservations();
+      }
+    }
+
+    function nextPage() {
+      const totalPages = Math.ceil(totalObservations / pageSize);
+      if (currentPage + 1 < totalPages) {
+        currentPage += 1;
+        loadObservations();
+      }
+    }
+
+    function resetFilters() {
+      document.getElementById('activity-select').selectedIndex = -1;
+      document.getElementById('app-select').selectedIndex = -1;
+      document.getElementById('recording-select').value = '';
+      document.getElementById('source-select').value = 'all';
+      document.getElementById('start-ts').value = '';
+      document.getElementById('end-ts').value = '';
+      document.getElementById('search').value = '';
+      currentPage = 0;
+      loadObservations();
+    }
+
+    function renderActiveFilters(filters) {
+      const container = document.getElementById('active-filters');
+      const tags = [];
+      if (filters.source && filters.source !== 'all') tags.push(`Source: ${filters.source}`);
+      if (filters.recording_id) tags.push(`Recording: ${filters.recording_id}`);
+      if (filters.activity_type) tags.push(`Activities: ${filters.activity_type}`);
+      if (filters.app) tags.push(`Apps: ${filters.app}`);
+      if (filters.start_ts) tags.push(`From: ${new Date(filters.start_ts * 1000).toLocaleString()}`);
+      if (filters.end_ts) tags.push(`To: ${new Date(filters.end_ts * 1000).toLocaleString()}`);
+      if (filters.search) tags.push(`Search: ${filters.search}`);
+
+      container.innerHTML = tags.map(tag => `<span class="filter-tag">${tag}</span>`).join('');
+    }
+
+    function openModal(src) {
+      const modal = document.getElementById('image-modal');
+      document.getElementById('modal-image').src = src;
+      modal.classList.add('active');
+    }
+
+    function closeModal(event) {
+      if (event && event.target !== document.getElementById('image-modal')) return;
+      document.getElementById('image-modal').classList.remove('active');
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initFilters();
+      loadObservations();
+    });
+  </script>
+</body>
+</html>

@@ -29,11 +29,11 @@ export function createSqliteObservationRepository(
     `),
     insert: db.prepare(`
       INSERT INTO observations (
-        id, recording_id, type, timestamp, end_timestamp,
+        id, recording_id, frame_id, type, timestamp, end_timestamp,
         image_path, ocr_text, vlm_description, vlm_raw_response, activity_type, apps, topics,
         text, audio_source, audio_type, embedding, created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     delete: db.prepare('DELETE FROM observations WHERE id = ?'),
     deleteByRecording: db.prepare(
@@ -69,7 +69,8 @@ export function createSqliteObservationRepository(
       const now = nowISO();
       stmts.insert.run(
         observation.id,
-        observation.recording_id,
+        observation.recording_id ?? null,
+        observation.frame_id ?? null,
         observation.type,
         observation.timestamp,
         observation.end_timestamp,
@@ -94,7 +95,8 @@ export function createSqliteObservationRepository(
         for (const obs of obsList) {
           stmts.insert.run(
             obs.id,
-            obs.recording_id,
+            obs.recording_id ?? null,
+            obs.frame_id ?? null,
             obs.type,
             obs.timestamp,
             obs.end_timestamp,

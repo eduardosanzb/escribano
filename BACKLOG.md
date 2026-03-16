@@ -83,6 +83,14 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [ ] **Resource Usage README Update** — Update README with CPU/memory usage stats once more real-world data is collected
 - **Ref**: `docs/tdd/002-node-batch-analyzer.md`
 
+#### Release Prerequisite: Apple Developer ID Signing
+- [ ] **Sign `fotografo` binary with Apple Developer ID certificate** — stable Team ID signature survives rebuilds for all users
+  - Currently uses adhoc signing (CDHash changes on every `swift build` → users lose TCC permission on every rebuild)
+  - With Apple Developer ID Application cert, TCC tracks by Team ID (not CDHash) — permission persists across all rebuilds
+  - Requires free/paid Apple Developer account + certificate setup (one-time, CLI only)
+  - Must be done before open-source release or npm publish
+  - **Ref**: Option B in `src/actions/recorder-commands.ts`
+
 ### Stopgaps (batch pipeline, lower priority now that recorder is the focus)
 
 - [ ] **6K FFmpeg reliability** — Add fallback encoder (libx264/libwebp), dimension check + warning for >4096px — *2-3h*

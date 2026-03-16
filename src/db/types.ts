@@ -35,11 +35,12 @@ export type DbRecordingInsert = Omit<DbRecording, 'created_at' | 'updated_at'>;
 
 export interface DbObservation {
   id: string;
-  recording_id: string;
+  recording_id: string | null;
   type: 'visual' | 'audio';
   timestamp: number;
   end_timestamp: number | null;
   image_path: string | null;
+  frame_id?: string | null;
   ocr_text: string | null;
   vlm_description: string | null;
   vlm_raw_response: string | null;
@@ -54,6 +55,32 @@ export interface DbObservation {
 }
 
 export type DbObservationInsert = Omit<DbObservation, 'created_at'>;
+
+export interface DbFrame {
+  id: string;
+  display_id: string;
+  captured_at: string;
+  timestamp: number;
+  image_path: string;
+  phash: string | null;
+  width: number | null;
+  height: number | null;
+  analyzed: number; // 0=pending, 1=complete, 2=failed
+  processing_lock_id: string | null;
+  processing_started_at: string | null;
+  retry_count: number;
+  failed_at: string | null;
+  created_at: string;
+}
+
+export type DbFrameInsert = Omit<DbFrame, 'created_at'>;
+
+export interface DbProcessLock {
+  id: string;
+  type: string;
+  locked_at: string;
+  expires_at: string;
+}
 
 export interface DbContext {
   id: string;

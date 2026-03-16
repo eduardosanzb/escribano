@@ -562,9 +562,12 @@ import type {
   DbArtifactSubject,
   DbContext,
   DbContextInsert,
+  DbFrame,
+  DbFrameInsert,
   DbObservation,
   DbObservationContext,
   DbObservationInsert,
+  DbProcessLock,
   DbRecording,
   DbRecordingInsert,
   DbSubject,
@@ -580,9 +583,12 @@ export type {
   DbArtifactSubject,
   DbContext,
   DbContextInsert,
+  DbFrame,
+  DbFrameInsert,
   DbObservation,
   DbObservationContext,
   DbObservationInsert,
+  DbProcessLock,
   DbRecording,
   DbRecordingInsert,
   DbSubject,
@@ -591,6 +597,18 @@ export type {
   DbTopicBlock,
   DbTopicBlockInsert,
 };
+
+export interface FrameRepository {
+  findById(id: string): DbFrame | null;
+  /** Claim a batch of frames for analysis by a specific lock ID */
+  claimFrames(lockId: string, limit: number, expiryMinutes?: number): DbFrame[];
+  markAnalyzed(id: string): void;
+  markFailed(id: string, error?: string): void;
+  /** Release locks that have expired */
+  releaseStaleLocks(): number;
+  delete(id: string): void;
+  getPendingCount(): number;
+}
 
 export interface RecordingRepository {
   findById(id: string): DbRecording | null;
@@ -689,5 +707,6 @@ export interface Repositories {
   topicBlocks: TopicBlockRepository;
   artifacts: ArtifactRepository;
   subjects: SubjectRepository;
+  frames: FrameRepository;
   stats: StatsRepository;
 }

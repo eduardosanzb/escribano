@@ -59,3 +59,6 @@ debug-mbair-machine
 scripts/poc-screencapturekit/.build/
 scripts/poc-screencapturekit-stream/.build/
 scripts/poc-phash-dedup/.build
+scripts/poc-mlx-swift/.build
+apps/recorder/.build
+apps/recorder/.build

@@ -265,14 +265,14 @@ async function cutSession(options: {
   - `<time>` can be relative (e.g., `2h`, `30m` = ago) or exact ISO timestamps.
   - Default bounds if omitted: `from: 4h` (4 hours ago), `to: now`.
 
-### 3.5 Recorder Capture Adapter (`capture.fotografo.adapter.ts`)
+### 3.5 Recorder Capture Adapter (`capture.escribano-recorder.adapter.ts`)
 
 - Implements `CaptureSource` interface.
 - `getLatestRecording()`: Fetches the most recently generated synthetic recording (where
   `sourceType = 'recorder'`).
 - `listRecordings()`: Returns all synthetic recordings.
 
-**Naming Rationale**: Named `capture.fotografo.adapter.ts` to align with the Swift capture agent "Fotógrafo" (The Photographer). This reinforces the theme consistency across the recorder pipeline and makes the source clear at a glance.
+**Naming Rationale**: Named `capture.escribano-recorder.adapter.ts` to align with the Swift capture agent. This reinforces the theme consistency across the recorder pipeline and makes the source clear at a glance.
 
 ### 3.6 Segmentation Algorithm
 

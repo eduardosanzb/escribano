@@ -1,7 +1,7 @@
 /**
  * Recorder CLI Commands
  *
- * recorder install — build Fotógrafo binary, install LaunchAgent plist
+ * recorder install — build escribano binary, install LaunchAgent plist
  * recorder status  — show agent state, pending frames, disk usage
  */
 
@@ -23,9 +23,9 @@ import { ensureDb } from '../db/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = path.resolve(path.dirname(__filename), '..', '..');
 const RECORDER_DIR = path.join(PACKAGE_ROOT, 'apps', 'recorder');
-const BINARY_SRC = path.join(RECORDER_DIR, '.build', 'release', 'fotografo');
+const BINARY_SRC = path.join(RECORDER_DIR, '.build', 'release', 'escribano');
 const BIN_DIR = path.join(homedir(), '.escribano', 'bin');
-const BINARY_DEST = path.join(BIN_DIR, 'fotografo');
+const BINARY_DEST = path.join(BIN_DIR, 'escribano');
 const PLIST_LABEL = 'com.escribano.capture';
 const PLIST_PATH = path.join(
   homedir(),
@@ -63,7 +63,9 @@ export async function recorderInstall(): Promise<void> {
   console.log('Database ready.');
 
   // 4. Build Swift binary
-  console.log('Compiling Fotógrafo (this may take a minute on first build)...');
+  console.log(
+    'Compiling escribano-recorder (this may take a minute on first build)...'
+  );
   const build = spawnSync('swift', ['build', '-c', 'release'], {
     cwd: RECORDER_DIR,
     stdio: 'inherit',
@@ -100,12 +102,12 @@ export async function recorderInstall(): Promise<void> {
   // 8. Load LaunchAgent
   execSync(`launchctl load "${PLIST_PATH}"`);
   console.log(`LaunchAgent loaded: ${PLIST_LABEL}`);
-  console.log('Fotógrafo is now running and will start on login.');
+  console.log('escribano-recorder is now running and will start on login.');
 }
 
 function generatePlist(binaryPath: string): string {
-  const stdout = path.join(LOGS_DIR, 'fotografo.log');
-  const stderr = path.join(LOGS_DIR, 'fotografo.error.log');
+  const stdout = path.join(LOGS_DIR, 'escribano-recorder.log');
+  const stderr = path.join(LOGS_DIR, 'escribano-recorder.error.log');
 
   // Collect Escribano environment variables to inject into the LaunchAgent
   const envVars = Object.entries(process.env)

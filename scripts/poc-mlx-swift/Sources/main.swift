@@ -31,7 +31,8 @@ let command = args[1]
 
 // Default model snapshot paths — cached, no download needed
 let homeDir = NSHomeDirectory()
-let defaultVLMDir = "\(homeDir)/.cache/huggingface/hub/models--mlx-community--Qwen3-VL-2B-Instruct-4bit/snapshots/9c4f5209e57b31f4b9dfba735de3fb983739c9cc"
+let defaultVLMDir = "\(homeDir)/.cache/huggingface/hub/models--mlx-community--Qwen3-VL-4B-Instruct-4bit/snapshots/2fd8dacbdb8f1e54b8c005f081ec5bf79c56376b"
+/// /Users/eduardosanchez/.cache/huggingface/hub/models--mlx-community--Qwen3-VL-4B-Instruct-4bit/snapshots/2fd8dacbdb8f1e54b8c005f081ec5bf79c56376b
 let defaultLLMDir = "\(homeDir)/.cache/huggingface/hub/models--mlx-community--Qwen3.5-4B-4bit/snapshots/0e7ffd5c629ef7719d4cbc04069232580bfa9d9c"
 
 /// now we always run the vlm command fuck it; and then we loop all the files
@@ -42,15 +43,15 @@ let imagesDir: String = "\(homeDir)/.escribano/frames/2026-03-13/"
 let fm = FileManager.default
 var imagePaths: [String] = []
 do {
-  let content = try fm.contentsOfDirectory(atPath: imagesDir)
-  print(content)
-  let dirURL = URL(fileURLWithPath: imagesDir)
-  let fullPaths = content
-    .filter { $0.hasSuffix(".jpg") }
-    .prefix(5)
-    .map { dirURL.appendingPathComponent($0).path }
-  print(fullPaths)
-  imagePaths = fullPaths
+    let content = try fm.contentsOfDirectory(atPath: imagesDir)
+    print(content)
+    let dirURL = URL(fileURLWithPath: imagesDir)
+    let fullPaths = content
+        .filter { $0.hasSuffix(".jpg") }
+        .prefix(5)
+        .map { dirURL.appendingPathComponent($0).path }
+    print(fullPaths)
+    imagePaths = fullPaths
 
 } catch {
     print("Error listing dir: \(error)")

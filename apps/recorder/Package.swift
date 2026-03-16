@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "fotografo",
+    name: "escribano-recorder",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "fotografo",
+            name: "escribano",
             path: "Sources",
             linkerSettings: [
                 .linkedLibrary("sqlite3")

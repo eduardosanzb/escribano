@@ -8,6 +8,7 @@
 | Updated  | 2026-03-12 | Blocking issues resolved, concurrency & schema refined via research spike                                                                                                                                                               |
 | Accepted | 2026-03-12 | **Phase A (SCScreenshotManager) + Phase B (SCStream) both validated; SCStream confirmed as Phase 1 capture API**                                                                                                                        |
 | Revised  | 2026-03-12 | Backpressure, LaunchAgent terminology, segment semantics, and tech debt annotations added per architectural review                                                                                                                      |
+| Phase 1 complete | 2026-03-13 | Swift capture agent shipped as `escribano` binary; multi-display capture, pHash dedup (threshold=4), backpressure, LaunchAgent `install`/`status` commands all implemented and validated; dev workflow confirmed: TCC permission granted to Terminal.app persists across `swift build` rebuilds |
 
 ## Context
 

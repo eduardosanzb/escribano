@@ -1,8 +1,8 @@
-# TDD-001: Fotógrafo Capture Agent
+# TDD-001: Escribano Recorder Capture Agent
 
 ## 1. Overview
 
-This document specifies the design for the Always-On Swift Capture Agent (Phase 1), codenamed **Fotógrafo** (The Photographer). It is a headless macOS LaunchAgent that captures screenshots using `SCStream`, deduplicates them using a perceptual hash (pHash), and writes them to a SQLite database in WAL mode.
+This document specifies the design for the Always-On Swift Capture Agent (Phase 1). It is a headless macOS LaunchAgent that captures screenshots using `SCStream`, deduplicates them using a perceptual hash (pHash), and writes them to a SQLite database in WAL mode.
 
 ## 2. Architecture & File Structure
 
@@ -110,13 +110,13 @@ Added to `src/index.ts` via routing commands:
   ```
   and exits with code 1.
 
-- **Build step**: Compiles Fotógrafo binary: `cd apps/recorder && swift build -c release`.
+- **Build step**: Compiles escribano-recorder binary: `cd apps/recorder && swift build -c release`.
   - The first `swift build -c release` takes 30-60 seconds (subsequent builds are incremental). The CLI shows a progress indicator before invoking the build:
   ```
-  console.log('Compiling Fotógrafo (this may take a minute)...')
+  console.log('Compiling escribano-recorder (this may take a minute)...')
   ```
 - Generates LaunchAgent Plist: `~/Library/LaunchAgents/com.escribano.capture.plist`.
-- Plist contents: `RunAtLoad=true`, `KeepAlive=true`, `ProgramArguments=[<path_to_fotografo_binary>]`.
+- Plist contents: `RunAtLoad=true`, `KeepAlive=true`, `ProgramArguments=[<path_to_escribano_binary>]`.
 - Executes: `launchctl load ...`
 
 **Scope (MVP — Dev Mode)**:
@@ -141,12 +141,11 @@ This requires: code signing, binary hosting, update mechanics, and clean uninsta
   - Test `PHash.compute()` produces consistent output for identical images.
   - Test backpressure state machine transitions correctly.
 - **Integration (Node)**:
-  - Test `recorder install` correctly templates the plist, finds Fotógrafo binary, and detects missing Swift compiler toolchain.
+   - Test `recorder install` correctly templates the plist, finds escribano binary, and detects missing Swift compiler toolchain.
 
 ## 6. Naming
 
-**Fotógrafo** (The Photographer) continues Escribano's Spanish naming theme:
-- **Escribano** (The Scribe) — captures and transcribes work sessions
-- **Fotógrafo** (The Photographer) — photographs (captures visually) screen activity
+The capture agent binary is named **`escribano`** (same as the CLI tool), keeping the surface area simple. The original codename **Fotógrafo** (The Photographer) was used during design but dropped to avoid confusion — users interact with a single `escribano` command for everything:
 
-This naming is consistent, thematic, and human-readable across the CLI (`escribano recorder`, `fotógrafo` binary).
+- `escribano recorder install` — build and register the background capture agent
+- `escribano recorder status` — inspect agent state and pending frame count

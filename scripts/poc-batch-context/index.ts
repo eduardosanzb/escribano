@@ -45,7 +45,7 @@ function parseArgs(): Args {
     recordingId: null,
     framesDir: null,
     batchSize: 5,
-    model: loadConfig().vlmModel,
+    model: 'mlx-community/Qwen3-VL-4B-Instruct-4bit',
     limit: null,
   };
 

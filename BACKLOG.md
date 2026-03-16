@@ -84,11 +84,12 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - **Ref**: `docs/tdd/002-node-batch-analyzer.md`
 
 #### Release Prerequisite: Apple Developer ID Signing
-- [ ] **Sign `fotografo` binary with Apple Developer ID certificate** — stable Team ID signature survives rebuilds for all users
+- [ ] **Sign `escribano` binary with Apple Developer ID certificate** — stable Team ID signature survives rebuilds for all users
   - Currently uses adhoc signing (CDHash changes on every `swift build` → users lose TCC permission on every rebuild)
   - With Apple Developer ID Application cert, TCC tracks by Team ID (not CDHash) — permission persists across all rebuilds
   - Requires free/paid Apple Developer account + certificate setup (one-time, CLI only)
   - Must be done before open-source release or npm publish
+  - **Dev workaround**: Run from Terminal — permission is granted to Terminal.app, persists across builds
   - **Ref**: Option B in `src/actions/recorder-commands.ts`
 
 ### Stopgaps (batch pipeline, lower priority now that recorder is the focus)
@@ -138,6 +139,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ### 2026-03
 
+- **Recorder Dev Mode Working** — Permission granted to Terminal.app persists across builds; `pnpm recorder:dev` workflow validated; pHash dedup correctly skipping identical frames
 - **pHash Dedup POC (Phase C)** — Validated pHash threshold=8 cleanly separates noise (0-4 bits) from content (10+ bits) across 6 scenarios; dHash, VN FeaturePrint, SCFrameStatus all rejected as primary dedup
 - **SCStream POC (Phase B)** — Validated `SCStream` with Swift 6 concurrency patterns (`@MainActor`, `sampleHandlerQueue: .main`, `MainActor.assumeIsolated`, `nonisolated(unsafe) let`); 5s frame interval confirmed exact; SCStream chosen as Phase 1 capture API
 - **ScreenCaptureKit Spike (Phase A)** — ADR-009 architecture decision for always-on screen recorder (Swift ScreenCaptureKit + SQLite WAL)

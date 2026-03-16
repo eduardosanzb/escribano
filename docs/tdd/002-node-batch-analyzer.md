@@ -1,8 +1,28 @@
 # TDD-002: Node Batch Analyzer
 
-## 1. Overview
+> **🚫 SUPERSEDED (2026-03-16)**
+> 
+> This design is replaced by **ADR-010 (Swift-Native Visual Intelligence)**. VLM inference now runs as an in-process async task within the Swift capture agent (see **TDD-001 Phase 2**), eliminating the need for a separate Node.js analyzer.
+> 
+> **What changed:**
+> - VLM runs in Swift, not Node.js
+> - No process polling or `process_locks` coordination needed
+> - Model stays loaded in memory (4GB), no startup per batch
+> - Simpler concurrency model (single process, two async tasks)
+> - Same database schema (frames + observations tables unchanged)
+> 
+> **Why the change:**
+> - MLX-Swift POC (March 15, 2026) validated native Swift matches Python perf with 17% less memory
+> - Eliminates Python bridge dependency for always-on recorder
+> - Removes unnecessary IPC boundary (Swift → Node → Python)
+> 
+> **For reference:** The analysis work described below remains architecturally sound; it's just now implemented in Swift within `VLMAnalyzer.swift` (see TDD-001 Phase 2 for the updated design).
 
-This document specifies the design for the Node Batch Analyzer (Phase 2). It periodically polls the `frames`
+---
+
+## Original Content (Deprecated)
+
+
 table, claims unanalyzed frames, passes them through the existing `vlm-service.ts`, and creates `observations`
 with foreign keys to the frames.
 
@@ -375,6 +395,14 @@ This means launchd-managed processes are naturally serialized. **However**, user
 - Created during `escribano recorder install` (implemented in Phase 1 but used here).
 - `StartInterval=120` (runs every 2 minutes).
 - `ProgramArguments`: `[node, <path_to_escribano_dist>, analyze]`.
+
+### 3.6 VLM Input Rate Limiting (Deferred)
+
+Before sending claimed frames to the VLM, a time-based decimation filter may be implemented. Even if frames pass the pHash deduplication in the capture agent, sending frames too frequently (e.g., < 5 seconds apart) may be redundant for activity segmentation and costly in terms of inference time and tokens.
+
+**Rationale for Deferral**: The optimal decimation threshold is directly coupled to the specific VLM's inference speed and the user's workload. We will implement Phase 2 without hardcoded decimation first, measure the typical backlog pressure and segmentation quality, and then determine if a pre-VLM filter is necessary.
+
+**Decision Signal**: If VLM processing consistently falls behind capture rate despite pHash deduplication, or if segmentation produces excessive noise from high-frequency changes, a 5-10s minimum interval filter will be added.
 
 ## 4. Error Handling & Edge Cases
 

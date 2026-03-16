@@ -79,6 +79,7 @@ export interface SystemContext {
   adapters: {
     vlm: IntelligenceService | null;
     llm: IntelligenceService;
+    intelligence: IntelligenceService; // Unified/Context-aware intelligence
     video: VideoService;
     preprocessor: AudioPreprocessor;
     transcription: TranscriptionService;
@@ -192,6 +193,7 @@ export async function initializeSystem(): Promise<SystemContext> {
     adapters: {
       vlm: null as any,
       llm,
+      intelligence: llm, // Use LLM as the base intelligence service
       video,
       preprocessor,
       transcription,

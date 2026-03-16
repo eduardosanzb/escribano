@@ -102,6 +102,9 @@ export function runMigrations(db: Database.Database): {
       migration.version
     );
 
+    // Also update PRAGMA user_version — read by the Swift capture agent on startup
+    db.pragma(`user_version = ${migration.version}`);
+
     applied.push(migration.filename);
   }
 

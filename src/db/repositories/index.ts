@@ -4,6 +4,7 @@
 
 export { createSqliteArtifactRepository } from './artifact.sqlite.js';
 export { createSqliteContextRepository } from './context.sqlite.js';
+export { createSqliteFrameRepository } from './frame.sqlite.js';
 export { createSqliteObservationRepository } from './observation.sqlite.js';
 export { createSqliteRecordingRepository } from './recording.sqlite.js';
 export { createSqliteSubjectRepository } from './subject.sqlite.js';

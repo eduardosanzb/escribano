@@ -616,6 +616,7 @@ export function createMlxIntelligenceService(
       options: {
         model?: string;
         recordingId?: string;
+        prompt?: string;
         onImageProcessed?: (
           result: FrameDescription,
           progress: { current: number; total: number }
@@ -659,7 +660,7 @@ export function createMlxIntelligenceService(
 
         try {
           // Load VLM prompt for this batch
-          const prompt = loadVlmPrompt(batch.length);
+          const prompt = options.prompt ?? loadVlmPrompt(batch.length);
 
           // Build interleaved messages: [label, image, label, image, ..., prompt]
           // This matches the old Python structure that worked correctly
@@ -728,6 +729,7 @@ export function createMlxIntelligenceService(
           debugLog(`VLM returned ${rawText.length} chars`);
 
           // Parse interleaved output
+          // TODO: this next line destroys the usability of this method; because tights the parsin login to specifric output format, it makes it very hard to change the output format in the future without breaking this method. We should consider changing the output format to be more structured (e.g. JSONL with frame numbers) to avoid this brittle parsing logic.
           const batchResults = parseInterleavedOutput(rawText, batch);
 
           // Append results and invoke callback with cumulative progress

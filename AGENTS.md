@@ -119,6 +119,13 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_OUTLINE_TOKEN` | Outline API token | — |
 | `ESCRIBANO_OUTLINE_COLLECTION` | Outline collection name | `Escribano Sessions` |
 | `OLLAMA_NUM_PARALLEL` | Ollama server inference slots (configure Ollama itself) | `1` |
+| **Recorder (Always-On)** | | |
+| `ESCRIBANO_PHASH_THRESHOLD` | Hamming distance threshold for pHash dedup (skip frame if distance ≤ this) | `4` |
+| `ESCRIBANO_DEBUG_PHASH` | Log every pHash comparison + rolling stats every 100 frames | `false` |
+| `ESCRIBANO_CAPTURE_HIGH_WATER` | Pause capture when this many frames are pending analysis | `500` |
+| `ESCRIBANO_CAPTURE_LOW_WATER` | Resume capture when pending frames drop below this | `100` |
+
+**Note:** Recorder variables are injected into the LaunchAgent plist at install time. If you change these values in `~/.escribano/.env`, you must re-run `npx escribano recorder install` for the changes to take effect in the background agent.
 
 ### Performance Notes
 - **Scene Detection**: Uses `-skip_frame nokey` FFmpeg optimization by default for 20x speedup (57 min → 2.8 min for 3-hour videos)

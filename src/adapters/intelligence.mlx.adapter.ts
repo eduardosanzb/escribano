@@ -727,13 +727,6 @@ export function createMlxIntelligenceService(
           }
 
           const rawText = response.text || '';
-          console.log('--- Raw VLM output start ---');
-          console.log(
-            `[debugging] Raw VLM output:\n${rawText}\n--- End of VLM output ---`
-          );
-          console.log(
-            `[VLM] configuration used: model=${mlxConfig.model} batchSize=${mlxConfig.batchSize} maxTokens=${mlxConfig.maxTokens}`
-          );
           debugLog(`VLM returned ${rawText.length} chars`);
 
           // Parse interleaved output

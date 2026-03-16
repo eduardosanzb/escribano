@@ -49,6 +49,7 @@ final class Backpressure {
     private func check() {
         // Query storage for total unanalyzed frames.
         let pending = (try? store.pendingFrameCount()) ?? 0
+        print("[Backpressure] Checked, \(pending) pending frames.")
 
         // High-water trigger: stop capturing to avoid disk/memory buildup.
         if !isPaused && pending >= highWater {

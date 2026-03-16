@@ -15,6 +15,9 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var captures: [StreamCapture] = []
     private var store: (any FrameStore)?
     private var backpressure: Backpressure?
+    private var obsStore: (any ObservationStore)?
+    private var analyzer: VLMAnalyzer?
+    private var analyzerTask: Task<Void, Never>?
 
     /// Called by NSApplication when the app has finished launching.
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -36,6 +39,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         // Permission check: wait for Screen Recording permission before proceeding.
         // This is necessary because every swift build creates a new CDHash,
         // so TCC forgets the permission each time during development.
+        print(CGPreflightScreenCaptureAccess())
         if !CGPreflightScreenCaptureAccess() {
             print("[escribano-recorder] Screen Recording permission not granted")
             print("[escribano-recorder] Requesting permission...")
@@ -51,6 +55,9 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
                     print("[escribano-recorder] Still waiting for permission... (grant in System Settings > Privacy & Security > Screen Recording)")
                 }
                 try? await Task.sleep(for: .seconds(1))
+                if attempts > 30 {
+                fatalError("[escribano-recorder] Aborting: couldn't get Screen Recording permission in a reasonable amount of time")
+              }
             }
             print("[escribano-recorder] Permission granted! Starting capture...")
         }
@@ -104,6 +111,31 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         }
         self.captures = captures
 
+        // 1. Open a second SQLite connection for observation writes (WAL allows concurrent access)
+        let obsStore: any ObservationStore
+        do {
+            obsStore = try SQLiteObservationStore(path: dbPath)
+        } catch {
+            print("[escribano-recorder] ERROR: Cannot open observation store: \(error.localizedDescription)")
+            exit(1)
+        }
+        self.obsStore = obsStore
+        // 2. Create analyzer. loadModel() runs first (downloads the 4B model ~30-60s),
+        //    then analyzeLoop() polls continuously. Both run in a background Task so the
+        //    capture loop (@MainActor) is never blocked.
+        let analyzer = VLMAnalyzer(obsStore: obsStore)
+        self.analyzer = analyzer
+        self.analyzerTask = Task {
+            do {
+                try await analyzer.loadModel()
+            } catch {
+                print("[VLMAnalyzer] Failed to load model: \(error.localizedDescription)")
+                return
+            }
+            await analyzer.analyzeLoop()
+        }
+        print("[escribano-recorder] VLM analyzer task started.")
+
         bp.onPause = { [weak self] in
             self?.captures.forEach { $0.pause() }
         }
@@ -120,6 +152,8 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             for cap in captures {
                 await cap.stop()
             }
+            analyzerTask?.cancel()
+            await obsStore?.close()
         }
         store?.close()
     }

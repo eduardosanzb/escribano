@@ -40,7 +40,6 @@ import { ensureEscribanoVenv as ensurePythonVenv } from '../python-deps.js';
 import { getPythonPath } from '../python-utils.js';
 import type { ResourceTrackable } from '../stats/types.js';
 import { selectBestMLXModel } from '../utils/model-detector.js';
-import { inspect } from 'node:util';
 
 // ============================================================================
 // Utility Functions - Parsing, Prompts, Debug Logging

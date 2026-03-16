@@ -25,7 +25,7 @@ export async function analyzeFrames(
   intelligence: IntelligenceService,
   options: AnalyzeFramesOptions = {}
 ): Promise<{ processed: number; failed: number }> {
-  const { batchSize = 10, limit = 50 } = options;
+  const { batchSize = 10 /* limit = 50*/ } = options;
   const lockId = `analyzer-${randomUUID().slice(0, 8)}`;
 
   // 1. Cleanup stale locks from previous crashed runs
@@ -58,6 +58,9 @@ export async function analyzeFrames(
     // 4. Run VLM analysis
     const results = await intelligence.describeImages(vlmImages, {
       onImageProcessed: (result, progress) => {
+        console.log(
+          `[analyzer] Processed image ${result.index + 1}/${vlmImages.length} (Frame ID: ${frames[result.index].id})`
+        );
         options.onProgress?.(progress.current, progress.total);
       },
     });

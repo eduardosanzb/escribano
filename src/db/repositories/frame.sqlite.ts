@@ -14,7 +14,7 @@ export function createSqliteFrameRepository(
     findById: db.prepare('SELECT * FROM frames WHERE id = ?'),
     claimFrames: db.prepare(`
       UPDATE frames
-      SET 
+      SET
         processing_lock_id = ?,
         processing_started_at = ?,
         analyzed = 0
@@ -30,13 +30,13 @@ export function createSqliteFrameRepository(
       'SELECT * FROM frames WHERE processing_lock_id = ? AND analyzed = 0'
     ),
     markAnalyzed: db.prepare(`
-      UPDATE frames 
+      UPDATE frames
       SET analyzed = 1, processing_lock_id = NULL
       WHERE id = ?
     `),
     markFailed: db.prepare(`
-      UPDATE frames 
-      SET 
+      UPDATE frames
+      SET
         analyzed = CASE WHEN retry_count >= 3 THEN 2 ELSE 0 END,
         retry_count = retry_count + 1,
         processing_lock_id = NULL,
@@ -44,9 +44,9 @@ export function createSqliteFrameRepository(
       WHERE id = ?
     `),
     releaseStaleLocks: db.prepare(`
-      UPDATE frames 
+      UPDATE frames
       SET processing_lock_id = NULL, processing_started_at = NULL
-      WHERE processing_lock_id IS NOT NULL 
+      WHERE processing_lock_id IS NOT NULL
       AND processing_started_at < ?
     `),
     getPendingCount: db.prepare(
@@ -81,6 +81,7 @@ export function createSqliteFrameRepository(
     },
 
     markFailed(id: string, error?: string): void {
+      console.error(`[Frame ${id}] Marking as failed. Error: ${error}`);
       stmts.markFailed.run(nowISO(), id);
     },
 

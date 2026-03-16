@@ -19,6 +19,7 @@ final class Backpressure {
     private let lowWater: Int
     private var isPaused = false
     private var frameCounter = 0
+    private var resumeTimer: Timer?
 
     // Closures for external handlers (like StreamCapture.pause/resume)
     var onPause:  (() -> Void)?
@@ -56,12 +57,28 @@ final class Backpressure {
             isPaused = true
             print("[Backpressure] High-water reached (\(pending) pending). Pausing capture.")
             onPause?()
+            startResumeTimer()
         } 
         // Low-water trigger: resume only after unanalyzed frames are cleared.
         else if isPaused && pending <= lowWater {
             isPaused = false
             print("[Backpressure] Low-water reached (\(pending) pending). Resuming capture.")
             onResume?()
+            stopResumeTimer()
         }
+    }
+
+    private func startResumeTimer() {
+        guard resumeTimer == nil else { return }
+        resumeTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.check()
+            }
+        }
+    }
+
+    private func stopResumeTimer() {
+        resumeTimer?.invalidate()
+        resumeTimer = nil
     }
 }

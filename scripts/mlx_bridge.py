@@ -25,14 +25,8 @@ import signal
 import socket
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, TextIO
-
-try:
-    import setproctitle  # type: ignore
-except ImportError:  # pragma: no cover - optional dependency
-    setproctitle = None
+from typing import Any, Literal
 
 # Configuration from environment (all defaults come from TypeScript config.ts)
 MODEL_NAME = os.environ.get(
@@ -73,38 +67,7 @@ config = None
 llm_model = None
 llm_tokenizer = None
 llm_loaded_model_name = None
-LOG_DEST: TextIO | None = None
-
-
-def rotate_log(path: Path) -> None:
-    max_bytes = int(os.environ.get("ESCRIBANO_LOG_MAX_BYTES", "10485760"))
-    if not path.exists():
-        return
-    if path.stat().st_size < max_bytes:
-        return
-
-    rotated = path.with_suffix(path.suffix + ".1") if path.suffix else Path(f"{path}.1")
-    if rotated.exists():
-        rotated.unlink()
-    path.rename(rotated)
-
-
-def ensure_log_destination() -> None:
-    global LOG_DEST
-    log_path = os.environ.get("ESCRIBANO_MLX_LOG_FILE")
-    if not log_path:
-        LOG_DEST = sys.stderr
-        return
-
-    log_file = Path(log_path)
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    rotate_log(log_file)
-    if not log_file.exists():
-        log_file.touch()
-    LOG_DEST = log_file.open("a", encoding="utf-8")
-
-
-ensure_log_destination()
+server_socket = None
 
 
 def log(message: str, level: str = "info") -> None:
@@ -114,9 +77,7 @@ def log(message: str, level: str = "info") -> None:
     prefix = {"info": "[MLX]", "error": "[MLX] ERROR:", "debug": "[MLX] DEBUG:"}.get(
         level, "[MLX]"
     )
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    dest = LOG_DEST or sys.stderr
-    print(f"{timestamp} {prefix} {message}", file=dest, flush=True)
+    print(f"{prefix} {message}", file=sys.stderr, flush=True)
 
 
 
@@ -635,12 +596,6 @@ def main() -> None:
     )
     args = parser.parse_args()
     BRIDGE_MODE = args.mode
-
-    if setproctitle is not None:
-        try:
-            setproctitle.setproctitle(f"escribano-bridge-{BRIDGE_MODE}")
-        except Exception as err:  # pragma: no cover - best effort
-            log(f"Failed to set process title: {err}", "debug")
 
     # Adjust socket path based on mode (VLM and LLM use separate sockets)
     base_socket = SOCKET_PATH.replace(".sock", "")

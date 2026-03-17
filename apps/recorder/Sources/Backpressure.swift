@@ -19,10 +19,6 @@ final class Backpressure {
     private let lowWater: Int
     private var isPaused = false
     private var frameCounter = 0
-    private var resumeTimer: Timer?
-    private var lastLoggedPending: Int?
-    private var lastLogDate: Date?
-    private let logThrottleInterval: TimeInterval = 60
 
     // Closures for external handlers (like StreamCapture.pause/resume)
     var onPause:  (() -> Void)?
@@ -53,47 +49,18 @@ final class Backpressure {
     private func check() {
         // Query storage for total unanalyzed frames.
         let pending = (try? store.pendingFrameCount()) ?? 0
-        logPendingCount(pending)
 
         // High-water trigger: stop capturing to avoid disk/memory buildup.
         if !isPaused && pending >= highWater {
             isPaused = true
-            log("[Backpressure] High-water reached (\(pending) pending). Pausing capture.")
+            print("[Backpressure] High-water reached (\(pending) pending). Pausing capture.")
             onPause?()
-            startResumeTimer()
         } 
         // Low-water trigger: resume only after unanalyzed frames are cleared.
         else if isPaused && pending <= lowWater {
             isPaused = false
-            log("[Backpressure] Low-water reached (\(pending) pending). Resuming capture.")
+            print("[Backpressure] Low-water reached (\(pending) pending). Resuming capture.")
             onResume?()
-            stopResumeTimer()
         }
-    }
-
-    private func startResumeTimer() {
-        guard resumeTimer == nil else { return }
-        resumeTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.check()
-            }
-        }
-    }
-
-    private func stopResumeTimer() {
-        resumeTimer?.invalidate()
-        resumeTimer = nil
-    }
-
-    private func logPendingCount(_ pending: Int) {
-        let now = Date()
-        if let last = lastLoggedPending, let lastDate = lastLogDate {
-            if pending == last && now.timeIntervalSince(lastDate) < logThrottleInterval {
-                return
-            }
-        }
-        log("[Backpressure] Checked, \(pending) pending frames.")
-        lastLoggedPending = pending
-        lastLogDate = now
     }
 }

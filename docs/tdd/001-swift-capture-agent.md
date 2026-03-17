@@ -14,15 +14,12 @@ _Rationale_: macOS 14 (Sonoma) covers ~80% of Mac users (Statcounter, early 2024
 apps/recorder/
 ├── Package.swift
 └── Sources/
-    ├── main.swift                    # Entry point, NSApplication lifecycle, multi-display support
-    ├── StreamCapture.swift           # SCStream Output delegate, manages screen capture per display
-    ├── PHash.swift                   # vDSP-accelerated DCT pHash algorithm
-    ├── FrameStore.swift              # Port protocol (FrameStore, FrameMetadata, FrameStoreError)
-    ├── SQLiteFrameStore.swift        # Adapter implementation using SQLite C API
-    ├── Backpressure.swift            # High-water/low-water mark logic (uses FrameStore protocol)
-    ├── Prompts.swift                 # Prompt builder for VLM inference bridge
-    ├── VLMInferenceService.port.swift # Port definitions for VLM requests/responses
-    └── PythonBridge.vlm.adapter.swift # Adapter that talks to mlx_bridge.py over Unix socket
+    ├── main.swift             # Entry point, NSApplication lifecycle, multi-display support
+    ├── StreamCapture.swift    # SCStream Output delegate, manages screen capture per display
+    ├── PHash.swift            # vDSP-accelerated DCT pHash algorithm
+    ├── FrameStore.swift       # Port protocol (FrameStore, FrameMetadata, FrameStoreError)
+    ├── SQLiteFrameStore.swift # Adapter implementation using SQLite C API
+    └── Backpressure.swift     # High-water/low-water mark logic (uses FrameStore protocol)
 ```
 
 ## 3. Core Components
@@ -388,20 +385,13 @@ Migration 015 adjusted: remove `process_locks` creation (frames + observations t
 
 | Aspect | TDD-002 (Node Batch Analyzer) | ADR-010 Phase 2 (Swift VLM) |
 |--------|--------------------------------|----------------------------|
-| Process | Separate Node.js process | In-process Swift task (frame capture + analyzer loop) |
-| IPC | SQLite job queue + socket to Python bridge | SQLite job queue + Unix socket to Python bridge (via `VLMInferenceService`) |
-| Model lifecycle | Load/unload per batch | Load once in Python bridge; Swift forwards batches from recorder |
+| Process | Separate Node.js process | In-process Swift task |
+| IPC | SQLite job queue + socket to Python bridge | None (async/await) |
+| Model lifecycle | Load/unload per batch | Load once, stays in memory |
 | Concurrency guard | `process_locks` table + PID checks | None needed (single process) |
-| Language | TypeScript | Swift + Python bridge helper |
-| Dependencies | Node runtime, Python bridge | Python `mlx_bridge.py` + Swift port/adapter |
-| Startup | Slow (launchd spawn, new process) | Swift starts immediately and connects to Python bridge |
-| Memory | ~200MB Node + ~1.5GB Python bridge | Same Python bridge (~1.5GB) with lightweight Swift coordinator |
+| Language | TypeScript | Swift |
+| Dependencies | Node runtime, Python bridge | mlx-swift-lm (SPM) |
+| Startup | Slow (launchd spawn, new process) | Instant (same process) |
+| Memory | ~200MB Node + ~1.5GB Python bridge | ~1.3GB VLM only (17% less) |
 
 ---
-
-### 7.17 Addendum: Phase 2 Actual Implementation (2026-03-16)
-
-- The recorder now keeps the trusted Python mlx-vlm bridge (`scripts/mlx_bridge.py`) instead of introducing `mlx-swift-lm`. `recorder install` copies the script into `~/.escribano/scripts/` so the LaunchAgent can launch it. `PythonBridge.vlm.adapter.swift` resolves the interpreter (respecting `ESCRIBANO_PYTHON_PATH`, then `~/.escribano/venv/bin/python3`, then `python3`) and manages `/tmp/escribano-recorder-vlm.sock` with the same JSON RPC messages that `intelligence.mlx.adapter.ts` uses.
-- `VLMInferenceService.port.swift` defines `VLMRequest`, `VLMResponse`, and the port protocol. `FrameAnalyzer.swift` (renamed from `VLMAnalyzer.swift`) implements the loop, claims frames, and delegates inference to the adapter rather than hosting the model. Single-frame prompts now reuse the batch format, matching the Python bridge.
-- `Prompts.swift` centralizes prompt construction so both the bridge and the analyzer reuse the exact same text without duplicating strings. `ResponseParser.swift` continues to parse the interleaved `Frame N:` lines.
-- The new architecture keeps the benefits ADR-010 sought — structured parser, port/adapter layering, single process capture loop — while restoring the proven performance (170-190 tok/s) of the Python bridge. The only new dependency is the Python bridge runtime, not `mlx-swift-lm`.

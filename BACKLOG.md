@@ -72,17 +72,14 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [x] Multi-display capture — extend Phase 1 to capture all displays with `display_id`
 - **Phase 1 complete (2026-03-13)**
 
-#### Phase 2: Swift VLM Analyzer (~2-3 days) — ADR-010
-- [ ] Add `mlx-swift-lm` dependency to `apps/recorder/Package.swift`
-- [ ] Create `VLMAnalyzer.swift` — async task that polls frames, claims batch, runs VLM, writes observations
-- [ ] Create `ResponseParser.swift` — parse "Frame N: description: X | activity: Y | apps: Z | topics: W" format (ported from `intelligence.mlx.adapter.ts`)
-- [ ] Create `ObservationStore.swift` (port) + `SQLiteObservationStore.swift` (adapter) — decoupled DB access
-- [ ] Enhance `VLMRunner.swift` from POC — integrate with `ResponseParser`, support pre-loaded model container
-- [ ] Update migration `015_observations_frame_fk.sql` — remove `process_locks` table (not needed for in-process VLM)
-- [ ] Update `main.swift` — spawn both capture + VLM analyzer tasks concurrently
-- [ ] Add VLM model lifecycle — load once at startup, keep in memory, release at shutdown
-- [ ] Update config docs: `ESCRIBANO_ANALYZE_BATCH_SIZE`, `ESCRIBANO_VLM_MODEL`
-- [ ] **Ref**: `docs/adr/010-swift-native-visual-intelligence.md` + `docs/tdd/001-swift-capture-agent.md` Phase 2
+#### Phase 2: Python Bridge VLM (Complete 2026-03-16)
+- ✅ Removed the abandoned `mlx-swift-lm` dependency; recorder now talks to a Python bridge over a Unix socket
+- ✅ Added `VLMInferenceService.port.swift` + `PythonBridge.vlm.adapter.swift` so `FrameAnalyzer` can call any backend via the port interface
+- ✅ Created `Prompts.swift` + `ResponseParser.swift` for NDJSON responses, plus `ObservationStore`/`FrameStore` ports + SQLite adapters
+- ✅ Renamed `VLMAnalyzer.swift` to `FrameAnalyzer.swift`, wired it through `main.swift`, and added the recorder settings in `apps/recorder/Package.swift`
+- ✅ Deployed schema migration `015_observations_frame_fk.sql` (frames → observations FK) and backpressure fixes in `StreamCapture.swift`/`Backpressure.swift`
+- ✅ Python bridge installs `setproctitle` (shows as `escribano-bridge-vlm` in `ps`) and uses `ESCRIBANO_BRIDGE_PATH`/`ESCRIBANO_PYTHON_PATH` overrides for dev flows
+- ✅ 1,043 recorder frames with `frame_id` links (Mar 13‑16) power live summaries now; new `pnpm recorder:monitor` script watches recorder + bridge CPU/memory usage
 
 #### Release Prerequisite: Apple Developer ID Signing
 - [ ] **Sign `escribano` binary with Apple Developer ID certificate** — stable Team ID signature survives rebuilds for all users

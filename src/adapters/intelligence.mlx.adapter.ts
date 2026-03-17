@@ -15,10 +15,11 @@
  * See docs/adr/006-mlx-vlm-adapter.md for full design.
  */
 
-import { type ChildProcess, spawn } from 'node:child_process';
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { createConnection, type Socket } from 'node:net';
-import { dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 
@@ -330,6 +331,7 @@ export function createMlxIntelligenceService(
   process.on('SIGTERM', cleanup);
   process.on('SIGINT', cleanup);
   process.on('beforeExit', cleanup);
+  process.on('exit', cleanup);
 
   const startBridge = async (
     bridgeState: BridgeState,
@@ -339,6 +341,19 @@ export function createMlxIntelligenceService(
     if (bridgeState.process && bridgeState.ready) return;
 
     debugLog(`Starting ${mode.toUpperCase()} bridge...`);
+    const staleSocket =
+      mode === 'vlm' ? getVlmSocketPath() : getLlmSocketPath();
+    if (existsSync(staleSocket)) {
+      debugLog(`Cleanup: removing stale socket ${staleSocket}`);
+      spawnSync('pkill', ['-f', `mlx_bridge.py.*--mode.*${mode}`], {
+        encoding: 'utf8',
+      });
+      try {
+        unlinkSync(staleSocket);
+      } catch {
+        // best effort
+      }
+    }
     const pythonPath = await resolvePythonPath();
     debugLog(`Using Python: ${pythonPath}`);
 
@@ -346,6 +361,12 @@ export function createMlxIntelligenceService(
       const env: Record<string, string> = {
         ...process.env,
         ESCRIBANO_MLX_SOCKET_PATH: mlxConfig.socketPath,
+        ESCRIBANO_MLX_LOG_FILE: join(
+          homedir(),
+          '.escribano',
+          'logs',
+          `mlx-bridge-${mode}.log`
+        ),
       } as Record<string, string>;
 
       if (mode === 'vlm') {
@@ -398,9 +419,8 @@ export function createMlxIntelligenceService(
         }
       });
 
-      bridgeState.process.stderr.on('data', (data: Buffer) => {
-        const text = data.toString().trim();
-        if (text) console.log(text);
+      bridgeState.process.stderr.on('data', () => {
+        // Intentionally silent; logs go to ESCRIBANO_MLX_LOG_FILE.
       });
 
       bridgeState.process.on('exit', (code, signal) => {

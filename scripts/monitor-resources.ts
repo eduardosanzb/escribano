@@ -140,7 +140,7 @@ function isRecorder(command: string): boolean {
 }
 
 function isBridge(command: string): boolean {
-  return /mlx_bridge\.py|escribano-bridge/i.test(command);
+  return /mlx_bridge\.py|escribano-bridge|audio_preprocessor\.py/i.test(command);
 }
 
 type Row = {
@@ -197,7 +197,10 @@ function gatherRows(): Row[] {
     ...findPids(RECORDER_PATTERN_DEV),
     ...findPids(RECORDER_PATTERN_INSTALLED),
   ];
-  const bridgePids = findPids(BRIDGE_PATTERN);
+  const bridgePids = [
+    ...findPids(BRIDGE_PATTERN),
+    ...findPids('audio_preprocessor.py'),
+  ];
   const samples = sampleProcesses([...recorderPids, ...bridgePids]);
   const rows: Row[] = [];
   for (const sample of samples) {
@@ -205,11 +208,16 @@ function gatherRows(): Row[] {
       rows.push(buildRow('recorder (Swift)', sample));
     }
   }
-  let bridgeIndex = 1;
   for (const sample of samples) {
     if (isBridge(sample.command)) {
-      rows.push(buildRow(`bridge-vlm #${bridgeIndex}`, sample));
-      bridgeIndex += 1;
+      const label = sample.command.includes('--mode llm')
+        ? 'bridge-llm (Python)'
+        : sample.command.includes('--mode vlm')
+          ? 'bridge-vlm (Python)'
+          : sample.command.includes('audio_preprocessor')
+            ? 'audio-preprocessor'
+            : 'python-bridge';
+      rows.push(buildRow(label, sample));
     }
   }
   return rows;

@@ -40,32 +40,29 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func start() async {
-        // Permission check: wait for Screen Recording permission before proceeding.
-        // This is necessary because every swift build creates a new CDHash,
-        // so TCC forgets the permission each time during development.
-        let hasPermission = CGPreflightScreenCaptureAccess()
-        log("[escribano-recorder] Screen Recording permission: \(hasPermission)")
-        if !hasPermission {
-            log("[escribano-recorder] Screen Recording permission not granted")
-            log("[escribano-recorder] Requesting permission...")
-
-            // Trigger system dialog (only works from foreground process)
+        // Permission check: Screen Recording permission must be granted before capture can start.
+        //
+        // Why no polling loop: CGPreflightScreenCaptureAccess() never updates in the same
+        // running process after the user grants permission — macOS only reflects TCC changes
+        // on the next process launch. Polling with try? Task.sleep is also dangerous because
+        // discarding CancellationError with try? turns a cancelled task into a CPU spin loop.
+        //
+        // Instead: request the dialog, log clear instructions, exit cleanly (code 0).
+        // With KeepAlive=true + ThrottleInterval=30 in the LaunchAgent plist, launchd will
+        // restart us every 30s. When the user grants permission, the next restart succeeds.
+        if !CGPreflightScreenCaptureAccess() {
+            log("[escribano-recorder] Screen Recording permission not granted.")
+            // Trigger the system permission dialog. This returns immediately (non-blocking).
             CGRequestScreenCaptureAccess()
-
-            // Poll until permission is granted
-            var attempts = 0
-            while !CGPreflightScreenCaptureAccess() {
-                attempts += 1
-                if attempts % 10 == 0 {
-                    log("[escribano-recorder] Still waiting for permission... (grant in System Settings > Privacy & Security > Screen Recording)")
-                }
-                try? await Task.sleep(for: .seconds(1))
-                if attempts > 30 {
-                fatalError("[escribano-recorder] Aborting: couldn't get Screen Recording permission in a reasonable amount of time")
-              }
-            }
-            log("[escribano-recorder] Permission granted! Starting capture...")
+            log("[escribano-recorder] Permission dialog shown.")
+            log("[escribano-recorder] Grant permission in: System Settings > Privacy & Security > Screen Recording")
+            log("[escribano-recorder] The recorder will restart automatically (every 30s) until permission is granted.")
+            // Exit cleanly (code 0). The LaunchAgent ThrottleInterval=30 prevents a restart
+            // loop: launchd will retry in 30 seconds, by which time the user may have granted.
+            NSApp.terminate(nil)
+            return
         }
+        log("[escribano-recorder] Screen Recording permission: granted")
 
         let dbPath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".escribano/escribano.db").path
@@ -155,13 +152,23 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        Task { @MainActor in
-            for cap in captures {
-                await cap.stop()
-            }
-            analyzerTask?.cancel()
-            await obsStore?.close()
-        }
+        log("[escribano-recorder] applicationWillTerminate — cleaning up")
+        // Cancel the analyzer task synchronously so the cancellation flag is set
+        // immediately. The analyzeLoop() will call vlmService.stop() when it handles
+        // CancellationError, but we can't await that here.
+        analyzerTask?.cancel()
+
+        // Kill the Python bridge process directly. Child processes are NOT automatically
+        // killed when the parent exits on macOS — they become orphaned. We pkill by the
+        // socket path env var so we only kill our own bridge, not any other mlx_bridge.py.
+        let bridgeSocketEnv = ProcessInfo.processInfo.environment["ESCRIBANO_MLX_RECORDER_SOCKET"]
+            ?? "/tmp/escribano-recorder-vlm.sock"
+        let pkill = Process()
+        pkill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        pkill.arguments = ["-f", bridgeSocketEnv]
+        try? pkill.run()
+        pkill.waitUntilExit()
+
         store?.close()
     }
 }

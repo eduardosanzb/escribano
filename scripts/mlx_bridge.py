@@ -73,6 +73,7 @@ config = None
 llm_model = None
 llm_tokenizer = None
 llm_loaded_model_name = None
+server_socket = None
 LOG_DEST: TextIO | None = None
 
 

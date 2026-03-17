@@ -89,6 +89,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
 
         let bp = Backpressure(store: store, highWater: highWater, lowWater: lowWater)
         self.backpressure = bp
+        bp.performInitialCheck()
 
         let content: SCShareableContent
         do {
@@ -115,6 +116,13 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             }
         }
         self.captures = captures
+
+        bp.onPause = { [weak self] in
+            self?.captures.forEach { $0.pause() }
+        }
+        bp.onResume = { [weak self] in
+            self?.captures.forEach { $0.resume() }
+        }
 
         // 1. Open a second SQLite connection for observation writes (WAL allows concurrent access)
         let obsStore: any ObservationStore

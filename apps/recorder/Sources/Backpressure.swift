@@ -23,6 +23,7 @@ final class Backpressure {
     private var lastLoggedPending: Int?
     private var lastLogDate: Date?
     private let logThrottleInterval: TimeInterval = 60
+    var currentlyPaused: Bool { isPaused }
 
     // Closures for external handlers (like StreamCapture.pause/resume)
     var onPause:  (() -> Void)?
@@ -83,6 +84,16 @@ final class Backpressure {
     private func stopResumeTimer() {
         resumeTimer?.invalidate()
         resumeTimer = nil
+    }
+
+    func performInitialCheck() {
+        let pending = (try? store.pendingFrameCount()) ?? 0
+        log("[Backpressure] Initial check: \(pending) pending frames (high-water: \(highWater))")
+        if pending >= highWater {
+            isPaused = true
+            log("[Backpressure] Starting paused (\(pending) >= \(highWater))")
+            startResumeTimer()
+        }
     }
 
     private func logPendingCount(_ pending: Int) {

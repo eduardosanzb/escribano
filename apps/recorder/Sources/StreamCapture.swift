@@ -42,6 +42,7 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         self.pHashThreshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "") ?? 4
         
         super.init()
+        self.isPaused = backpressure.currentlyPaused
 
         let config = SCStreamConfiguration()
         config.width                = display.width  / 2   

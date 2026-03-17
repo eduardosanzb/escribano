@@ -86,10 +86,12 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: pythonPath)
         proc.arguments    = [bridgePath, "--mode", "vlm"]
-        proc.environment  = buildEnv()
+        let env = buildEnv()
+        log("[PythonBridge] Log file: \(env["ESCRIBANO_MLX_LOG_FILE"] ?? "(none)")")
+        proc.environment  = env
         let stdoutPipe = Pipe()
         proc.standardOutput = stdoutPipe
-        proc.standardError = Pipe()
+        proc.standardError = FileHandle.standardError
         try proc.run()
         self.process = proc
         log("[PythonBridge] Python PID: \(proc.processIdentifier)")
@@ -135,6 +137,13 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         process = nil
         isStarted = false
         try? FileManager.default.removeItem(atPath: socketPath)
+    }
+
+    func restart() async throws {
+        log("[PythonBridge] Restarting bridge...")
+        await stop()
+        try await start()
+        log("[PythonBridge] Restart complete.")
     }
     private func buildEnv() -> [String: String] {
         var env = ProcessInfo.processInfo.environment

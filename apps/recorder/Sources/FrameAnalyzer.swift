@@ -26,10 +26,11 @@ actor FrameAnalyzer {
     private let vlmService: any VLMInferenceService
     private let batchSize:    Int
     private let pollInterval: Double
+    private var consecutiveCrashes: Int = 0
     init(obsStore: any ObservationStore, vlmService: any VLMInferenceService) {
         self.obsStore    = obsStore
         self.vlmService  = vlmService
-        self.batchSize   = Int(ProcessInfo.processInfo.environment["ESCRIBANO_ANALYZE_BATCH_SIZE"] ?? "") ?? 5
+        self.batchSize   = Int(ProcessInfo.processInfo.environment["ESCRIBANO_ANALYZE_BATCH_SIZE"] ?? "") ?? 2
         self.pollInterval = 10.0
     }
     /// Start the VLM backend. Blocks until the Python process is ready and the model is loaded.
@@ -55,19 +56,13 @@ actor FrameAnalyzer {
                 }
                 log("[FrameAnalyzer] Analyzing \(frames.count) frames...")
                 let t0 = Date()
-                let descriptions: [FrameDescription]
-                do {
-                    descriptions = try await vlmService.runBatch(frames: frames)
-                } catch {
-                    log("[FrameAnalyzer] VLM inference error: \(error.localizedDescription)")
-                    for frame in frames {
-                        try? await obsStore.markFrameFailed(id: frame.id)
-                    }
+                guard let descriptions = await runWithRestart(frames: frames) else {
                     try? await Task.sleep(for: .seconds(pollInterval))
                     continue
                 }
                 let elapsed = String(format: "%.1f", Date().timeIntervalSince(t0))
                 log("[FrameAnalyzer] Batch complete: \(descriptions.count)/\(frames.count) parsed in \(elapsed)s")
+                consecutiveCrashes = 0
                 do {
                     try await obsStore.saveObservations(from: frames, descriptions: descriptions)
                 } catch {
@@ -98,5 +93,58 @@ actor FrameAnalyzer {
         }
         log("[FrameAnalyzer] Loop exited.")
         await vlmService.stop()
+    }
+
+    private func runWithRestart(frames: [DbFrame]) async -> [FrameDescription]? {
+        do {
+            return try await vlmService.runBatch(frames: frames)
+        } catch {
+            let errorDescription = error.localizedDescription
+            log("[FrameAnalyzer] VLM inference error: \(errorDescription)")
+            let isBridgeFailure: Bool
+            if let bridgeError = error as? PythonBridgeError {
+                switch bridgeError {
+                case .bridgeDied, .inferenceTimeout, .notStarted, .socketError:
+                    isBridgeFailure = true
+                default:
+                    isBridgeFailure = false
+                }
+            } else {
+                isBridgeFailure = false
+            }
+
+            if !isBridgeFailure {
+                for frame in frames {
+                    try? await obsStore.markFrameFailed(id: frame.id)
+                }
+                return nil
+            }
+
+            consecutiveCrashes += 1
+            let delay = min(pow(2.0, Double(consecutiveCrashes - 1)), 60.0)
+            log("[FrameAnalyzer] Bridge failure #\(consecutiveCrashes). Restarting after \(Int(delay))s backoff...")
+            try? await Task.sleep(for: .seconds(delay))
+
+            do {
+                try await vlmService.restart()
+            } catch {
+                log("[FrameAnalyzer] Bridge restart failed: \(error.localizedDescription)")
+                for frame in frames {
+                    try? await obsStore.markFrameFailed(id: frame.id)
+                }
+                return nil
+            }
+
+            log("[FrameAnalyzer] Bridge restarted. Retrying \(frames.count) frames...")
+            do {
+                return try await vlmService.runBatch(frames: frames)
+            } catch {
+                log("[FrameAnalyzer] Retry after restart failed: \(error.localizedDescription)")
+                for frame in frames {
+                    try? await obsStore.markFrameFailed(id: frame.id)
+                }
+                return nil
+            }
+        }
     }
 }

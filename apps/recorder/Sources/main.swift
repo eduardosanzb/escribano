@@ -22,14 +22,14 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     /// Called by NSApplication when the app has finished launching.
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGTERM) { _ in
-            print("[escribano-recorder] SIGTERM — shutting down")
             DispatchQueue.main.async {
+                log("[escribano-recorder] SIGTERM — shutting down")
                 NSApp.terminate(nil)
             }
         }
         signal(SIGINT) { _ in
-            print("[escribano-recorder] SIGINT — shutting down")
             DispatchQueue.main.async {
+                log("[escribano-recorder] SIGINT — shutting down")
                 NSApp.terminate(nil)
             }
         }
@@ -43,10 +43,11 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         // Permission check: wait for Screen Recording permission before proceeding.
         // This is necessary because every swift build creates a new CDHash,
         // so TCC forgets the permission each time during development.
-        log(CGPreflightScreenCaptureAccess())
-        if !CGPreflightScreenCaptureAccess() {
-            print("[escribano-recorder] Screen Recording permission not granted")
-            print("[escribano-recorder] Requesting permission...")
+        let hasPermission = CGPreflightScreenCaptureAccess()
+        log("[escribano-recorder] Screen Recording permission: \(hasPermission)")
+        if !hasPermission {
+            log("[escribano-recorder] Screen Recording permission not granted")
+            log("[escribano-recorder] Requesting permission...")
 
             // Trigger system dialog (only works from foreground process)
             CGRequestScreenCaptureAccess()

@@ -10,5 +10,5 @@ private let logDateFormatter: DateFormatter = {
 
 func log(_ message: String) {
   let timestamp = logDateFormatter.string(from: Date())
-  log("\(timestamp) \(message)")
+  print("\(timestamp) \(message)")
 }

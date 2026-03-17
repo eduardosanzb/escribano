@@ -18,6 +18,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var obsStore: (any ObservationStore)?
     private var analyzer: FrameAnalyzer?
     private var analyzerTask: Task<Void, Never>?
+    private var vlmAdapter: PythonBridgeVLMAdapter?
 
     /// Called by NSApplication when the app has finished launching.
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -123,8 +124,10 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         }
         self.obsStore = obsStore
         // 2. Create the VLM adapter (Python bridge) and inject it into FrameAnalyzer.
-        //    This wires the port (VLMInferenceService) to its concrete adapter.
+        //    Also store a direct reference so applicationWillTerminate can call
+        //    terminateSync() without needing an async context.
         let vlmService = PythonBridgeVLMAdapter()
+        self.vlmAdapter = vlmService
         let analyzer = FrameAnalyzer(obsStore: obsStore, vlmService: vlmService)
         self.analyzer = analyzer
         // 3. Start the analyzer in a background Task. start() blocks until the Python
@@ -153,22 +156,13 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         log("[escribano-recorder] applicationWillTerminate — cleaning up")
-        // Cancel the analyzer task synchronously so the cancellation flag is set
-        // immediately. The analyzeLoop() will call vlmService.stop() when it handles
-        // CancellationError, but we can't await that here.
+        // Cancel the analyzer task synchronously so the cancellation flag is set immediately.
         analyzerTask?.cancel()
-
-        // Kill the Python bridge process directly. Child processes are NOT automatically
-        // killed when the parent exits on macOS — they become orphaned. We pkill by the
-        // socket path env var so we only kill our own bridge, not any other mlx_bridge.py.
-        let bridgeSocketEnv = ProcessInfo.processInfo.environment["ESCRIBANO_MLX_RECORDER_SOCKET"]
-            ?? "/tmp/escribano-recorder-vlm.sock"
-        let pkill = Process()
-        pkill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        pkill.arguments = ["-f", bridgeSocketEnv]
-        try? pkill.run()
-        pkill.waitUntilExit()
-
+        // Kill the Python bridge via its stored PID. Child processes are NOT automatically
+        // killed when the parent exits on macOS — they become orphaned.
+        // terminateSync() uses kill(pid, SIGTERM) directly, which is reliable regardless
+        // of how the bridge was launched or what env vars it has.
+        vlmAdapter?.terminateSync()
         store?.close()
     }
 }

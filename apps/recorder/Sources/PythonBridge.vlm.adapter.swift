@@ -38,6 +38,11 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
     private var fileHandle:   FileHandle?
     private var requestId:    Int = 0
     private var isStarted:    Bool = false
+    // PID stored nonisolated so applicationWillTerminate can kill the bridge
+    // synchronously without an async context. nonisolated(unsafe) is safe here
+    // because storedPID is only written once (in start()) before any concurrent
+    // reads, and reads in terminateSync() are always after that write.
+    nonisolated(unsafe) private var storedPID: Int32 = 0
     // MARK: - Init
     init() {
         self.socketPath = ProcessInfo.processInfo.environment["ESCRIBANO_MLX_RECORDER_SOCKET"]
@@ -92,6 +97,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         proc.standardError = Pipe()
         try proc.run()
         self.process = proc
+        self.storedPID = proc.processIdentifier
         log("[PythonBridge] Python PID: \(proc.processIdentifier)")
         try await waitForReady(stdout: stdoutPipe)
         try connectSocket()
@@ -136,6 +142,14 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         isStarted = false
         try? FileManager.default.removeItem(atPath: socketPath)
     }
+    /// Synchronous bridge kill for use in applicationWillTerminate where async is not available.
+    /// Sends SIGTERM directly to the stored PID — reliable regardless of socket path or env vars.
+    nonisolated func terminateSync() {
+        let pid = storedPID
+        guard pid > 0 else { return }
+        kill(pid, SIGTERM)
+        log("[PythonBridge] terminateSync: sent SIGTERM to PID \(pid)")
+    }
     private func buildEnv() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         env["ESCRIBANO_VLM_MODEL"]      = modelId
@@ -149,10 +163,22 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
     }
     private func waitForReady(stdout: Pipe) async throws {
         log("[PythonBridge] Waiting for model load (may take 30-120s on first run)...")
-        let deadline = Date().addingTimeInterval(180)
         try await withCheckedThrowingContinuation { continuation in
             let buffer = LineBuffer()
             let resumed = ResumeFlag()
+            // Arm an independent timer BEFORE reading stdout so the 180s timeout fires
+            // unconditionally — even if the Python process hangs silently and produces
+            // no output (the old Date-check-inside-readabilityHandler never fired then).
+            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
+            timer.schedule(deadline: .now() + 180)
+            timer.setEventHandler {
+                guard resumed.trySet() else { return }
+                stdout.fileHandleForReading.readabilityHandler = nil
+                timer.cancel()
+                log("[PythonBridge] Startup timed out after 180s waiting for 'ready' signal")
+                continuation.resume(throwing: PythonBridgeError.startupTimeout)
+            }
+            timer.resume()
             stdout.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
@@ -166,17 +192,12 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let status = json["status"] as? String,
                        status == "ready" {
-                        guard !resumed.value else { return }
-                        resumed.value = true
+                        guard resumed.trySet() else { return }
                         stdout.fileHandleForReading.readabilityHandler = nil
+                        timer.cancel()
                         continuation.resume(returning: ())
                         return
                     }
-                }
-                if Date() > deadline && !resumed.value {
-                    resumed.value = true
-                    stdout.fileHandleForReading.readabilityHandler = nil
-                    continuation.resume(throwing: PythonBridgeError.startupTimeout)
                 }
             }
         }
@@ -230,8 +251,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
             let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
             timer.schedule(deadline: .now() + inferenceTimeout)
             timer.setEventHandler { [weak fh] in
-                guard let handle = fh, !resumed.value else { return }
-                resumed.value = true
+                guard let handle = fh, resumed.trySet() else { return }
                 handle.readabilityHandler = nil
                 log("[PythonBridge] Inference timed out after \(Int(self.inferenceTimeout))s")
                 timer.cancel()
@@ -241,8 +261,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
             fh.readabilityHandler = { handle in
                 let data = handle.availableData
                 if data.isEmpty {
-                    guard !resumed.value else { return }
-                    resumed.value = true
+                    guard resumed.trySet() else { return }
                     handle.readabilityHandler = nil
                     continuation.resume(throwing: PythonBridgeError.bridgeDied)
                     return
@@ -256,8 +275,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                       let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
                 else { continue }
                 if let error = json["error"] as? String {
-                    guard !resumed.value else { return }
-                    resumed.value = true
+                    guard resumed.trySet() else { return }
                     handle.readabilityHandler = nil
                     timer.cancel()
                     continuation.resume(throwing: PythonBridgeError.inferenceError(error))
@@ -265,8 +283,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                 }
                 if let done = json["done"] as? Bool, done {
                     let text = json["text"] as? String ?? ""
-                    guard !resumed.value else { return }
-                    resumed.value = true
+                    guard resumed.trySet() else { return }
                     handle.readabilityHandler = nil
                     timer.cancel()
                     continuation.resume(returning: text)
@@ -305,6 +322,23 @@ private final class LineBuffer: @unchecked Sendable {
     var text: String = ""
 }
 
+/// Thread-safe one-shot flag used to ensure a continuation is resumed exactly once.
+///
+/// Both the DispatchSourceTimer and the FileHandle.readabilityHandler run on different
+/// dispatch queues and race to resume the same continuation. NSLock makes the
+/// false→true transition atomic so only one caller wins, preventing the fatal
+/// "Cannot resume a continuation twice" crash.
 private final class ResumeFlag: @unchecked Sendable {
-    var value: Bool = false
+    private let lock = NSLock()
+    private var _value: Bool = false
+
+    /// Atomically transitions false → true. Returns true only for the first caller;
+    /// subsequent callers get false and must not resume the continuation.
+    func trySet() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !_value else { return false }
+        _value = true
+        return true
+    }
 }

@@ -378,7 +378,7 @@ The config file (`~/.escribano/.env`) is organized by category with inline comme
 | **Recorder** | pHash threshold, debug logging, backpressure watermarks |
 | **Advanced** | Socket path, timeouts, Python path |
 
-Environment variables always take priority over the config file. For full reference, see [AGENTS.md](AGENTS.md#configuration).
+Environment variables always take priority over the config file. For full reference, see [CLAUDE.md](CLAUDE.md#configuration).
 
 ---
 

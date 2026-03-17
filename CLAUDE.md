@@ -1,4 +1,4 @@
-# AGENTS.md - Escribano
+# CLAUDE.md - Escribano
 
 ## Project Overview
 

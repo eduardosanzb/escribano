@@ -29,11 +29,11 @@ CREATE TABLE observations_new (
 -- 2. Copy data from the old table to the new one
 INSERT INTO observations_new (
   id, recording_id, type, timestamp, end_timestamp, image_path, ocr_text, 
-  vlm_description, vlm_raw_response, activity_type, text, audio_source, audio_type, embedding, created_at
+  vlm_description, text, audio_source, audio_type, embedding, created_at
 )
 SELECT 
   id, recording_id, type, timestamp, end_timestamp, image_path, ocr_text, 
-  vlm_description, vlm_raw_response, activity_type, text, audio_source, audio_type, embedding, created_at
+  vlm_description, text, audio_source, audio_type, embedding, created_at
 FROM observations;
 
 -- 3. Drop the old table and rename the new one

@@ -1,6 +1,0 @@
-# SwiftPM build artifacts
-.build/
-
-# Xcode user-specific data (regenerated per developer, differs per machine)
-.swiftpm/xcode/xcuserdata/
-.swiftpm/xcode/package.xcworkspace/xcuserdata/

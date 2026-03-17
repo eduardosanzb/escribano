@@ -12,7 +12,6 @@ import pkg from '../package.json' with { type: 'json' };
 import type { CaptureSource } from './0_types.js';
 import {
   recorderInstall,
-  recorderRestart,
   recorderStatus,
 } from './actions/recorder-commands.js';
 import { createCapCaptureSource } from './adapters/capture.cap.adapter.js';
@@ -138,8 +137,7 @@ interface ParsedArgs {
   copyToClipboard: boolean;
   printToStdout: boolean;
   recorder: boolean;
-  recorderSubcommand: 'install' | 'status' | 'restart' | null;
-  recorderFollow: boolean;
+  recorderSubcommand: 'install' | 'status' | null;
 }
 
 function main(): void {
@@ -181,22 +179,13 @@ function main(): void {
       return;
     }
     if (args.recorderSubcommand === 'status') {
-      recorderStatus(args.recorderFollow).catch((error) => {
+      recorderStatus().catch((error) => {
         console.error('Error:', (error as Error).message);
         process.exit(1);
       });
       return;
     }
-    if (args.recorderSubcommand === 'restart') {
-      recorderRestart().catch((error) => {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      });
-      return;
-    }
-    console.error(
-      'Usage: escribano recorder <install|status|restart> [--follow for status]'
-    );
+    console.error('Usage: escribano recorder <install|status>');
     process.exit(1);
     return;
   }
@@ -276,10 +265,7 @@ function parseArgs(argsArray: string[]): ParsedArgs {
         ? 'install'
         : argsArray[1] === 'status'
           ? 'status'
-          : argsArray[1] === 'restart'
-            ? 'restart'
-            : null,
-    recorderFollow: argsArray.includes('--follow'),
+          : null,
   };
 }
 
@@ -294,8 +280,6 @@ Usage:
   npx escribano config --path             Show config file path
   npx escribano recorder install         Build and install Fotógrafo capture agent
   npx escribano recorder status          Show agent status, pending frames, disk usage
-  npx escribano recorder status --follow Tail recorder logs
-  npx escribano recorder restart         Restart the Fotógrafo capture agent
   npx escribano --file <path>             Process video from filesystem
   npx escribano --latest <dir>            Process latest video in directory
   npx escribano --file <path> --mic-audio <wav>   Use external mic audio

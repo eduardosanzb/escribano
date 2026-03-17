@@ -22,7 +22,7 @@ final class SQLiteFrameStore: FrameStore {
 
     // Must match the version set by migration 014_recorder_frames.sql
     // and updated by src/db/migrate.ts after each migration.
-    static let expectedSchemaVersion: Int32 = 15
+    static let expectedSchemaVersion: Int32 = 14
 
     // MARK: - Initialization
 

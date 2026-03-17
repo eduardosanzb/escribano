@@ -1,16 +1,15 @@
 /**
  * Recorder CLI Commands
  *
- * recorder install — install pre-built escribano binary, register LaunchAgent plist
+ * recorder install — build escribano binary, install LaunchAgent plist
  * recorder status  — show agent state, pending frames, disk usage
  */
 
-import { execSync, spawn } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -19,11 +18,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import { ensureDb } from '../db/index.js';
-import { rotateIfNeeded } from '../utils/log-rotation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = path.resolve(path.dirname(__filename), '..', '..');
-const BUNDLED_BINARY = path.join(PACKAGE_ROOT, 'bin', 'recorder-macos-arm64');
+const RECORDER_DIR = path.join(PACKAGE_ROOT, 'apps', 'recorder');
+const BINARY_SRC = path.join(RECORDER_DIR, '.build', 'release', 'escribano');
 const BIN_DIR = path.join(homedir(), '.escribano', 'bin');
 const BINARY_DEST = path.join(BIN_DIR, 'escribano');
 const PLIST_LABEL = 'com.escribano.capture';
@@ -36,72 +35,73 @@ const PLIST_PATH = path.join(
 const LOGS_DIR = path.join(homedir(), '.escribano', 'logs');
 const FRAMES_DIR = path.join(homedir(), '.escribano', 'frames');
 const DB_PATH = path.join(homedir(), '.escribano', 'escribano.db');
-const BRIDGE_SRC = path.join(PACKAGE_ROOT, 'scripts', 'mlx_bridge.py');
-const SCRIPTS_DIR = path.join(homedir(), '.escribano', 'scripts');
-const BRIDGE_DEST = path.join(SCRIPTS_DIR, 'mlx_bridge.py');
-const DEFAULT_RECORDER_SOCKET_PATH = '/tmp/escribano-recorder-vlm.sock';
-const RECORDER_SOCKET_PATH =
-  process.env.ESCRIBANO_MLX_RECORDER_SOCKET ?? DEFAULT_RECORDER_SOCKET_PATH;
-const RECORDER_MLX_LOG = path.join(LOGS_DIR, 'mlx-bridge-recorder-vlm.log');
-
-function rotateRecorderLogs(): void {
-  rotateIfNeeded(path.join(LOGS_DIR, 'escribano-recorder.log'));
-  rotateIfNeeded(path.join(LOGS_DIR, 'escribano-recorder.error.log'));
-  rotateIfNeeded(RECORDER_MLX_LOG);
-}
 
 // ── install ──────────────────────────────────────────────────────────────────
 
 export async function recorderInstall(): Promise<void> {
-  // 1. Check for pre-built binary bundled with the npm package.
-  //    Build it first with: pnpm build:recorder
-  if (!existsSync(BUNDLED_BINARY)) {
-    console.error(`Error: pre-built recorder binary not found at ${BUNDLED_BINARY}`);
-    console.error('Build it first: pnpm build:recorder');
-    console.error('(This compiles the Swift binary and signs it with your Developer certificate.)');
+  // 1. Check Swift toolchain
+  const swiftCheck = spawnSync('swift', ['--version'], { encoding: 'utf8' });
+  if (swiftCheck.error || swiftCheck.status !== 0) {
+    console.error('Error: Swift toolchain not found.');
+    console.error('Install Xcode Command Line Tools: xcode-select --install');
     process.exit(1);
   }
 
-  // 2. Run Node.js DB migrations (ensures user_version is current)
+  // 2. Check apps/recorder/ exists (requires cloned repo for MVP)
+  if (!existsSync(RECORDER_DIR)) {
+    console.error(`Error: apps/recorder/ not found at ${RECORDER_DIR}`);
+    console.error(
+      'recorder install requires the Escribano repo to be cloned locally.'
+    );
+    process.exit(1);
+  }
+
+  // 3. Run Node.js DB migrations (ensures user_version is current)
   console.log('Initializing database and running migrations...');
   ensureDb();
   console.log('Database ready.');
 
-  // 3. Copy binary to ~/.escribano/bin/
+  // 4. Build Swift binary
+  console.log(
+    'Compiling escribano-recorder (this may take a minute on first build)...'
+  );
+  const build = spawnSync('swift', ['build', '-c', 'release'], {
+    cwd: RECORDER_DIR,
+    stdio: 'inherit',
+    encoding: 'utf8',
+  });
+  if (build.status !== 0) {
+    console.error('Error: Swift build failed.');
+    process.exit(1);
+  }
+
+  if (!existsSync(BINARY_SRC)) {
+    console.error(`Error: Binary not found at ${BINARY_SRC} after build.`);
+    process.exit(1);
+  }
+
+  // 5. Copy binary to ~/.escribano/bin/
   mkdirSync(BIN_DIR, { recursive: true });
-  execSync(`cp -f "${BUNDLED_BINARY}" "${BINARY_DEST}"`);
+  execSync(`cp -f "${BINARY_SRC}" "${BINARY_DEST}"`);
   execSync(`chmod +x "${BINARY_DEST}"`);
   console.log(`Binary installed: ${BINARY_DEST}`);
 
-  // 4. Copy mlx_bridge.py for the Python VLM bridge
-  copyBridgeScript();
-
-  // 5. Rotate logs and generate LaunchAgent plist
+  // 6. Generate LaunchAgent plist
   mkdirSync(LOGS_DIR, { recursive: true });
-  rotateRecorderLogs();
   mkdirSync(path.dirname(PLIST_PATH), { recursive: true });
   const plist = generatePlist(BINARY_DEST);
   writeFileSync(PLIST_PATH, plist, 'utf8');
   console.log(`Plist written: ${PLIST_PATH}`);
 
-  // 6. Unload existing agent if present (ignore errors)
+  // 7. Unload existing agent if present (ignore errors)
   try {
     execSync(`launchctl unload "${PLIST_PATH}" 2>/dev/null`);
   } catch {}
 
-  // 7. Load LaunchAgent
+  // 8. Load LaunchAgent
   execSync(`launchctl load "${PLIST_PATH}"`);
   console.log(`LaunchAgent loaded: ${PLIST_LABEL}`);
-  console.log('');
-  console.log('escribano-recorder installed successfully!');
-  console.log('');
-  console.log('NEXT STEP — Grant Screen Recording permission:');
-  console.log('  1. Open: System Settings > Privacy & Security > Screen Recording');
-  console.log(`  2. Enable: ${BINARY_DEST}`);
-  console.log('');
-  console.log('The recorder will retry automatically every 30 seconds.');
-  console.log('Once permission is granted it will start capturing within 30s.');
-  console.log(`Logs: ${LOGS_DIR}/escribano-recorder.log`);
+  console.log('escribano-recorder is now running and will start on login.');
 }
 
 function generatePlist(binaryPath: string): string {
@@ -109,15 +109,8 @@ function generatePlist(binaryPath: string): string {
   const stderr = path.join(LOGS_DIR, 'escribano-recorder.error.log');
 
   // Collect Escribano environment variables to inject into the LaunchAgent
-  const envMap: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (key.startsWith('ESCRIBANO_') && value !== undefined) {
-      envMap[key] = value;
-    }
-  }
-  envMap['ESCRIBANO_MLX_LOG_FILE'] = RECORDER_MLX_LOG;
-
-  const envVars = Object.entries(envMap)
+  const envVars = Object.entries(process.env)
+    .filter(([key]) => key.startsWith('ESCRIBANO_'))
     .map(
       ([key, value]) =>
         `        <key>${key}</key>\n        <string>${value}</string>`
@@ -142,8 +135,6 @@ ${envVars}
     <true/>
     <key>KeepAlive</key>
     <true/>
-    <key>ThrottleInterval</key>
-    <integer>30</integer>
     <key>StandardOutPath</key>
     <string>${stdout}</string>
     <key>StandardErrorPath</key>
@@ -153,20 +144,9 @@ ${envVars}
 `;
 }
 
-function copyBridgeScript(): void {
-  if (!existsSync(BRIDGE_SRC)) {
-    console.error(`Error: mlx_bridge.py not found at ${BRIDGE_SRC}`);
-    process.exit(1);
-  }
-  mkdirSync(SCRIPTS_DIR, { recursive: true });
-  execSync(`cp -f "${BRIDGE_SRC}" "${BRIDGE_DEST}"`);
-  execSync(`chmod +x "${BRIDGE_DEST}"`);
-  console.log(`Bridge script copied: ${BRIDGE_DEST}`);
-}
-
 // ── status ───────────────────────────────────────────────────────────────────
 
-export async function recorderStatus(follow = false): Promise<void> {
+export async function recorderStatus(): Promise<void> {
   // LaunchAgent plist
   const plistInstalled = existsSync(PLIST_PATH);
   console.log(
@@ -191,6 +171,7 @@ export async function recorderStatus(follow = false): Promise<void> {
   } catch {
     console.log('Agent status      : stopped');
   }
+
   // Pending frames from DB
   if (existsSync(DB_PATH)) {
     try {
@@ -210,72 +191,19 @@ export async function recorderStatus(follow = false): Promise<void> {
     console.log(`Pending frames    : (DB not found at ${DB_PATH})`);
   }
 
-  // Bridge socket & logs
-  if (existsSync(RECORDER_SOCKET_PATH)) {
-    console.log(`VLM bridge socket : alive (${RECORDER_SOCKET_PATH})`);
-  } else {
-    console.log(`VLM bridge socket : missing (${RECORDER_SOCKET_PATH})`);
-  }
-
-  const logFile = path.join(LOGS_DIR, 'escribano-recorder.log');
-  if (existsSync(logFile)) {
+  // Disk usage of frames directory
+  if (existsSync(FRAMES_DIR)) {
     try {
-      const content = readFileSync(logFile, 'utf8').trim().split('\n');
-      const tail = content.slice(-20);
-      console.log('Recent logs:');
-      for (const line of tail) {
-        console.log(`  ${line}`);
-      }
-    } catch (error) {
-      console.log(`Recent logs       : (error reading ${logFile})`);
+      const bytes = dirSizeBytes(FRAMES_DIR);
+      console.log(
+        `Frames disk usage : ${(bytes / 1024 / 1024).toFixed(1)} MB  (${FRAMES_DIR})`
+      );
+    } catch {
+      console.log(`Frames disk usage : (error reading ${FRAMES_DIR})`);
     }
   } else {
-    console.log('Recent logs       : (no log file yet)');
+    console.log('Frames disk usage : 0 MB (no frames yet)');
   }
-
-  if (follow) {
-    const errorLogFile = path.join(LOGS_DIR, 'escribano-recorder.error.log');
-    console.log('\nFollowing logs (Ctrl+C to stop):\n');
-    const filesToTail = [logFile];
-    if (existsSync(errorLogFile)) {
-      filesToTail.push(errorLogFile);
-    }
-    if (existsSync(RECORDER_MLX_LOG)) {
-      filesToTail.push(RECORDER_MLX_LOG);
-    }
-    const tail = spawn('tail', ['-f', ...filesToTail], { stdio: 'inherit' });
-    tail.on('exit', () => process.exit(0));
-    await new Promise(() => {});
-  }
-}
-
-export async function recorderRestart(): Promise<void> {
-  if (!existsSync(PLIST_PATH)) {
-    console.error('Recorder not installed. Run: escribano recorder install');
-    process.exit(1);
-  }
-
-  console.log('Stopping recorder...');
-  try {
-    execSync(`launchctl unload "${PLIST_PATH}"`);
-  } catch (error) {
-    console.warn(
-      'Warning: unable to unload LaunchAgent (it may not be running)'
-    );
-  }
-
-  // Wait for the process to exit cleanly, then force-kill any stragglers.
-  // 1.5s is not enough when the process is mid-inference or waiting for backpressure.
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-  try {
-    execSync(`pkill -KILL -f "${BINARY_DEST}" 2>/dev/null`);
-  } catch {} // ignore: process already gone
-  await new Promise((resolve) => setTimeout(resolve, 500));
-
-  rotateRecorderLogs();
-  console.log('Starting recorder...');
-  execSync(`launchctl load "${PLIST_PATH}"`);
-  console.log('Recorder restarted. Run `escribano recorder status` to verify.');
 }
 
 function dirSizeBytes(dir: string): number {

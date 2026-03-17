@@ -19,7 +19,6 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private var prevPHash:    UInt64? = nil
     private var frameCounter: Int     = 0
-    private var isPaused: Bool        = false
     
     // Rolling stats
     private var framesSeen:    Int = 0
@@ -55,25 +54,29 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         try stream?.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
         try await stream?.startCapture()
 
-        log("[StreamCapture] Started — display \(displayID), \(display.width/2)x\(display.height/2)")
+        print("[StreamCapture] Started — display \(displayID), \(display.width/2)x\(display.height/2)")
         if debugPHash {
-            log("[pHash] Verbose logging ENABLED")
+            print("[pHash] Verbose logging ENABLED")
         }
     }
 
     func stop() async {
         try? await stream?.stopCapture()
-        log("[StreamCapture] Stopped.")
+        print("[StreamCapture] Stopped.")
     }
 
     func pause() {
-        isPaused = true
-        log("[StreamCapture] Paused.")
+        Task { @MainActor in
+            try? await self.stream?.stopCapture()
+            print("[StreamCapture] Paused.")
+        }
     }
 
     func resume() {
-        isPaused = false
-        log("[StreamCapture] Resumed.")
+        Task { @MainActor in
+            try? await self.stream?.startCapture()
+            print("[StreamCapture] Resumed.")
+        }
     }
 
     // MARK: — SCStreamOutput
@@ -101,14 +104,13 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
 
     nonisolated func stream(_ stream: SCStream, didStopWithError error: any Error) {
         MainActor.assumeIsolated {
-            log("[StreamCapture] Stream error: \(error.localizedDescription)")
+            print("[StreamCapture] Stream error: \(error.localizedDescription)")
         }
     }
 
     // MARK: — Frame processing
 
     private func processFrame(_ pixelBuffer: CVPixelBuffer) {
-        guard !isPaused else { return }
         framesSeen += 1
         
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
@@ -120,14 +122,14 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         
         if debugPHash {
             let status = isDuplicate ? "SKIP" : "KEEP"
-            log("[pHash] frame=\(framesSeen) hamming=\(hamming) status=\(status) threshold=\(pHashThreshold)")
+            print("[pHash] frame=\(framesSeen) hamming=\(hamming) status=\(status) threshold=\(pHashThreshold)")
         }
         
         // Rolling stats every 100 frames seen
         if framesSeen % 100 == 0 {
             let kept = framesSeen - framesSkipped
             let skipPct = (Double(framesSkipped) / Double(framesSeen)) * 100.0
-            log(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept — last hamming=%d threshold=%d", 
+            print(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept — last hamming=%d threshold=%d", 
                 framesSeen, framesSkipped, skipPct, kept, hamming, pHashThreshold))
         }
 
@@ -152,7 +154,7 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
             try FileManager.default.createDirectory(at: dayDir, withIntermediateDirectories: true)
             saveJPEG(cgImage, to: fileURL)
         } catch {
-            log("[StreamCapture] Filesystem error: \(error.localizedDescription)")
+            print("[StreamCapture] Filesystem error: \(error.localizedDescription)")
             return
         }
 
@@ -173,7 +175,7 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         do {
             try store.insertFrame(metadata)
         } catch {
-            log("[StreamCapture] Store insert failed: \(error.localizedDescription)")
+            print("[StreamCapture] Store insert failed: \(error.localizedDescription)")
             try? FileManager.default.removeItem(at: fileURL)  
             return
         }
@@ -182,7 +184,7 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         backpressure.onFrameCaptured()
 
         if frameCounter % 100 == 0 {
-            log("[StreamCapture] \(frameCounter) frames stored in DB")
+            print("[StreamCapture] \(frameCounter) frames stored in DB")
         }
     }
 

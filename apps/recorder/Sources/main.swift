@@ -47,10 +47,10 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         if !CGPreflightScreenCaptureAccess() {
             print("[escribano-recorder] Screen Recording permission not granted")
             print("[escribano-recorder] Requesting permission...")
-            
+
             // Trigger system dialog (only works from foreground process)
             CGRequestScreenCaptureAccess()
-            
+
             // Poll until permission is granted
             var attempts = 0
             while !CGPreflightScreenCaptureAccess() {

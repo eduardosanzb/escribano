@@ -43,7 +43,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         // Permission check: wait for Screen Recording permission before proceeding.
         // This is necessary because every swift build creates a new CDHash,
         // so TCC forgets the permission each time during development.
-        print(CGPreflightScreenCaptureAccess())
+        log(CGPreflightScreenCaptureAccess())
         if !CGPreflightScreenCaptureAccess() {
             print("[escribano-recorder] Screen Recording permission not granted")
             print("[escribano-recorder] Requesting permission...")
@@ -56,14 +56,14 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             while !CGPreflightScreenCaptureAccess() {
                 attempts += 1
                 if attempts % 10 == 0 {
-                    print("[escribano-recorder] Still waiting for permission... (grant in System Settings > Privacy & Security > Screen Recording)")
+                    log("[escribano-recorder] Still waiting for permission... (grant in System Settings > Privacy & Security > Screen Recording)")
                 }
                 try? await Task.sleep(for: .seconds(1))
                 if attempts > 30 {
                 fatalError("[escribano-recorder] Aborting: couldn't get Screen Recording permission in a reasonable amount of time")
               }
             }
-            print("[escribano-recorder] Permission granted! Starting capture...")
+            log("[escribano-recorder] Permission granted! Starting capture...")
         }
 
         let dbPath = FileManager.default.homeDirectoryForCurrentUser
@@ -74,14 +74,14 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
 
         let store: any FrameStore
         do {
-            print("[escribano-recorder] Opening database at \(dbPath)")
+            log("[escribano-recorder] Opening database at \(dbPath)")
             store = try SQLiteFrameStore(path: dbPath)
-            print("[escribano-recorder] Database ready")
+            log("[escribano-recorder] Database ready")
         } catch FrameStoreError.schemaMismatch(let current, let expected) {
-            print("[escribano-recorder] ERROR: Database schema out of date (version \(current), expected \(expected)). Run 'escribano recorder install' from Node.js.")
+            log("[escribano-recorder] ERROR: Database schema out of date (version \(current), expected \(expected)). Run 'escribano recorder install' from Node.js.")
             exit(1)
         } catch {
-            print("[escribano-recorder] ERROR: Cannot open database at \(dbPath): \(error.localizedDescription)")
+            log("[escribano-recorder] ERROR: Cannot open database at \(dbPath): \(error.localizedDescription)")
             exit(1)
         }
         self.store = store
@@ -93,16 +93,16 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         do {
             content = try await SCShareableContent.current
         } catch {
-            print("[escribano-recorder] ERROR: ScreenCaptureKit unavailable: \(error.localizedDescription)")
+            log("[escribano-recorder] ERROR: ScreenCaptureKit unavailable: \(error.localizedDescription)")
             exit(1)
         }
 
         if content.displays.isEmpty {
-            print("[escribano-recorder] ERROR: No displays found")
+            log("[escribano-recorder] ERROR: No displays found")
             exit(1)
         }
 
-        print("[escribano-recorder] Found \(content.displays.count) display(s). Starting capture for ALL.")
+        log("[escribano-recorder] Found \(content.displays.count) display(s). Starting capture for ALL.")
 
         var captures: [StreamCapture] = []
         for display in content.displays {
@@ -110,7 +110,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
                 let cap = try await StreamCapture(display: display, store: store, backpressure: bp)
                 captures.append(cap)
             } catch {
-                print("[escribano-recorder] ERROR: Failed to start capture for display \(display.displayID): \(error.localizedDescription)")
+                log("[escribano-recorder] ERROR: Failed to start capture for display \(display.displayID): \(error.localizedDescription)")
             }
         }
         self.captures = captures
@@ -120,7 +120,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         do {
             obsStore = try SQLiteObservationStore(path: dbPath)
         } catch {
-            print("[escribano-recorder] ERROR: Cannot open observation store: \(error.localizedDescription)")
+            log("[escribano-recorder] ERROR: Cannot open observation store: \(error.localizedDescription)")
             exit(1)
         }
         self.obsStore = obsStore
@@ -135,12 +135,12 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             do {
                 try await analyzer.start()
             } catch {
-                print("[FrameAnalyzer] Failed to start: \(error.localizedDescription)")
+                log("[FrameAnalyzer] Failed to start: \(error.localizedDescription)")
                 return
             }
             await analyzer.analyzeLoop()
         }
-        print("[escribano-recorder] VLM analyzer task started.")
+        log("[escribano-recorder] VLM analyzer task started.")
 
         bp.onPause = { [weak self] in
             self?.captures.forEach { $0.pause() }
@@ -150,7 +150,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         }
 
         let threshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "4") ?? 4
-        print("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold)")
+        log("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold)")
     }
 
     func applicationWillTerminate(_ notification: Notification) {

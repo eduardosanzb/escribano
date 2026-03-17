@@ -19,6 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import { ensureDb } from '../db/index.js';
+import { rotateIfNeeded } from '../utils/log-rotation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = path.resolve(path.dirname(__filename), '..', '..');
@@ -42,6 +43,13 @@ const BRIDGE_DEST = path.join(SCRIPTS_DIR, 'mlx_bridge.py');
 const DEFAULT_RECORDER_SOCKET_PATH = '/tmp/escribano-recorder-vlm.sock';
 const RECORDER_SOCKET_PATH =
   process.env.ESCRIBANO_MLX_RECORDER_SOCKET ?? DEFAULT_RECORDER_SOCKET_PATH;
+const RECORDER_MLX_LOG = path.join(LOGS_DIR, 'mlx-bridge-recorder-vlm.log');
+
+function rotateRecorderLogs(): void {
+  rotateIfNeeded(path.join(LOGS_DIR, 'escribano-recorder.log'));
+  rotateIfNeeded(path.join(LOGS_DIR, 'escribano-recorder.error.log'));
+  rotateIfNeeded(RECORDER_MLX_LOG);
+}
 
 // ── install ──────────────────────────────────────────────────────────────────
 
@@ -100,8 +108,9 @@ export async function recorderInstall(): Promise<void> {
   // 6. Copy mlx_bridge.py for the Python VLM bridge
   copyBridgeScript();
 
-  // 7. Generate LaunchAgent plist
+  // 7. Rotate logs and generate LaunchAgent plist
   mkdirSync(LOGS_DIR, { recursive: true });
+  rotateRecorderLogs();
   mkdirSync(path.dirname(PLIST_PATH), { recursive: true });
   const plist = generatePlist(BINARY_DEST);
   writeFileSync(PLIST_PATH, plist, 'utf8');
@@ -123,8 +132,15 @@ function generatePlist(binaryPath: string): string {
   const stderr = path.join(LOGS_DIR, 'escribano-recorder.error.log');
 
   // Collect Escribano environment variables to inject into the LaunchAgent
-  const envVars = Object.entries(process.env)
-    .filter(([key]) => key.startsWith('ESCRIBANO_'))
+  const envMap: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith('ESCRIBANO_') && value !== undefined) {
+      envMap[key] = value;
+    }
+  }
+  envMap['ESCRIBANO_MLX_LOG_FILE'] = RECORDER_MLX_LOG;
+
+  const envVars = Object.entries(envMap)
     .map(
       ([key, value]) =>
         `        <key>${key}</key>\n        <string>${value}</string>`
@@ -245,6 +261,9 @@ export async function recorderStatus(follow = false): Promise<void> {
     if (existsSync(errorLogFile)) {
       filesToTail.push(errorLogFile);
     }
+    if (existsSync(RECORDER_MLX_LOG)) {
+      filesToTail.push(RECORDER_MLX_LOG);
+    }
     const tail = spawn('tail', ['-f', ...filesToTail], { stdio: 'inherit' });
     tail.on('exit', () => process.exit(0));
     await new Promise(() => {});
@@ -268,6 +287,7 @@ export async function recorderRestart(): Promise<void> {
 
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
+  rotateRecorderLogs();
   console.log('Starting recorder...');
   execSync(`launchctl load "${PLIST_PATH}"`);
   console.log('Recorder restarted. Run `escribano recorder status` to verify.');

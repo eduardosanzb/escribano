@@ -1,4 +1,5 @@
 import Foundation
+import Dispatch
 // MARK: - PythonBridgeVLMAdapter
 //
 // Adapter that implements VLMInferenceService by spawning mlx_bridge.py as a
@@ -26,11 +27,12 @@ import Foundation
 //   calls from racing on the socket write/read state.
 actor PythonBridgeVLMAdapter: VLMInferenceService {
     // MARK: - Configuration
-    private let socketPath:   String  // e.g. /tmp/escribano-recorder-vlm.sock
-    private let bridgePath:   String  // absolute path to mlx_bridge.py
-    private let pythonPath:   String  // python3 executable to use
-    private let modelId:      String  // e.g. mlx-community/Qwen3-VL-2B-Instruct-4bit
-    private let maxTokens:    Int     // token budget per batch
+    private let socketPath:     String  // e.g. /tmp/escribano-recorder-vlm.sock
+    private let bridgePath:     String  // absolute path to mlx_bridge.py
+    private let pythonPath:     String  // python3 executable to use
+    private let modelId:        String  // e.g. mlx-community/Qwen3-VL-2B-Instruct-4bit
+    private let maxTokens:      Int     // token budget per batch
+    private let inferenceTimeout: TimeInterval
     // MARK: - Mutable state (protected by actor isolation)
     private var process:      Process?
     private var fileHandle:   FileHandle?
@@ -65,13 +67,19 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         self.modelId = ProcessInfo.processInfo.environment["ESCRIBANO_VLM_MODEL"]
             ?? "mlx-community/Qwen3-VL-2B-Instruct-4bit"
         self.maxTokens = Int(ProcessInfo.processInfo.environment["ESCRIBANO_VLM_MAX_TOKENS"] ?? "") ?? 2000
+        if let timeoutString = ProcessInfo.processInfo.environment["ESCRIBANO_VLM_TIMEOUT"],
+           let parsed = Double(timeoutString) {
+            self.inferenceTimeout = parsed
+        } else {
+            self.inferenceTimeout = 180.0
+        }
     }
     func start() async throws {
         guard !isStarted else { return }
-        print("[PythonBridge] Starting mlx_bridge.py (VLM mode)...")
-        print("[PythonBridge] Python: \(pythonPath)")
-        print("[PythonBridge] Bridge: \(bridgePath)")
-        print("[PythonBridge] Model: \(modelId)")
+        log("[PythonBridge] Starting mlx_bridge.py (VLM mode)...")
+        log("[PythonBridge] Python: \(pythonPath)")
+        log("[PythonBridge] Bridge: \(bridgePath)")
+        log("[PythonBridge] Model: \(modelId)")
         if FileManager.default.fileExists(atPath: socketPath) {
             try? FileManager.default.removeItem(atPath: socketPath)
         }
@@ -81,14 +89,14 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         proc.environment  = buildEnv()
         let stdoutPipe = Pipe()
         proc.standardOutput = stdoutPipe
-        proc.standardError = FileHandle.standardError
+        proc.standardError = Pipe()
         try proc.run()
         self.process = proc
-        print("[PythonBridge] Python PID: \(proc.processIdentifier)")
+        log("[PythonBridge] Python PID: \(proc.processIdentifier)")
         try await waitForReady(stdout: stdoutPipe)
         try connectSocket()
         isStarted = true
-        print("[PythonBridge] Ready. Socket connected at \(socketPath)")
+        log("[PythonBridge] Ready. Socket connected at \(socketPath)")
     }
     func runBatch(frames: [DbFrame]) async throws -> [FrameDescription] {
         guard isStarted else {
@@ -116,11 +124,11 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         ]
         let rawText = try await sendAndReceive(request: request)
         let descriptions = ResponseParser.parseInterleavedOutput(rawText)
-        print("[PythonBridge] Parsed \(descriptions.count)/\(frames.count) frame descriptions")
+        log("[PythonBridge] Parsed \(descriptions.count)/\(frames.count) frame descriptions")
         return descriptions
     }
     func stop() async {
-        print("[PythonBridge] Shutting down...")
+        log("[PythonBridge] Shutting down...")
         fileHandle?.closeFile()
         fileHandle = nil
         process?.terminate()
@@ -135,10 +143,12 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         env["ESCRIBANO_MLX_SOCKET_PATH"] = socketPath.replacingOccurrences(
             of: "-vlm.sock", with: ".sock"
         )
+        let home = ProcessInfo.processInfo.environment["HOME"] ?? "/tmp"
+        env["ESCRIBANO_MLX_LOG_FILE"] = home + "/.escribano/logs/mlx-bridge-recorder-vlm.log"
         return env
     }
     private func waitForReady(stdout: Pipe) async throws {
-        print("[PythonBridge] Waiting for model load (may take 30-120s on first run)...")
+        log("[PythonBridge] Waiting for model load (may take 30-120s on first run)...")
         let deadline = Date().addingTimeInterval(180)
         try await withCheckedThrowingContinuation { continuation in
             let buffer = LineBuffer()
@@ -194,7 +204,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                 connected = true
                 break
             }
-            print("[PythonBridge] Socket connect attempt \(attempt)/5 failed (errno=\(errno)), retrying...")
+            log("[PythonBridge] Socket connect attempt \(attempt)/5 failed (errno=\(errno)), retrying...")
             Thread.sleep(forTimeInterval: 0.5)
         }
         guard connected else {
@@ -202,7 +212,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
             throw PythonBridgeError.socketError("connect() failed after 5 attempts")
         }
         self.fileHandle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-        print("[PythonBridge] Socket connected (fd=\(fd))")
+        log("[PythonBridge] Socket connected (fd=\(fd))")
     }
     private func sendAndReceive(request: [String: Any]) async throws -> String {
         guard let fh = fileHandle else {
@@ -217,6 +227,17 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         return try await withCheckedThrowingContinuation { continuation in
             let buffer = LineBuffer()
             let resumed = ResumeFlag()
+            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
+            timer.schedule(deadline: .now() + inferenceTimeout)
+            timer.setEventHandler { [weak fh] in
+                guard let handle = fh, !resumed.value else { return }
+                resumed.value = true
+                handle.readabilityHandler = nil
+                log("[PythonBridge] Inference timed out after \(Int(self.inferenceTimeout))s")
+                timer.cancel()
+                continuation.resume(throwing: PythonBridgeError.inferenceTimeout(self.inferenceTimeout))
+            }
+            timer.resume()
             fh.readabilityHandler = { handle in
                 let data = handle.availableData
                 if data.isEmpty {
@@ -226,32 +247,34 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                     continuation.resume(throwing: PythonBridgeError.bridgeDied)
                     return
                 }
-                buffer.text += String(data: data, encoding: .utf8) ?? ""
-                while let newlineRange = buffer.text.range(of: "\n") {
-                    let line = String(buffer.text[..<newlineRange.lowerBound])
-                    buffer.text.removeSubrange(..<newlineRange.upperBound)
-                    guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
-                    guard let jsonData = line.data(using: .utf8),
-                          let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
-                    else { continue }
-                    if let error = json["error"] as? String {
-                        guard !resumed.value else { return }
-                        resumed.value = true
-                        handle.readabilityHandler = nil
-                        continuation.resume(throwing: PythonBridgeError.inferenceError(error))
-                        return
-                    }
-                    if let done = json["done"] as? Bool, done {
-                        let text = json["text"] as? String ?? ""
-                        guard !resumed.value else { return }
-                        resumed.value = true
-                        handle.readabilityHandler = nil
-                        continuation.resume(returning: text)
-                        return
-                    }
+            buffer.text += String(data: data, encoding: .utf8) ?? ""
+            while let newlineRange = buffer.text.range(of: "\n") {
+                let line = String(buffer.text[..<newlineRange.lowerBound])
+                buffer.text.removeSubrange(..<newlineRange.upperBound)
+                guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+                guard let jsonData = line.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
+                else { continue }
+                if let error = json["error"] as? String {
+                    guard !resumed.value else { return }
+                    resumed.value = true
+                    handle.readabilityHandler = nil
+                    timer.cancel()
+                    continuation.resume(throwing: PythonBridgeError.inferenceError(error))
+                    return
+                }
+                if let done = json["done"] as? Bool, done {
+                    let text = json["text"] as? String ?? ""
+                    guard !resumed.value else { return }
+                    resumed.value = true
+                    handle.readabilityHandler = nil
+                    timer.cancel()
+                    continuation.resume(returning: text)
+                    return
                 }
             }
         }
+    }
     }
 }
 // MARK: - PythonBridgeError
@@ -262,6 +285,7 @@ enum PythonBridgeError: Error, LocalizedError {
     case socketError(String)
     case serializationFailed
     case inferenceError(String)
+    case inferenceTimeout(TimeInterval)
     var errorDescription: String? {
         switch self {
         case .notStarted:              return "PythonBridge not started — call start() first"
@@ -270,6 +294,7 @@ enum PythonBridgeError: Error, LocalizedError {
         case .socketError(let m):      return "Unix socket error: \(m)"
         case .serializationFailed:     return "Failed to serialize request to JSON"
         case .inferenceError(let m):   return "VLM inference error from Python: \(m)"
+        case .inferenceTimeout(let t): return "VLM inference timed out after \(Int(t))s"
         }
     }
 }

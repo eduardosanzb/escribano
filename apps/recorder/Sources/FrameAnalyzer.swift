@@ -34,18 +34,18 @@ actor FrameAnalyzer {
     }
     /// Start the VLM backend. Blocks until the Python process is ready and the model is loaded.
     func start() async throws {
-        print("[FrameAnalyzer] Starting VLM service...")
+        log("[FrameAnalyzer] Starting VLM service...")
         do {
             try await vlmService.start()
         } catch {
             throw FrameAnalyzerError.startFailed(error.localizedDescription)
         }
-        print("[FrameAnalyzer] VLM service ready. Batch size: \(batchSize)")
+        log("[FrameAnalyzer] VLM service ready. Batch size: \(batchSize)")
     }
     /// Main analysis loop. Polls for unanalyzed frames, runs VLM, writes results.
     /// Runs until Task is cancelled (SIGTERM triggers cancellation in main.swift).
     func analyzeLoop() async {
-        print("[FrameAnalyzer] Starting analysis loop. Poll interval: \(pollInterval)s")
+        log("[FrameAnalyzer] Starting analysis loop. Poll interval: \(pollInterval)s")
         while !Task.isCancelled {
             do {
                 let frames = try await obsStore.claimFrames(batchSize: batchSize)
@@ -53,13 +53,13 @@ actor FrameAnalyzer {
                     try await Task.sleep(for: .seconds(pollInterval))
                     continue
                 }
-                print("[FrameAnalyzer] Analyzing \(frames.count) frames...")
+                log("[FrameAnalyzer] Analyzing \(frames.count) frames...")
                 let t0 = Date()
                 let descriptions: [FrameDescription]
                 do {
                     descriptions = try await vlmService.runBatch(frames: frames)
                 } catch {
-                    print("[FrameAnalyzer] VLM inference error: \(error.localizedDescription)")
+                    log("[FrameAnalyzer] VLM inference error: \(error.localizedDescription)")
                     for frame in frames {
                         try? await obsStore.markFrameFailed(id: frame.id)
                     }
@@ -67,7 +67,7 @@ actor FrameAnalyzer {
                     continue
                 }
                 let elapsed = String(format: "%.1f", Date().timeIntervalSince(t0))
-                print("[FrameAnalyzer] Batch complete: \(descriptions.count)/\(frames.count) parsed in \(elapsed)s")
+                log("[FrameAnalyzer] Batch complete: \(descriptions.count)/\(frames.count) parsed in \(elapsed)s")
                 do {
                     try await obsStore.saveObservations(from: frames, descriptions: descriptions)
                 } catch {
@@ -80,11 +80,11 @@ actor FrameAnalyzer {
                 do {
                     try await obsStore.markFramesAnalyzed(ids: analyzedIds)
                 } catch {
-                    print("[FrameAnalyzer] Failed to mark frames analyzed: \(error.localizedDescription)")
+                    log("[FrameAnalyzer] Failed to mark frames analyzed: \(error.localizedDescription)")
                 }
                 if descriptions.count < frames.count {
                     let failedFrames = Array(frames.dropFirst(analyzedCount))
-                    print("[FrameAnalyzer] \(failedFrames.count) frames unparsed — marking for retry")
+                    log("[FrameAnalyzer] \(failedFrames.count) frames unparsed — marking for retry")
                     for frame in failedFrames {
                         try? await obsStore.markFrameFailed(id: frame.id)
                     }
@@ -92,11 +92,11 @@ actor FrameAnalyzer {
             } catch is CancellationError {
                 break
             } catch {
-                print("[FrameAnalyzer] Unexpected error: \(error.localizedDescription)")
+                log("[FrameAnalyzer] Unexpected error: \(error.localizedDescription)")
                 try? await Task.sleep(for: .seconds(pollInterval))
             }
         }
-        print("[FrameAnalyzer] Loop exited.")
+        log("[FrameAnalyzer] Loop exited.")
         await vlmService.stop()
     }
 }

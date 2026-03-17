@@ -20,6 +20,9 @@ final class Backpressure {
     private var isPaused = false
     private var frameCounter = 0
     private var resumeTimer: Timer?
+    private var lastLoggedPending: Int?
+    private var lastLogDate: Date?
+    private let logThrottleInterval: TimeInterval = 60
 
     // Closures for external handlers (like StreamCapture.pause/resume)
     var onPause:  (() -> Void)?
@@ -50,19 +53,19 @@ final class Backpressure {
     private func check() {
         // Query storage for total unanalyzed frames.
         let pending = (try? store.pendingFrameCount()) ?? 0
-        print("[Backpressure] Checked, \(pending) pending frames.")
+        logPendingCount(pending)
 
         // High-water trigger: stop capturing to avoid disk/memory buildup.
         if !isPaused && pending >= highWater {
             isPaused = true
-            print("[Backpressure] High-water reached (\(pending) pending). Pausing capture.")
+            log("[Backpressure] High-water reached (\(pending) pending). Pausing capture.")
             onPause?()
             startResumeTimer()
         } 
         // Low-water trigger: resume only after unanalyzed frames are cleared.
         else if isPaused && pending <= lowWater {
             isPaused = false
-            print("[Backpressure] Low-water reached (\(pending) pending). Resuming capture.")
+            log("[Backpressure] Low-water reached (\(pending) pending). Resuming capture.")
             onResume?()
             stopResumeTimer()
         }
@@ -80,5 +83,17 @@ final class Backpressure {
     private func stopResumeTimer() {
         resumeTimer?.invalidate()
         resumeTimer = nil
+    }
+
+    private func logPendingCount(_ pending: Int) {
+        let now = Date()
+        if let last = lastLoggedPending, let lastDate = lastLogDate {
+            if pending == last && now.timeIntervalSince(lastDate) < logThrottleInterval {
+                return
+            }
+        }
+        log("[Backpressure] Checked, \(pending) pending frames.")
+        lastLoggedPending = pending
+        lastLogDate = now
     }
 }

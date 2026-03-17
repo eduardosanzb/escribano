@@ -18,7 +18,8 @@
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { createConnection, type Socket } from 'node:net';
-import { dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 
@@ -360,6 +361,12 @@ export function createMlxIntelligenceService(
       const env: Record<string, string> = {
         ...process.env,
         ESCRIBANO_MLX_SOCKET_PATH: mlxConfig.socketPath,
+        ESCRIBANO_MLX_LOG_FILE: join(
+          homedir(),
+          '.escribano',
+          'logs',
+          `mlx-bridge-${mode}.log`
+        ),
       } as Record<string, string>;
 
       if (mode === 'vlm') {
@@ -412,9 +419,8 @@ export function createMlxIntelligenceService(
         }
       });
 
-      bridgeState.process.stderr.on('data', (data: Buffer) => {
-        const text = data.toString().trim();
-        if (text) console.log(text);
+      bridgeState.process.stderr.on('data', () => {
+        // Intentionally silent; logs go to ESCRIBANO_MLX_LOG_FILE.
       });
 
       bridgeState.process.on('exit', (code, signal) => {

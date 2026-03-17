@@ -131,7 +131,7 @@ actor SQLiteObservationStore: ObservationStore {
         """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
-            print("[ObservationStore] markFrameFailed prepare error: \(String(cString: sqlite3_errmsg(handle)))")
+            log("[ObservationStore] markFrameFailed prepare error: \(String(cString: sqlite3_errmsg(handle)))")
             return
         }
         defer { sqlite3_finalize(stmt) }

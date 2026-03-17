@@ -3,7 +3,8 @@ import { spawnSync, execSync } from 'node:child_process';
 import process from 'node:process';
 
 const REFRESH_INTERVAL_MS = Number(process.env.RESOURCE_MONITOR_INTERVAL_MS ?? '2000');
-const RECORDER_PATTERN = 'recorder/.build/release/escribano';
+const RECORDER_PATTERN_DEV = 'recorder/.build/release/escribano';
+const RECORDER_PATTERN_INSTALLED = '.escribano/bin/escribano';
 const BRIDGE_PATTERN = 'mlx_bridge.py';
 const CLEAR = '\u001b[2J\u001b[0;0H';
 
@@ -132,7 +133,10 @@ function getMemoryInfo(): { text: string } | null {
 }
 
 function isRecorder(command: string): boolean {
-  return command.includes(RECORDER_PATTERN);
+  return (
+    command.includes(RECORDER_PATTERN_DEV) ||
+    command.includes(RECORDER_PATTERN_INSTALLED)
+  );
 }
 
 function isBridge(command: string): boolean {
@@ -189,7 +193,10 @@ function render(rows: Row[], memoryInfo: string | null): void {
 }
 
 function gatherRows(): Row[] {
-  const recorderPids = findPids(RECORDER_PATTERN);
+  const recorderPids = [
+    ...findPids(RECORDER_PATTERN_DEV),
+    ...findPids(RECORDER_PATTERN_INSTALLED),
+  ];
   const bridgePids = findPids(BRIDGE_PATTERN);
   const samples = sampleProcesses([...recorderPids, ...bridgePids]);
   const rows: Row[] = [];

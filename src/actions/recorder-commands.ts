@@ -5,11 +5,12 @@
  * recorder status  — show agent state, pending frames, disk usage
  */
 
-import { execSync, spawnSync } from 'node:child_process';
+import { execSync, spawn, spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -22,15 +23,7 @@ import { ensureDb } from '../db/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = path.resolve(path.dirname(__filename), '..', '..');
 const RECORDER_DIR = path.join(PACKAGE_ROOT, 'apps', 'recorder');
-const BINARY_SRC = path.join(
-  RECORDER_DIR,
-  '.build',
-  'xcode',
-  'Build',
-  'Products',
-  'Release',
-  'escribano'
-);
+const BINARY_SRC = path.join(RECORDER_DIR, '.build', 'release', 'escribano');
 const BIN_DIR = path.join(homedir(), '.escribano', 'bin');
 const BINARY_DEST = path.join(BIN_DIR, 'escribano');
 const PLIST_LABEL = 'com.escribano.capture';
@@ -46,20 +39,22 @@ const DB_PATH = path.join(homedir(), '.escribano', 'escribano.db');
 const BRIDGE_SRC = path.join(PACKAGE_ROOT, 'scripts', 'mlx_bridge.py');
 const SCRIPTS_DIR = path.join(homedir(), '.escribano', 'scripts');
 const BRIDGE_DEST = path.join(SCRIPTS_DIR, 'mlx_bridge.py');
+const DEFAULT_RECORDER_SOCKET_PATH = '/tmp/escribano-recorder-vlm.sock';
+const RECORDER_SOCKET_PATH =
+  process.env.ESCRIBANO_MLX_RECORDER_SOCKET ?? DEFAULT_RECORDER_SOCKET_PATH;
 
 // ── install ──────────────────────────────────────────────────────────────────
 
 export async function recorderInstall(): Promise<void> {
-  // 1. Check for full Xcode (xcodebuild required)
-  const xcodebuildCheck = spawnSync('xcodebuild', ['-version'], {
+  // 1. Check for the Swift CLI
+  const swiftCheck = spawnSync('swift', ['--version'], {
     encoding: 'utf8',
   });
-  if (xcodebuildCheck.error || xcodebuildCheck.status !== 0) {
-    console.error('Error: xcodebuild not found.');
+  if (swiftCheck.error || swiftCheck.status !== 0) {
+    console.error('Error: swift command not found.');
     console.error(
-      'Full Xcode is required — Command Line Tools alone cannot embed Metal shaders.'
+      'Install Xcode or the Swift toolchain (https://developer.apple.com/xcode/ or https://swift.org/download/)'
     );
-    console.error('Install Xcode from: https://developer.apple.com/xcode/');
     process.exit(1);
   }
 
@@ -79,22 +74,15 @@ export async function recorderInstall(): Promise<void> {
 
   // 4. Build Swift binary
   console.log(
-    'Compiling escribano-recorder with xcodebuild (first build downloads MLX and may take several minutes)...'
+    'Building escribano-recorder (first build downloads MLX and may take several minutes)...'
   );
   const build = spawnSync(
-    'xcodebuild',
-    [
-      '-scheme',
-      'escribano',
-      '-configuration',
-      'Release',
-      '-derivedDataPath',
-      '.build/xcode',
-    ],
+    'swift',
+    ['build', '--package-path', RECORDER_DIR, '-c', 'release'],
     { cwd: RECORDER_DIR, stdio: 'inherit', encoding: 'utf8' }
   );
   if (build.status !== 0) {
-    console.error('Error: xcodebuild failed. See output above.');
+    console.error('Error: build failed. See output above.');
     process.exit(1);
   }
 
@@ -183,7 +171,7 @@ function copyBridgeScript(): void {
 
 // ── status ───────────────────────────────────────────────────────────────────
 
-export async function recorderStatus(): Promise<void> {
+export async function recorderStatus(follow = false): Promise<void> {
   // LaunchAgent plist
   const plistInstalled = existsSync(PLIST_PATH);
   console.log(
@@ -208,7 +196,6 @@ export async function recorderStatus(): Promise<void> {
   } catch {
     console.log('Agent status      : stopped');
   }
-
   // Pending frames from DB
   if (existsSync(DB_PATH)) {
     try {
@@ -228,19 +215,62 @@ export async function recorderStatus(): Promise<void> {
     console.log(`Pending frames    : (DB not found at ${DB_PATH})`);
   }
 
-  // Disk usage of frames directory
-  if (existsSync(FRAMES_DIR)) {
+  // Bridge socket & logs
+  if (existsSync(RECORDER_SOCKET_PATH)) {
+    console.log(`VLM bridge socket : alive (${RECORDER_SOCKET_PATH})`);
+  } else {
+    console.log(`VLM bridge socket : missing (${RECORDER_SOCKET_PATH})`);
+  }
+
+  const logFile = path.join(LOGS_DIR, 'escribano-recorder.log');
+  if (existsSync(logFile)) {
     try {
-      const bytes = dirSizeBytes(FRAMES_DIR);
-      console.log(
-        `Frames disk usage : ${(bytes / 1024 / 1024).toFixed(1)} MB  (${FRAMES_DIR})`
-      );
-    } catch {
-      console.log(`Frames disk usage : (error reading ${FRAMES_DIR})`);
+      const content = readFileSync(logFile, 'utf8').trim().split('\n');
+      const tail = content.slice(-20);
+      console.log('Recent logs:');
+      for (const line of tail) {
+        console.log(`  ${line}`);
+      }
+    } catch (error) {
+      console.log(`Recent logs       : (error reading ${logFile})`);
     }
   } else {
-    console.log('Frames disk usage : 0 MB (no frames yet)');
+    console.log('Recent logs       : (no log file yet)');
   }
+
+  if (follow) {
+    const errorLogFile = path.join(LOGS_DIR, 'escribano-recorder.error.log');
+    console.log('\nFollowing logs (Ctrl+C to stop):\n');
+    const filesToTail = [logFile];
+    if (existsSync(errorLogFile)) {
+      filesToTail.push(errorLogFile);
+    }
+    const tail = spawn('tail', ['-f', ...filesToTail], { stdio: 'inherit' });
+    tail.on('exit', () => process.exit(0));
+    await new Promise(() => {});
+  }
+}
+
+export async function recorderRestart(): Promise<void> {
+  if (!existsSync(PLIST_PATH)) {
+    console.error('Recorder not installed. Run: escribano recorder install');
+    process.exit(1);
+  }
+
+  console.log('Stopping recorder...');
+  try {
+    execSync(`launchctl unload "${PLIST_PATH}"`);
+  } catch (error) {
+    console.warn(
+      'Warning: unable to unload LaunchAgent (it may not be running)'
+    );
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+
+  console.log('Starting recorder...');
+  execSync(`launchctl load "${PLIST_PATH}"`);
+  console.log('Recorder restarted. Run `escribano recorder status` to verify.');
 }
 
 function dirSizeBytes(dir: string): number {

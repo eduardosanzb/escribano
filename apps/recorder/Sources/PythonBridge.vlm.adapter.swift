@@ -163,7 +163,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
     }
     private func waitForReady(stdout: Pipe) async throws {
         log("[PythonBridge] Waiting for model load (may take 30-120s on first run)...")
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let buffer = LineBuffer()
             let resumed = ResumeFlag()
             // Arm an independent timer BEFORE reading stdout so the 180s timeout fires

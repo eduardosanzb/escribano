@@ -32,7 +32,7 @@ export const PYTHON_PACKAGES = {
    * ~2GB with 4-bit quantization
    */
   vlm: [
-    'mlx-vlm>=0.9.0', // Vision-language model
+    'mlx-vlm[torch]>=0.4.0', // Vision-language model (torch extra required for Qwen3-VL processor)
     'mlx>=0.14.0', // MLX inference framework
     'mlx-lm>=0.9.0', // LLM support in MLX (shared with LLM)
   ] as const,

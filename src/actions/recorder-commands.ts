@@ -1,16 +1,15 @@
 /**
  * Recorder CLI Commands
  *
- * recorder install — install pre-built escribano binary, register LaunchAgent plist
+ * recorder install — build escribano binary, install LaunchAgent plist
  * recorder status  — show agent state, pending frames, disk usage
  */
 
-import { execSync, spawn } from 'node:child_process';
+import { execSync, spawn, spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -19,11 +18,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import { ensureDb } from '../db/index.js';
-import { rotateIfNeeded } from '../utils/log-rotation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = path.resolve(path.dirname(__filename), '..', '..');
-const BUNDLED_BINARY = path.join(PACKAGE_ROOT, 'bin', 'recorder-macos-arm64');
+const RECORDER_DIR = path.join(PACKAGE_ROOT, 'apps', 'recorder');
+const BINARY_SRC = path.join(RECORDER_DIR, '.build', 'release', 'escribano');
 const BIN_DIR = path.join(homedir(), '.escribano', 'bin');
 const BINARY_DEST = path.join(BIN_DIR, 'escribano');
 const PLIST_LABEL = 'com.escribano.capture';
@@ -49,13 +48,6 @@ const BRIDGE_DEST = path.join(SCRIPTS_DIR, 'mlx_bridge.py');
 const DEFAULT_RECORDER_SOCKET_PATH = '/tmp/escribano-recorder-vlm.sock';
 const RECORDER_SOCKET_PATH =
   process.env.ESCRIBANO_MLX_RECORDER_SOCKET ?? DEFAULT_RECORDER_SOCKET_PATH;
-const RECORDER_MLX_LOG = path.join(LOGS_DIR, 'mlx-bridge-recorder-vlm.log');
-
-function rotateRecorderLogs(): void {
-  rotateIfNeeded(path.join(LOGS_DIR, 'escribano-recorder.log'));
-  rotateIfNeeded(path.join(LOGS_DIR, 'escribano-recorder.error.log'));
-  rotateIfNeeded(RECORDER_MLX_LOG);
-}
 
 // ── install ──────────────────────────────────────────────────────────────────
 
@@ -73,23 +65,50 @@ export async function recorderInstall(): Promise<void> {
     process.exit(1);
   }
 
-  // 2. Run Node.js DB migrations (ensures user_version is current)
+  // 2. Check apps/recorder/ exists (requires cloned repo for MVP)
+  if (!existsSync(RECORDER_DIR)) {
+    console.error(`Error: apps/recorder/ not found at ${RECORDER_DIR}`);
+    console.error(
+      'recorder install requires the Escribano repo to be cloned locally.'
+    );
+    process.exit(1);
+  }
+
+  // 3. Run Node.js DB migrations (ensures user_version is current)
   console.log('Initializing database and running migrations...');
   ensureDb();
   console.log('Database ready.');
 
-  // 3. Copy binary to ~/.escribano/bin/
+  // 4. Build Swift binary
+  console.log(
+    'Building escribano-recorder (first build downloads MLX and may take several minutes)...'
+  );
+  const build = spawnSync(
+    'swift',
+    ['build', '--package-path', RECORDER_DIR, '-c', 'release'],
+    { cwd: RECORDER_DIR, stdio: 'inherit', encoding: 'utf8' }
+  );
+  if (build.status !== 0) {
+    console.error('Error: build failed. See output above.');
+    process.exit(1);
+  }
+
+  if (!existsSync(BINARY_SRC)) {
+    console.error(`Error: Binary not found at ${BINARY_SRC} after build.`);
+    process.exit(1);
+  }
+
+  // 5. Copy binary to ~/.escribano/bin/
   mkdirSync(BIN_DIR, { recursive: true });
-  execSync(`cp -f "${BUNDLED_BINARY}" "${BINARY_DEST}"`);
+  execSync(`cp -f "${BINARY_SRC}" "${BINARY_DEST}"`);
   execSync(`chmod +x "${BINARY_DEST}"`);
   console.log(`Binary installed: ${BINARY_DEST}`);
 
-  // 4. Copy mlx_bridge.py for the Python VLM bridge
+  // 6. Copy mlx_bridge.py for the Python VLM bridge
   copyBridgeScript();
 
-  // 5. Rotate logs and generate LaunchAgent plist
+  // 7. Generate LaunchAgent plist
   mkdirSync(LOGS_DIR, { recursive: true });
-  rotateRecorderLogs();
   mkdirSync(path.dirname(PLIST_PATH), { recursive: true });
   const plist = generatePlist(BINARY_DEST);
   writeFileSync(PLIST_PATH, plist, 'utf8');
@@ -122,15 +141,8 @@ function generatePlist(binaryPath: string): string {
   const stderr = path.join(LOGS_DIR, 'escribano-recorder.error.log');
 
   // Collect Escribano environment variables to inject into the LaunchAgent
-  const envMap: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (key.startsWith('ESCRIBANO_') && value !== undefined) {
-      envMap[key] = value;
-    }
-  }
-  envMap['ESCRIBANO_MLX_LOG_FILE'] = RECORDER_MLX_LOG;
-
-  const envVars = Object.entries(envMap)
+  const envVars = Object.entries(process.env)
+    .filter(([key]) => key.startsWith('ESCRIBANO_'))
     .map(
       ([key, value]) =>
         `        <key>${key}</key>\n        <string>${value}</string>`
@@ -155,8 +167,6 @@ ${envVars}
     <true/>
     <key>KeepAlive</key>
     <true/>
-    <key>ThrottleInterval</key>
-    <integer>30</integer>
     <key>StandardOutPath</key>
     <string>${stdout}</string>
     <key>StandardErrorPath</key>
@@ -239,13 +249,12 @@ export async function recorderStatus(follow = false): Promise<void> {
   const logFile = path.join(LOGS_DIR, 'escribano-recorder.log');
   if (existsSync(logFile)) {
     try {
-      const content = readFileSync(logFile, 'utf8').trim().split('\n');
-      const tail = content.slice(-20);
+      const result = spawnSync('tail', ['-n', '20', logFile], { encoding: 'utf8' });
       console.log('Recent logs:');
-      for (const line of tail) {
+      for (const line of (result.stdout ?? '').trimEnd().split('\n')) {
         console.log(`  ${line}`);
       }
-    } catch (error) {
+    } catch {
       console.log(`Recent logs       : (error reading ${logFile})`);
     }
   } else {
@@ -259,12 +268,10 @@ export async function recorderStatus(follow = false): Promise<void> {
     if (existsSync(errorLogFile)) {
       filesToTail.push(errorLogFile);
     }
-    if (existsSync(RECORDER_MLX_LOG)) {
-      filesToTail.push(RECORDER_MLX_LOG);
-    }
     const tail = spawn('tail', ['-f', ...filesToTail], { stdio: 'inherit' });
-    tail.on('exit', () => process.exit(0));
-    await new Promise(() => {});
+    process.on('SIGINT', () => { tail.kill('SIGTERM'); process.exit(0); });
+    process.on('SIGTERM', () => { tail.kill('SIGTERM'); process.exit(0); });
+    await new Promise<void>((resolve) => tail.on('exit', () => resolve()));
   }
 }
 
@@ -284,15 +291,8 @@ export async function recorderRestart(): Promise<void> {
     );
   }
 
-  // Wait for the process to exit cleanly, then force-kill any stragglers.
-  // 1.5s is not enough when the process is mid-inference or waiting for backpressure.
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-  try {
-    execSync(`pkill -KILL -f "${BINARY_DEST}" 2>/dev/null`);
-  } catch {} // ignore: process already gone
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await new Promise((resolve) => setTimeout(resolve, 1500));
 
-  rotateRecorderLogs();
   console.log('Starting recorder...');
   // bootstrap registers the service in the GUI domain (macOS 13+ modern API)
   execSync(`launchctl bootstrap ${GUI_DOMAIN} "${PLIST_PATH}"`);

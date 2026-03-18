@@ -72,17 +72,41 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [x] Multi-display capture — extend Phase 1 to capture all displays with `display_id`
 - **Phase 1 complete (2026-03-13)**
 
-#### Phase 2: Swift VLM Analyzer (~2-3 days) — ADR-010
-- [ ] Add `mlx-swift-lm` dependency to `apps/recorder/Package.swift`
-- [ ] Create `VLMAnalyzer.swift` — async task that polls frames, claims batch, runs VLM, writes observations
-- [ ] Create `ResponseParser.swift` — parse "Frame N: description: X | activity: Y | apps: Z | topics: W" format (ported from `intelligence.mlx.adapter.ts`)
-- [ ] Create `ObservationStore.swift` (port) + `SQLiteObservationStore.swift` (adapter) — decoupled DB access
-- [ ] Enhance `VLMRunner.swift` from POC — integrate with `ResponseParser`, support pre-loaded model container
-- [ ] Update migration `015_observations_frame_fk.sql` — remove `process_locks` table (not needed for in-process VLM)
-- [ ] Update `main.swift` — spawn both capture + VLM analyzer tasks concurrently
-- [ ] Add VLM model lifecycle — load once at startup, keep in memory, release at shutdown
-- [ ] Update config docs: `ESCRIBANO_ANALYZE_BATCH_SIZE`, `ESCRIBANO_VLM_MODEL`
-- [ ] **Ref**: `docs/adr/010-swift-native-visual-intelligence.md` + `docs/tdd/001-swift-capture-agent.md` Phase 2
+#### Phase 2: Python Bridge VLM (Complete 2026-03-16)
+- ✅ Removed the abandoned `mlx-swift-lm` dependency; recorder now talks to a Python bridge over a Unix socket
+- ✅ Added `VLMInferenceService.port.swift` + `PythonBridge.vlm.adapter.swift` so `FrameAnalyzer` can call any backend via the port interface
+- ✅ Created `Prompts.swift` + `ResponseParser.swift` for NDJSON responses, plus `ObservationStore`/`FrameStore` ports + SQLite adapters
+- ✅ Renamed `VLMAnalyzer.swift` to `FrameAnalyzer.swift`, wired it through `main.swift`, and added the recorder settings in `apps/recorder/Package.swift`
+- ✅ Deployed schema migration `015_observations_frame_fk.sql` (frames → observations FK) and backpressure fixes in `StreamCapture.swift`/`Backpressure.swift`
+- ✅ Python bridge installs `setproctitle` (shows as `escribano-bridge-vlm` in `ps`) and uses `ESCRIBANO_BRIDGE_PATH`/`ESCRIBANO_PYTHON_PATH` overrides for dev flows
+- ✅ 1,043 recorder frames with `frame_id` links (Mar 13‑16) power live summaries now; new `pnpm recorder:monitor` script watches recorder + bridge CPU/memory usage
+- **Ref**: `docs/adr/010-swift-native-visual-intelligence.md` (see Addendum for Python bridge pivot)
+
+#### Phase 3: Continuous Session Aggregation — ADR-011
+
+##### POC: VLM-as-LLM (small machine validation)
+- [ ] Send text-only prompt to `mlx_bridge.py --mode vlm` (no images) using same artifact-generation prompt
+- [ ] Compare output quality vs `Qwen3-4B-Instruct` (current minimum LLM tier from `model-detector.ts`)
+- [ ] If pass → add `vlm-as-llm` fallback tier in `model-detector.ts` for RAM < 16GB machines
+- [ ] **Goal**: Eliminate separate LLM model load on M1 Air 16GB — one model for everything
+
+##### Phase 3a: SessionAggregator (Swift actor in recorder)
+- [ ] Schema migration `016_session_aggregation.sql` — add `tb_id` to observations, `from_ts`/`to_ts`/`observation_count` to topic_blocks
+- [ ] `TopicBlockStore.port.swift` + `TopicBlockStore.sqlite.adapter.swift` — write topic_blocks, query by time range
+- [ ] `SessionAggregator.swift` — actor with gap-aware windowing, polls every `ESCRIBANO_TB_POLL_INTERVAL` (default 120s)
+- [ ] Wire `SessionAggregator` into `main.swift` as third async task alongside StreamCapture + FrameAnalyzer
+- [ ] `ESCRIBANO_SESSION_GAP_THRESHOLD` (default 20 min), `ESCRIBANO_TB_MIN_OBSERVATIONS` (default 5)
+- [ ] Backfill on startup: process all historical unclaimed observations via `WHERE tb_id IS NULL`
+- [ ] Update `escribano recorder status` to show TB count
+
+##### Phase 3b: Time-Range Artifact Generation (Node.js, on-demand)
+- [ ] Update `generate-summary-v3.ts` — accept `from_ts`/`to_ts` instead of (or in addition to) `recording_id`
+- [ ] Add flush-aggregate step: run aggregation SQL on unclaimed observations before querying TBs
+- [ ] `npx escribano generate --today --format standup`
+- [ ] `npx escribano generate --from "9am" --to "12pm" --format card`
+- [ ] Artifact caching by `(from_ts, to_ts, format)` unique key; `--force` to regenerate
+- [ ] macOS notification on artifact completion (osascript)
+- [ ] **Ref**: `docs/adr/011-continuous-session-aggregation.md`
 
 #### Release Prerequisite: Apple Developer ID Signing
 - [ ] **Sign `escribano` binary with Apple Developer ID certificate** — stable Team ID signature survives rebuilds for all users
@@ -108,22 +132,22 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ## Next
 
-### Agent Integration
+### Phase 3c: MCP Server (deferred, unblocked by 3b)
+- [ ] `apps/mcp/` — new package using `@modelcontextprotocol/sdk`, stdio transport
+- [ ] Tool: `get_current_context()` — last N TBs (pure DB read, <100ms, no LLM)
+- [ ] Tool: `get_work_summary(from, to, format)` — lazy generate if no artifact exists
+- [ ] Tool: `search_sessions(query, days)` — full-text search over vlm_descriptions
+- [ ] Resource: `sessions://today`, `artifacts://latest`
 
-- [ ] **MCP server** — Expose TopicBlocks via MCP for AI assistants — *8-12h*
-  - Natural extension of agent-native thesis
-  - Enables assistants to query work history
-- [ ] **Cross-recording queries** — "show me all debugging sessions this week" — *4-6h*
+### Phase 3d: Human Surfaces (deferred, unblocked by 3b)
+- [ ] **Raycast extension** — reads `~/.escribano/artifacts/`, shows today's card, copy standup — *1-2 days*
+- [ ] **Swift menu bar app** — recorder start/stop, live status, "generate now" button — *2-3 days*
 
 ### Quality
 
 - [ ] **OCR on keyframes** — Extract code/URLs at artifact generation time — *6-8h*
+- [ ] **Cross-recording queries** — "show me all debugging sessions this week" — likely covered by time-range queries over TBs; revisit if semantic search needed — *4-6h*
 - [ ] **Compare pages (SEO)** — Competitive positioning content — *4-6h*
-
-### Convenience (Low Priority)
-
-- [ ] **Auto-process watcher** — Watch folder, auto-run on new files — *2-3h*
-  - Demoted: recorder makes this less relevant
 
 ---
 
@@ -162,6 +186,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ## Strategic Bets (6+ months)
 
+- **Multimodal convergence** — Single Qwen3-VL model for both frame analysis AND artifact generation text. Eliminates the VLM+LLM two-model split. On M1 Air 16GB: one model (~4-5GB) stays loaded, does everything. Contingent on VLM-as-LLM POC results (Phase 3a prerequisite).
 - **Cloud inference tier** — Hosted option for users without local hardware
 - **Team/Enterprise** — Collaboration features, shared work memory
 - **Cross-platform** — Linux/Windows support (currently macOS Apple Silicon only)

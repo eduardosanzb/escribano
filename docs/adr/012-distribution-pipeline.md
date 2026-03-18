@@ -61,6 +61,7 @@ The implementation details for this ADR are split into the following Technical D
 ### Negative
 - **Build Complexity**: Creating `.app` bundles with embedded Python and proper code signing/notarization is significantly more complex than a CLI binary.
 - **Self-Hosted Runner Dependency**: Apple Developer ID signing and `.app` packaging require the MacBook self-hosted runner to be consistently available.
+- **Migration Required**: Existing users with `npx escribano recorder install` (LaunchAgent setup) will need to uninstall the npm-managed binary and install the `.app` manually. No automatic migration path.
 
 ## References
 

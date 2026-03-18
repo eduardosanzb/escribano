@@ -27,3 +27,19 @@ To pass macOS Gatekeeper for non-technical users:
 1. Both the inner Python binaries and the outer Swift executable must be signed with an Apple Developer ID Application certificate.
 2. The final `.dmg` must be submitted to Apple's Notary Service via `xcrun notarytool`.
 3. The notarization ticket is stapled to the `.dmg` before distribution via GitHub Releases.
+
+**Critical: sign inner binaries individually before app-level signing.**
+`codesign --deep` does not reliably sign all Python `.so` files and dylibs nested inside `python_env/`. Gatekeeper will reject them at launch. The correct order in `make sign-app`:
+```bash
+# 1. Sign all inner binaries (dylibs, .so, executables) individually
+find Escribano.app/Contents/Resources/python_env \
+  \( -name "*.so" -o -name "*.dylib" -o -perm -u+x \) \
+  -exec codesign --force --sign "Developer ID Application: ..." {} \;
+
+# 2. Sign the Swift executable
+codesign --force --sign "Developer ID Application: ..." \
+  Escribano.app/Contents/MacOS/escribano
+
+# 3. Sign the .app bundle last
+codesign --force --sign "Developer ID Application: ..." Escribano.app
+```

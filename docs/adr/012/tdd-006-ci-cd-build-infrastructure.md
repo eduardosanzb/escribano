@@ -16,3 +16,14 @@ A central `Makefile` will orchestrate the build process:
 - **Runner**: The pipeline relies on a `self-hosted` macOS runner (Apple Silicon M-series) to correctly build MLX and compile Swift for ARM64.
 - **Triggers**: Pushing a tag (e.g., `v*`) kicks off the build process.
 - **Artifacts**: The final notarized `.dmg` is uploaded to a GitHub Release automatically.
+
+## 4. PR CI Workflow (Swift Build Validation)
+
+Release builds run on the self-hosted runner, but **PR validation must not run untrusted fork code on a self-hosted machine**. Two separate workflows handle this:
+
+| Workflow | Trigger | Runner | Purpose |
+|----------|---------|--------|---------|
+| `swift-ci.yml` | PR touching `apps/recorder/**` | `macos-latest` (GitHub-hosted) | Compile check, fast feedback, safe for forks |
+| `release.yml` | Tag push `v*` | `self-hosted` (M4 Max) | Full build: fetch Python, sign, DMG, notarize, upload |
+
+`swift-ci.yml` only runs `swift build --package-path apps/recorder -c release` — no signing, no Python, no MLX. Fast (~2 min) and free on GitHub's hosted runners.

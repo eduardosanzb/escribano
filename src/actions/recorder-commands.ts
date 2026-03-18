@@ -29,7 +29,10 @@ const BINARY_DEST = path.join(BIN_DIR, 'escribano');
 const PLIST_LABEL = 'com.escribano.capture';
 // macOS 13+ requires the modern launchctl API (bootstrap/bootout) for GUI-domain
 // LaunchAgents. The deprecated load/unload silently fails on Ventura/Sonoma.
-const GUI_DOMAIN = `gui/${process.getuid!()}`;
+const GUI_DOMAIN =
+  process.platform === 'darwin' && typeof process.getuid === 'function'
+    ? `gui/${process.getuid()}`
+    : '';
 const LAUNCHD_TARGET = `${GUI_DOMAIN}/${PLIST_LABEL}`;
 const PLIST_PATH = path.join(
   homedir(),
@@ -194,9 +197,13 @@ export async function recorderStatus(follow = false): Promise<void> {
       encoding: 'utf8',
     });
     const pidMatch = result.match(/\bpid\s*=\s*(\d+)/i);
-    const running = pidMatch
-      ? `running (PID ${pidMatch[1]})`
-      : 'stopped (will restart)';
+    let running: string;
+    if (pidMatch) {
+      const pid = Number(pidMatch[1]);
+      running = pid > 0 ? `running (PID ${pid})` : 'stopped (will restart)';
+    } else {
+      running = 'stopped (will restart)';
+    }
     console.log(`Agent status      : ${running}`);
   } catch {
     console.log(

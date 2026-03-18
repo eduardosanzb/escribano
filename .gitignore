@@ -62,3 +62,4 @@ scripts/poc-phash-dedup/.build
 scripts/poc-mlx-swift/.build
 apps/recorder/.build
 apps/recorder/.build
+.claude/

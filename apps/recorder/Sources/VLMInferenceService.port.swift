@@ -30,4 +30,7 @@ protocol VLMInferenceService: AnyObject, Sendable {
     /// Gracefully shut down the inference backend.
     /// Called on SIGTERM / app shutdown.
     func stop() async
+    /// Synchronously terminate the underlying process.
+    /// For use in applicationWillTerminate where async context is unavailable.
+    nonisolated func terminateSync()
 }

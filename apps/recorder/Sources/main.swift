@@ -18,27 +18,24 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var obsStore: (any ObservationStore)?
     private var analyzer: FrameAnalyzer?
     private var analyzerTask: Task<Void, Never>?
+    private var vlmAdapter: PythonBridgeVLMAdapter?
 
     /// Called by NSApplication when the app has finished launching.
     private var sigtermSource: DispatchSourceSignal?
     private var sigintSource: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Block default POSIX handlers so DispatchSource can intercept them.
-        signal(SIGTERM, SIG_IGN)
-        signal(SIGINT,  SIG_IGN)
-
-        sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        sigtermSource?.setEventHandler {
-            print("[escribano-recorder] SIGTERM — shutting down")
-            NSApp.terminate(nil)
+        signal(SIGTERM) { _ in
+            DispatchQueue.main.async {
+                log("[escribano-recorder] SIGTERM — shutting down")
+                NSApp.terminate(nil)
+            }
         }
-        sigtermSource?.resume()
-
-        sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
-        sigintSource?.setEventHandler {
-            print("[escribano-recorder] SIGINT — shutting down")
-            NSApp.terminate(nil)
+        signal(SIGINT) { _ in
+            DispatchQueue.main.async {
+                log("[escribano-recorder] SIGINT — shutting down")
+                NSApp.terminate(nil)
+            }
         }
         sigintSource?.resume()
 
@@ -48,32 +45,29 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func start() async {
-        // Permission check: wait for Screen Recording permission before proceeding.
-        // This is necessary because every swift build creates a new CDHash,
-        // so TCC forgets the permission each time during development.
+        // Permission check: Screen Recording permission must be granted before capture can start.
+        //
+        // Why no polling loop: CGPreflightScreenCaptureAccess() never updates in the same
+        // running process after the user grants permission — macOS only reflects TCC changes
+        // on the next process launch. Polling with try? Task.sleep is also dangerous because
+        // discarding CancellationError with try? turns a cancelled task into a CPU spin loop.
+        //
+        // Instead: request the dialog, log clear instructions, exit cleanly (code 0).
+        // With KeepAlive=true + ThrottleInterval=30 in the LaunchAgent plist, launchd will
+        // restart us every 30s. When the user grants permission, the next restart succeeds.
         if !CGPreflightScreenCaptureAccess() {
-            print("[escribano-recorder] Screen Recording permission not granted")
-            print("[escribano-recorder] Requesting permission...")
-            
-            // Trigger system dialog (only works from foreground process)
+            log("[escribano-recorder] Screen Recording permission not granted.")
+            // Trigger the system permission dialog. This returns immediately (non-blocking).
             CGRequestScreenCaptureAccess()
-            
-            // Poll until permission is granted
-            var attempts = 0
-            while !CGPreflightScreenCaptureAccess() {
-                attempts += 1
-                if attempts % 10 == 0 {
-                    print("[escribano-recorder] Still waiting for permission... (grant in System Settings > Privacy & Security > Screen Recording)")
-                }
-                try? await Task.sleep(for: .seconds(1))
-                if attempts > 30 {
-                    print("[escribano-recorder] ERROR: Screen Recording permission not granted after 30s — exiting.")
-                    NSApp.terminate(nil)
-                    return
-                }
-            }
-            print("[escribano-recorder] Permission granted! Starting capture...")
+            log("[escribano-recorder] Permission dialog shown.")
+            log("[escribano-recorder] Grant permission in: System Settings > Privacy & Security > Screen Recording")
+            log("[escribano-recorder] The recorder will restart automatically (every 30s) until permission is granted.")
+            // Exit cleanly (code 0). The LaunchAgent ThrottleInterval=30 prevents a restart
+            // loop: launchd will retry in 30 seconds, by which time the user may have granted.
+            NSApp.terminate(nil)
+            return
         }
+        log("[escribano-recorder] Screen Recording permission: granted")
 
         let dbPath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".escribano/escribano.db").path
@@ -83,14 +77,14 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
 
         let store: any FrameStore
         do {
-            print("[escribano-recorder] Opening database at \(dbPath)")
+            log("[escribano-recorder] Opening database at \(dbPath)")
             store = try SQLiteFrameStore(path: dbPath)
-            print("[escribano-recorder] Database ready")
+            log("[escribano-recorder] Database ready")
         } catch FrameStoreError.schemaMismatch(let current, let expected) {
-            print("[escribano-recorder] ERROR: Database schema out of date (version \(current), expected \(expected)). Run 'escribano recorder install' from Node.js.")
+            log("[escribano-recorder] ERROR: Database schema out of date (version \(current), expected \(expected)). Run 'escribano recorder install' from Node.js.")
             exit(1)
         } catch {
-            print("[escribano-recorder] ERROR: Cannot open database at \(dbPath): \(error.localizedDescription)")
+            log("[escribano-recorder] ERROR: Cannot open database at \(dbPath): \(error.localizedDescription)")
             exit(1)
         }
         self.store = store
@@ -102,16 +96,16 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         do {
             content = try await SCShareableContent.current
         } catch {
-            print("[escribano-recorder] ERROR: ScreenCaptureKit unavailable: \(error.localizedDescription)")
+            log("[escribano-recorder] ERROR: ScreenCaptureKit unavailable: \(error.localizedDescription)")
             exit(1)
         }
 
         if content.displays.isEmpty {
-            print("[escribano-recorder] ERROR: No displays found")
+            log("[escribano-recorder] ERROR: No displays found")
             exit(1)
         }
 
-        print("[escribano-recorder] Found \(content.displays.count) display(s). Starting capture for ALL.")
+        log("[escribano-recorder] Found \(content.displays.count) display(s). Starting capture for ALL.")
 
         var captures: [StreamCapture] = []
         for display in content.displays {
@@ -119,7 +113,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
                 let cap = try await StreamCapture(display: display, store: store, backpressure: bp)
                 captures.append(cap)
             } catch {
-                print("[escribano-recorder] ERROR: Failed to start capture for display \(display.displayID): \(error.localizedDescription)")
+                log("[escribano-recorder] ERROR: Failed to start capture for display \(display.displayID): \(error.localizedDescription)")
             }
         }
         self.captures = captures
@@ -129,13 +123,15 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         do {
             obsStore = try SQLiteObservationStore(path: dbPath)
         } catch {
-            print("[escribano-recorder] ERROR: Cannot open observation store: \(error.localizedDescription)")
+            log("[escribano-recorder] ERROR: Cannot open observation store: \(error.localizedDescription)")
             exit(1)
         }
         self.obsStore = obsStore
         // 2. Create the VLM adapter (Python bridge) and inject it into FrameAnalyzer.
-        //    This wires the port (VLMInferenceService) to its concrete adapter.
+        //    Also store a direct reference so applicationWillTerminate can call
+        //    terminateSync() without needing an async context.
         let vlmService = PythonBridgeVLMAdapter()
+        self.vlmAdapter = vlmService
         let analyzer = FrameAnalyzer(obsStore: obsStore, vlmService: vlmService)
         self.analyzer = analyzer
         // 3. Start the analyzer in a background Task. start() blocks until the Python
@@ -144,12 +140,12 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             do {
                 try await analyzer.start()
             } catch {
-                print("[FrameAnalyzer] Failed to start: \(error.localizedDescription)")
+                log("[FrameAnalyzer] Failed to start: \(error.localizedDescription)")
                 return
             }
             await analyzer.analyzeLoop()
         }
-        print("[escribano-recorder] VLM analyzer task started.")
+        log("[escribano-recorder] VLM analyzer task started.")
 
         bp.onPause = { [weak self] in
             self?.captures.forEach { $0.pause() }
@@ -159,17 +155,18 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         }
 
         let threshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "4") ?? 4
-        print("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold)")
+        log("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold)")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        Task { @MainActor in
-            for cap in captures {
-                await cap.stop()
-            }
-            analyzerTask?.cancel()
-            await obsStore?.close()
-        }
+        log("[escribano-recorder] applicationWillTerminate — cleaning up")
+        // Cancel the analyzer task synchronously so the cancellation flag is set immediately.
+        analyzerTask?.cancel()
+        // Kill the Python bridge via its stored PID. Child processes are NOT automatically
+        // killed when the parent exits on macOS — they become orphaned.
+        // terminateSync() uses kill(pid, SIGTERM) directly, which is reliable regardless
+        // of how the bridge was launched or what env vars it has.
+        vlmAdapter?.terminateSync()
         store?.close()
     }
 }

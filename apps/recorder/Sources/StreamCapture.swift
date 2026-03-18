@@ -104,7 +104,7 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     nonisolated func stream(_ stream: SCStream, didStopWithError error: any Error) {
-        MainActor.assumeIsolated {
+        Task { @MainActor in
             print("[StreamCapture] Stream error: \(error.localizedDescription)")
         }
     }

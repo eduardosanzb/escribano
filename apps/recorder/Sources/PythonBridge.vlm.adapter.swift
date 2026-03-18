@@ -94,7 +94,21 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         proc.environment  = buildEnv()
         let stdoutPipe = Pipe()
         proc.standardOutput = stdoutPipe
-        proc.standardError = Pipe()
+        let logDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".escribano/logs")
+        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+        let logURL = logDir.appendingPathComponent("mlx-bridge-recorder-vlm.log")
+        try? FileManager.default.removeItem(at: logURL)
+        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        let stderrLogHandle = try? FileHandle(forWritingTo: logURL)
+        let stderrPipe = Pipe()
+        proc.standardError = stderrPipe
+        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            FileHandle.standardError.write(data)
+            stderrLogHandle?.write(data)
+        }
         try proc.run()
         self.process = proc
         self.storedPID = proc.processIdentifier

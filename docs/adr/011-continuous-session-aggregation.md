@@ -134,13 +134,18 @@ TopicBlocks:  [═══════ TB-1: 9:00-12:00 ═══════]  [�
 
 **Algorithm:**
 ```
-1. SELECT * FROM observations WHERE tb_id IS NULL ORDER BY captured_at ASC
-2. Walk through observations:
-   - If gap between obs[i] and obs[i+1] > SESSION_GAP_THRESHOLD → commit window
-   - If window has >= TB_MIN_OBSERVATIONS → write topic_block
-3. UPDATE observations SET tb_id = ? WHERE id IN (claimed_ids)
+1. SELECT o.*
+2.   FROM observations o
+3.   LEFT JOIN frames f ON o.frame_id = f.id
+4.  WHERE o.tb_id IS NULL
+5.  ORDER BY COALESCE(f.captured_at, f.timestamp, o."timestamp") ASC
+6. 
+7. Walk through observations:
+8.    - If gap between obs[i] and obs[i+1] > SESSION_GAP_THRESHOLD → commit window
+9.    - If window has >= TB_MIN_OBSERVATIONS → write topic_block
+10. UPDATE observations SET tb_id = ? WHERE id IN (claimed_ids)
 
-**Note: The algorithm sorts observations by captured_at, but the current observations schema doesn’t have a captured_at column (it has timestamp and optional frame_id). To avoid confusion (and to make the design implementable), update this to sort by frames.timestamp/frames.captured_at via a join on frame_id, or explicitly add an observation-level captured timestamp in the migration section.**
+Implementation note: We use the frame’s capture timestamp when available (via `frame_id`), falling back to the observation’s own `timestamp` so the algorithm is directly implementable with the current schema.
 ```
 
 **Why `captured_at` not `processed_at`:**
@@ -304,10 +309,22 @@ ALTER TABLE topic_blocks ADD COLUMN from_ts REAL;
 ALTER TABLE topic_blocks ADD COLUMN to_ts REAL;
 ALTER TABLE topic_blocks ADD COLUMN observation_count INTEGER DEFAULT 0;
 
+-- Relax NOT NULL constraints so recorder-generated TopicBlocks do not
+-- need a recording_id/context_ids. Existing ingest pipelines may still
+-- populate these fields as before.
+-- NOTE: In SQLite this is implemented via table recreation; this ADR
+-- shows the logical effect of the migration:
+-- ALTER TABLE topic_blocks ALTER COLUMN recording_id DROP NOT NULL;
+-- ALTER TABLE topic_blocks ALTER COLUMN context_ids DROP NOT NULL;
+
 CREATE INDEX idx_topic_blocks_time_range ON topic_blocks(from_ts, to_ts);
 ```
 
-**Additive migrations only** — no data loss, existing topic_blocks from batch pipeline unaffected.
+**Additive migrations only** — no data loss, existing topic_blocks from batch pipeline unaffected.  
+Recorder-generated TopicBlocks are permitted to have `NULL` `recording_id`
+and `context_ids`, relying instead on their time range and `tb_id`
+linkage from observations. Pipelines that already write `recording_id` /
+`context_ids` continue to do so unchanged.
 
 ## New Files
 

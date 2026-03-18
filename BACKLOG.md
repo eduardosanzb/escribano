@@ -75,7 +75,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 #### Phase 2: Python Bridge VLM (started 2026-03-16)
 - ✅ Removed the abandoned `mlx-swift-lm` dependency; recorder now talks to a Python bridge over a Unix socket
 - ✅ Added `VLMInferenceService.port.swift` + `PythonBridge.vlm.adapter.swift` so `FrameAnalyzer` can call any backend via the port interface
-- [ ] Planned: Create `Prompts.swift` + `ResponseParser.swift` for NDJSON responses, plus `ObservationStore`/`FrameStore` ports + SQLite adapters (not yet present in `apps/recorder/Sources/`)
+- [ ] Planned: Create `Prompts.swift` + `ResponseParser.swift` for NDJSON responses, and add `ObservationStore` port + SQLite adapter (FrameStore/SQLiteFrameStore already exist in `apps/recorder/Sources/`)
 - ✅ Renamed `VLMAnalyzer.swift` to `FrameAnalyzer.swift`, wired it through `main.swift`, and added the recorder settings in `apps/recorder/Package.swift`
 - ✅ Deployed schema migration `015_observations_frame_fk.sql` (frames → observations FK) and backpressure fixes in `StreamCapture.swift`/`Backpressure.swift`
 - ✅ Python bridge uses `ESCRIBANO_BRIDGE_PATH`/`ESCRIBANO_PYTHON_PATH` overrides for dev flows
@@ -87,7 +87,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 ##### POC: VLM-as-LLM (small machine validation)
 - [ ] Send text-only prompt to `mlx_bridge.py --mode vlm` (no images) using same artifact-generation prompt
 - [ ] Compare output quality vs `Qwen3-4B-Instruct` (current minimum LLM tier from `model-detector.ts`)
-- [ ] If pass → add `vlm-as-llm` fallback tier in `model-detector.ts` for RAM < 16GB machines
+- [ ] If pass → add `vlm-as-llm` fallback tier in `model-detector.ts` for machines with ≤ 16GB RAM (including M1 Air 16GB)
 - [ ] **Goal**: Eliminate separate LLM model load on M1 Air 16GB — one model for everything
 
 ##### Phase 3a: SessionAggregator (Swift actor in recorder)

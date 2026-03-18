@@ -168,7 +168,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - **pHash Dedup POC (Phase C)** — Validated pHash threshold=8 cleanly separates noise (0-4 bits) from content (10+ bits) across 6 scenarios; dHash, VN FeaturePrint, SCFrameStatus all rejected as primary dedup
 - **SCStream POC (Phase B)** — Validated `SCStream` with Swift 6 concurrency patterns (`@MainActor`, `sampleHandlerQueue: .main`, `MainActor.assumeIsolated`, `nonisolated(unsafe) let`); 5s frame interval confirmed exact; SCStream chosen as Phase 1 capture API
 - **ScreenCaptureKit Spike (Phase A)** — ADR-009 architecture decision for always-on screen recorder (Swift ScreenCaptureKit + SQLite WAL)
-- **TDDs published** — `docs/tdd/001-swift-capture-agent.md`, `002-node-batch-analyzer.md`, `003-segmentation-cli.md`
+- **TDDs published** — `docs/adr/009/tdd-001-swift-capture-agent.md`, `docs/adr/010/tdd-002-node-batch-analyzer.md`, `docs/adr/011/tdd-003-segmentation-cli.md`
 - **MLX-LM migration** — Unified VLM + LLM backend, 17 recordings validated, 100% success
 - **Production benchmarks** — 25.6 hours processed, ~2.2 min/video average
 - **Config file support** — Auto-create `~/.escribano/.env`

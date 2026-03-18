@@ -27,6 +27,13 @@ const BUNDLED_BINARY = path.join(PACKAGE_ROOT, 'bin', 'recorder-macos-arm64');
 const BIN_DIR = path.join(homedir(), '.escribano', 'bin');
 const BINARY_DEST = path.join(BIN_DIR, 'escribano');
 const PLIST_LABEL = 'com.escribano.capture';
+// macOS 13+ requires the modern launchctl API (bootstrap/bootout) for GUI-domain
+// LaunchAgents. The deprecated load/unload silently fails on Ventura/Sonoma.
+const GUI_DOMAIN =
+  process.platform === 'darwin' && typeof process.getuid === 'function'
+    ? `gui/${process.getuid()}`
+    : '';
+const LAUNCHD_TARGET = `${GUI_DOMAIN}/${PLIST_LABEL}`;
 const PLIST_PATH = path.join(
   homedir(),
   'Library',
@@ -86,7 +93,7 @@ export async function recorderInstall(): Promise<void> {
 
   // 6. Unload existing agent if present (ignore errors)
   try {
-    execSync(`launchctl unload "${PLIST_PATH}" 2>/dev/null`);
+    execSync(`launchctl bootout ${LAUNCHD_TARGET} 2>/dev/null`);
   } catch {}
 
   // 7. Load LaunchAgent
@@ -178,18 +185,24 @@ export async function recorderStatus(follow = false): Promise<void> {
     return;
   }
 
-  // launchd status
+  // launchd status — use `launchctl print` (modern API, macOS 13+)
   try {
-    const result = execSync(`launchctl list ${PLIST_LABEL} 2>&1`, {
+    const result = execSync(`launchctl print ${LAUNCHD_TARGET} 2>&1`, {
       encoding: 'utf8',
     });
-    const pidMatch = result.match(/"PID"\s*=\s*(\d+)/);
-    const running = pidMatch
-      ? `running (PID ${pidMatch[1]})`
-      : 'stopped (will restart)';
+    const pidMatch = result.match(/\bpid\s*=\s*(\d+)/i);
+    let running: string;
+    if (pidMatch) {
+      const pid = Number(pidMatch[1]);
+      running = pid > 0 ? `running (PID ${pid})` : 'stopped (will restart)';
+    } else {
+      running = 'stopped (will restart)';
+    }
     console.log(`Agent status      : ${running}`);
   } catch {
-    console.log('Agent status      : stopped');
+    console.log(
+      'Agent status      : not registered (run: escribano recorder install)'
+    );
   }
   // Pending frames from DB
   if (existsSync(DB_PATH)) {

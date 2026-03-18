@@ -19,6 +19,7 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private var prevPHash:    UInt64? = nil
     private var frameCounter: Int     = 0
+    private var isPaused: Bool        = false
     
     // Rolling stats
     private var framesSeen:    Int = 0
@@ -66,17 +67,17 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func pause() {
-        Task { @MainActor in
-            try? await self.stream?.stopCapture()
-            print("[StreamCapture] Paused.")
-        }
+        guard !isPaused else { return }
+        isPaused = true
+        Task { try? await stream?.stopCapture() }
+        print("[StreamCapture] Paused.")
     }
 
     func resume() {
-        Task { @MainActor in
-            try? await self.stream?.startCapture()
-            print("[StreamCapture] Resumed.")
-        }
+        guard isPaused else { return }
+        isPaused = false
+        Task { try? await stream?.startCapture() }
+        print("[StreamCapture] Resumed.")
     }
 
     // MARK: — SCStreamOutput
@@ -111,6 +112,7 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     // MARK: — Frame processing
 
     private func processFrame(_ pixelBuffer: CVPixelBuffer) {
+        guard !isPaused else { return }
         framesSeen += 1
         
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)

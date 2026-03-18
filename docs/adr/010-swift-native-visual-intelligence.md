@@ -2,9 +2,10 @@
 
 ## Status
 
-| State     | Date       | Details                                                                                          |
-|-----------|------------|--------------------------------------------------------------------------------------------------|
-| Proposed  | 2026-03-16 | MLX-Swift POC validates native inference. Replaces TDD-002 (Node Batch Analyzer) with in-process VLM task. |
+| State                  | Date       | Details                                                                                          |
+|------------------------|------------|--------------------------------------------------------------------------------------------------|
+| Proposed               | 2026-03-16 | MLX-Swift POC validates native inference. Replaces TDD-002 (Node Batch Analyzer) with in-process VLM task. |
+| Superseded (partial)   | 2026-03-16 | mlx-swift-lm VLM performance bug discovered during implementation. Pivoted to Swift→Python bridge. See Addendum below. |
 
 ## Context
 
@@ -415,3 +416,21 @@ Pre-built universal binary (ARM64 + x86_64) via GitHub Releases. Deferred pendin
 - [ADR-006: MLX-VLM Adapter](006-mlx-vlm-adapter.md) — Current Python bridge (retained for batch mode)
 - [TDD-001: Swift Capture Agent](../tdd/001-swift-capture-agent.md) — Phase 1 (extended by this ADR's Phase 2)
 - [TDD-002: Node Batch Analyzer](../tdd/002-node-batch-analyzer.md) — SUPERSEDED by this ADR
+
+## Addendum: Phase 2 Implementation Reality (2026-03-16)
+
+When ADR-010 was drafted we believed the mlx-swift-lm POC measured 220 tok/s for Vision-Language inference and therefore promised a Swift-native VLM analyzer. The real benchmark was for a **text-only** LLM (Qwen3.5-27B) and never covered Qwen3-VL. During implementation mlx-swift-lm issue #19 revealed that every Qwen3-VL model runs at **10-13 tok/s** in Swift, a **15× regression** compared to the Python mlx-vlm bridge (170-190 tok/s on 4bit models).
+
+Rather than wait for mlx-swift-lm to fix the perf bug, we pivoted: the recorder now reaches back to the existing Python bridge via the Unix socket (`~/.escribano/scripts/mlx_bridge.py`). Swift now implements a `VLMInferenceService` port that drives a new `PythonBridgeVLMAdapter`, which maintains a long-lived Unix socket connection, translates `VLMRequest`/`VLMResponse` payloads, and keeps the Python bridge running alongside the recorder.
+
+### Actual Architecture Changes
+
+- **What was deleted/renamed**: `VLMAnalyzer.swift` became `FrameAnalyzer.swift` and its dependency on `MLXLMCommon` was removed; `VLMRunner.swift` was deleted. `Package.swift` no longer depends on `mlx-swift-lm`.
+- **What was added**: `Prompts.swift` (prompt builder extracted from the batch code), `VLMInferenceService.port.swift` (port + request/response structs), and `PythonBridge.vlm.adapter.swift` (adapter that drives the Python bridge).
+- **Behavioral change**: Swift now always sends a batch-style prompt (even for a single frame), reuses the bridge via `/tmp/escribano-recorder-vlm.sock`, and writes observations once the Python response arrives
+- **Documentation fix**: The status table now clearly states the pivot and points here for details
+### Consequences
+
+- **Positive**: Restores the 170-190 tok/s throughput from the Python bridge, eliminates the slow mlx-swift-lm dependency, and preserves the improved parsing/port structure from ADR-010.
+- **Negative**: The recorder now depends on an extra Python process (`mlx_bridge.py`) copied to `~/.escribano/scripts/` during `recorder install`. The Unix socket is separate (`/tmp/escribano-recorder-vlm.sock`) so it does not conflict with the batch pipeline.
+- **Neutral**: The TypeScript side remains unchanged; this change simply reuses its proven bridge implementation instead of reimplementing it in Swift.

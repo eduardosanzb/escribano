@@ -89,7 +89,8 @@ TopicBlocks should be generated **continuously in the background** — the same 
 │  │                                                              │            │
 │  │  1. Flush: run aggregation on any unclaimed observations     │            │
 │  │  2. Query: topic_blocks WHERE from_ts < Y AND to_ts > X  -- overlap       │
-│  │  3. Generate: LLM → artifact markdown                        │            │
+│  │  3. Group: VLM text-only prompt → Subjects                   │            │
+│  │  4. Generate: model → artifact markdown                      │            │
 │  │                                                              │            │
 │  │  $ escribano generate --today --format standup               │            │
 │  │  $ escribano generate --from 9am --to 12pm --format card     │            │
@@ -204,7 +205,9 @@ TopicBlock
 
 **No LLM call.** The `activity` is the statistical mode of observations in the window. `apps` and `topics` are unions. This keeps the aggregator fast (<1ms per TB) and model-free.
 
-The LLM only runs at artifact generation time (Layer 3), when the user explicitly requests a standup/card/narrative.
+Layer 3 still uses model-backed grouping, matching the current TypeScript pipeline: TopicBlocks are grouped into Subjects with a text-only prompt over the aggregated blocks. In this ADR, that grouping should use the already-loaded multimodal VLM path (Qwen3-VL / Qwen3.5), so there is no separate model swap just to build Subjects.
+
+Artifact generation remains on-demand at Layer 3, when the user explicitly requests a standup/card/narrative.
 
 #### 5. Small Machine Strategy (M1 Air 16GB)
 
@@ -219,7 +222,7 @@ Sequential model swap via the Python bridge (`mlx_bridge.py`): VLM unloads → L
 
 **POC: VLM-as-LLM (eliminating the swap entirely)**
 
-Qwen3-VL is a vision-language model that also handles text-only generation. If the already-loaded VLM model can produce acceptable standup/card text from observation summaries, we skip loading any separate LLM on small machines — zero swap, zero pause, zero extra RAM.
+Qwen3-VL is a vision-language model that also handles text-only generation. Subject grouping should already reuse this path. The remaining POC is whether the already-loaded VLM model can produce acceptable standup/card/narrative text from observation summaries, so we can skip loading any separate LLM on small machines — zero swap, zero pause, zero extra RAM.
 
 ```
 POC scope:
@@ -271,10 +274,21 @@ No `recording_id`, no `segments` entity, no synthetic recordings for the recorde
 ```
 Captured → Stored → Analyzed → Aggregated → Consumed → Cleaned
    │          │         │           │            │          │
-   Swift    JPEG +    VLM runs   Grouped     Artifact   JPEG deleted,
-   captures DB row    → obs      into TB     generated  DB rows kept
+   Swift    JPEG +    VLM runs   Grouped     Artifact   JPEG retained
+   captures DB row    → obs      into TB     generated  until batch cleanup,
+                                                      DB rows kept
    screen             created    (tb_id set)             (audit trail)
 ```
+
+### JPEG Retention Policy
+
+JPEGs are kept after aggregation so they remain available for later processing, including OCR and other reanalysis. Cleanup happens in batches when disk usage crosses a configurable threshold, not immediately after a TopicBlock is consumed.
+
+Proposed policy:
+- Keep JPEGs on disk by default
+- Trigger batch cleanup on disk pressure
+- Delete oldest JPEGs first until usage returns below a lower-water mark
+- Preserve database rows as the audit trail
 
 ## Schema Changes
 
@@ -323,6 +337,8 @@ BACKLOG.md                                  -- Phase 3 tasks, cleanup stale item
 | `ESCRIBANO_SESSION_GAP_THRESHOLD` | `1200` (20 min) | Seconds of inactivity before starting new TopicBlock |
 | `ESCRIBANO_TB_MIN_OBSERVATIONS` | `5` | Minimum observations to commit a TopicBlock |
 | `ESCRIBANO_TB_POLL_INTERVAL` | `120` (2 min) | Seconds between aggregation polls in Swift actor |
+| `ESCRIBANO_JPEG_HIGH_WATER_GB` | `10` | Disk usage threshold that triggers JPEG cleanup |
+| `ESCRIBANO_JPEG_LOW_WATER_GB` | `5` | Disk target after JPEG cleanup |
 
 ## Phased Rollout
 
@@ -342,10 +358,12 @@ BACKLOG.md                                  -- Phase 3 tasks, cleanup stale item
 - **Flush-on-demand** — `generate` never misses recent observations, even if aggregator hasn't caught up
 - **Zero new process** — SessionAggregator is a Swift actor, not a separate daemon
 - **LLM-free aggregation** — no model load for TB creation, fast (<1ms per TB)
+- **Model-backed subject grouping** — reuses the already-loaded multimodal VLM path, matching the current TS pipeline without a separate model swap
 - **Small-machine friendly** — VLM-as-LLM POC could eliminate the two-model split entirely
 
 ### Negative
 - **TB quality depends on VLM output** — no LLM enrichment at aggregation time; if VLM descriptions are poor, TBs inherit that
+- **JPEGs stay on disk longer** — cleanup is deferred to batch disk-pressure policy so files remain available for OCR and future processing
 - **Gap threshold requires tuning** — 20 min default may not fit all workflows (configurable via env var)
 - **Dual-site aggregation** — same logic in Swift + Node.js (~50 lines of SQL + gap detection each); must stay in sync
 
@@ -373,6 +391,7 @@ BACKLOG.md                                  -- Phase 3 tasks, cleanup stale item
 | **Swift menu bar** | Natural extension of daemon; deferred until recorder is stable |
 | **Multimodal convergence** | Contingent on VLM-as-LLM POC results; tracked as strategic bet |
 | **Cross-recording queries** | Likely covered by time-range queries over TBs; revisit if semantic search needed |
+| **JPEG OCR / reprocessing** | Enabled by retained JPEGs; cleanup policy keeps them available until disk pressure requires removal |
 | **Audio in recorder** | Always-on recorder currently captures visual only; audio capture (CoreAudio + VAD) deferred until visual pipeline proven |
 
 ## References

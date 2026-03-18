@@ -88,7 +88,7 @@ TopicBlocks should be generated **continuously in the background** — the same 
 │  │  Node.js CLI (not a daemon, invoked by user or agent)        │            │
 │  │                                                              │            │
 │  │  1. Flush: run aggregation on any unclaimed observations     │            │
-│  │  2. Query: topic_blocks WHERE from_ts >= X AND to_ts <= Y    │            │
+│  │  2. Query: topic_blocks WHERE from_ts < Y AND to_ts > X  -- overlap       │
 │  │  3. Generate: LLM → artifact markdown                        │            │
 │  │                                                              │            │
 │  │  $ escribano generate --today --format standup               │            │
@@ -138,6 +138,8 @@ TopicBlocks:  [═══════ TB-1: 9:00-12:00 ═══════]  [�
    - If gap between obs[i] and obs[i+1] > SESSION_GAP_THRESHOLD → commit window
    - If window has >= TB_MIN_OBSERVATIONS → write topic_block
 3. UPDATE observations SET tb_id = ? WHERE id IN (claimed_ids)
+
+**Note: The algorithm sorts observations by captured_at, but the current observations schema doesn’t have a captured_at column (it has timestamp and optional frame_id). To avoid confusion (and to make the design implementable), update this to sort by frames.timestamp/frames.captured_at via a join on frame_id, or explicitly add an observation-level captured timestamp in the migration section.**
 ```
 
 **Why `captured_at` not `processed_at`:**
@@ -176,7 +178,7 @@ The aggregation logic is callable from **two places**:
          └──────────── same SQLite DB ──────────┘
 ```
 
-Both are safe because claiming observations is atomic (`UPDATE ... WHERE tb_id IS NULL`). No double-processing possible. If the background aggregator already processed everything, the on-demand flush is a no-op.
+Both are safe because claiming observations is done atomically: we claim rows via a single `UPDATE` like `UPDATE observations SET tb_id = ? WHERE tb_id IS NULL AND id IN (...)` inside a transaction, and we check the number of rows updated before creating the `TopicBlock`. This `tb_id IS NULL` guard plus the rows-updated check prevents double-processing and avoids orphan `TopicBlock`s if two aggregators race. If the background aggregator already processed everything, the on-demand flush is a no-op.
 
 **Why this matters:** If the user runs `generate --today` at 3pm but the Swift aggregator last ran at 2:58pm, there might be 2 minutes of unclaimed observations. The flush catches them before querying TBs for the artifact. The user never sees stale data.
 
@@ -301,7 +303,7 @@ apps/recorder/Sources/
 ├── TopicBlockStore.port.swift              -- port: write topic_blocks, query by time range
 └── TopicBlockStore.sqlite.adapter.swift    -- adapter: SQLite implementation
 
-db/migrations/016_session_aggregation.sql   -- schema additions
+migrations/016_session_aggregation.sql      -- schema additions
 scripts/poc-vlm-as-llm/                     -- POC: VLM text-only generation quality test
 ```
 

@@ -892,6 +892,39 @@ app.get('/api/recordings', (req, res) => {
   }
 });
 
+app.get('/api/observations/filters', (req, res) => {
+  try {
+    const activityRows = db
+      .prepare(`SELECT DISTINCT activity_type FROM observations WHERE activity_type IS NOT NULL ORDER BY activity_type ASC`)
+      .all();
+    const appRows = db
+      .prepare(`SELECT apps FROM observations WHERE apps IS NOT NULL`)
+      .all();
+
+    const apps = new Set();
+    for (const row of appRows) {
+      try {
+        const parsed = JSON.parse(row.apps);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(app => apps.add(app));
+        }
+      } catch {}
+    }
+
+    const recordings = db
+      .prepare(`SELECT id, captured_at FROM recordings ORDER BY captured_at DESC LIMIT 100`)
+      .all();
+
+    res.json({
+      activity_types: activityRows.map(r => r.activity_type),
+      apps: Array.from(apps).sort(),
+      recordings
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/observations/:recordingId', (req, res) => {
   try {
     const { recordingId } = req.params;
@@ -957,13 +990,17 @@ app.get('/api/observations', (req, res) => {
     }
 
     if (start_ts) {
+      const n = Number(start_ts);
+      if (!Number.isFinite(n)) return res.status(400).json({ error: 'Invalid start_ts' });
       whereClauses.push('timestamp >= ?');
-      params.push(Number(start_ts));
+      params.push(n);
     }
 
     if (end_ts) {
+      const n = Number(end_ts);
+      if (!Number.isFinite(n)) return res.status(400).json({ error: 'Invalid end_ts' });
       whereClauses.push('timestamp <= ?');
-      params.push(Number(end_ts));
+      params.push(n);
     }
 
     if (source === 'recorder') {
@@ -991,8 +1028,8 @@ app.get('/api/observations', (req, res) => {
       .all(...params, safeLimit, safeOffset)
       .map(obs => ({
         ...obs,
-        apps: obs.apps ? JSON.parse(obs.apps) : [],
-        topics: obs.topics ? JSON.parse(obs.topics) : []
+        apps: obs.apps ? (() => { try { return JSON.parse(obs.apps); } catch { return []; } })() : [],
+        topics: obs.topics ? (() => { try { return JSON.parse(obs.topics); } catch { return []; } })() : [],
       }));
 
     res.json({
@@ -1006,38 +1043,6 @@ app.get('/api/observations', (req, res) => {
   }
 });
 
-app.get('/api/observations/filters', (req, res) => {
-  try {
-    const activityRows = db
-      .prepare(`SELECT DISTINCT activity_type FROM observations WHERE activity_type IS NOT NULL ORDER BY activity_type ASC`)
-      .all();
-    const appRows = db
-      .prepare(`SELECT apps FROM observations WHERE apps IS NOT NULL`)
-      .all();
-
-    const apps = new Set();
-    for (const row of appRows) {
-      try {
-        const parsed = JSON.parse(row.apps);
-        if (Array.isArray(parsed)) {
-          parsed.forEach(app => apps.add(app));
-        }
-      } catch {}
-    }
-
-    const recordings = db
-      .prepare(`SELECT id, captured_at FROM recordings ORDER BY captured_at DESC LIMIT 100`)
-      .all();
-
-    res.json({
-      activity_types: activityRows.map(r => r.activity_type),
-      apps: Array.from(apps).sort(),
-      recordings
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 app.get('/api/recording/:id', (req, res) => {
   try {
     const { id } = req.params;

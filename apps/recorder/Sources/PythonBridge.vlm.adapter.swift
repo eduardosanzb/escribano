@@ -86,7 +86,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         self.process = proc
         print("[PythonBridge] Python PID: \(proc.processIdentifier)")
         try await waitForReady(stdout: stdoutPipe)
-        try connectSocket()
+        try await connectSocket()
         isStarted = true
         print("[PythonBridge] Ready. Socket connected at \(socketPath)")
     }
@@ -139,10 +139,20 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
     }
     private func waitForReady(stdout: Pipe) async throws {
         print("[PythonBridge] Waiting for model load (may take 30-120s on first run)...")
-        let deadline = Date().addingTimeInterval(180)
-        try await withCheckedThrowingContinuation { continuation in
+        let timeoutSeconds: UInt64 = 180
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let buffer = LineBuffer()
             let resumed = ResumeFlag()
+
+            // Explicit deadline task — fires even if no stdout output arrives.
+            let timeoutTask = Task {
+                try? await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
+                guard !resumed.value else { return }
+                resumed.value = true
+                stdout.fileHandleForReading.readabilityHandler = nil
+                continuation.resume(throwing: PythonBridgeError.startupTimeout)
+            }
+
             stdout.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
@@ -158,20 +168,16 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                        status == "ready" {
                         guard !resumed.value else { return }
                         resumed.value = true
+                        timeoutTask.cancel()
                         stdout.fileHandleForReading.readabilityHandler = nil
                         continuation.resume(returning: ())
                         return
                     }
                 }
-                if Date() > deadline && !resumed.value {
-                    resumed.value = true
-                    stdout.fileHandleForReading.readabilityHandler = nil
-                    continuation.resume(throwing: PythonBridgeError.startupTimeout)
-                }
             }
         }
     }
-    private func connectSocket() throws {
+    private func connectSocket() async throws {
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         withUnsafeMutableBytes(of: &addr.sun_path) { ptr in
@@ -195,7 +201,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                 break
             }
             print("[PythonBridge] Socket connect attempt \(attempt)/5 failed (errno=\(errno)), retrying...")
-            Thread.sleep(forTimeInterval: 0.5)
+            try? await Task.sleep(nanoseconds: 500_000_000)
         }
         guard connected else {
             close(fd)

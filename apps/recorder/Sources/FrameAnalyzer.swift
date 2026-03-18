@@ -67,25 +67,26 @@ actor FrameAnalyzer {
                 }
                 let elapsed = String(format: "%.1f", Date().timeIntervalSince(t0))
                 print("[FrameAnalyzer] Batch complete: \(descriptions.count)/\(frames.count) parsed in \(elapsed)s")
+                // Only save when all frames were parsed — a partial result means the
+                // parser may have silently dropped lines and we can't reliably pair
+                // descriptions to frames by position. Retry the whole batch instead.
+                guard descriptions.count == frames.count else {
+                    print("[FrameAnalyzer] Partial parse (\(descriptions.count)/\(frames.count)) — marking all for retry")
+                    for frame in frames {
+                        try? await obsStore.markFrameFailed(id: frame.id)
+                    }
+                    continue
+                }
                 do {
                     try await obsStore.saveObservations(from: frames, descriptions: descriptions)
                 } catch {
                     print("[FrameAnalyzer] DB write error: \(error.localizedDescription)")
                     continue
                 }
-                let analyzedCount = min(frames.count, descriptions.count)
-                let analyzedIds   = frames.prefix(analyzedCount).map { $0.id }
                 do {
-                    try await obsStore.markFramesAnalyzed(ids: analyzedIds)
+                    try await obsStore.markFramesAnalyzed(ids: frames.map { $0.id })
                 } catch {
                     print("[FrameAnalyzer] Failed to mark frames analyzed: \(error.localizedDescription)")
-                }
-                if descriptions.count < frames.count {
-                    let failedFrames = Array(frames.dropFirst(analyzedCount))
-                    print("[FrameAnalyzer] \(failedFrames.count) frames unparsed — marking for retry")
-                    for frame in failedFrames {
-                        try? await obsStore.markFrameFailed(id: frame.id)
-                    }
                 }
             } catch is CancellationError {
                 break

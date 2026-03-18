@@ -67,12 +67,16 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func pause() {
+        guard !isPaused else { return }
         isPaused = true
+        Task { try? await stream?.stopCapture() }
         print("[StreamCapture] Paused.")
     }
 
     func resume() {
+        guard isPaused else { return }
         isPaused = false
+        Task { try? await stream?.startCapture() }
         print("[StreamCapture] Resumed.")
     }
 

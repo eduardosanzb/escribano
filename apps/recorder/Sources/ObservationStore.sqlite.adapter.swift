@@ -85,10 +85,20 @@ actor SQLiteObservationStore: ObservationStore {
             }
             defer { sqlite3_finalize(stmt) }
             let obsId = UUID().uuidString
-            let quotedApps   = desc.apps.map { "\"\($0)\"" }.joined(separator: ",")
-            let quotedTopics = desc.topics.map { "\"\($0)\"" }.joined(separator: ",")
-            let appsJson = "[" + quotedApps + "]"
-            let topicsJson = "[" + quotedTopics + "]"
+            let appsJson: String
+            let topicsJson: String
+            if let appsData = try? JSONSerialization.data(withJSONObject: desc.apps),
+               let appsStr = String(data: appsData, encoding: .utf8) {
+                appsJson = appsStr
+            } else {
+                appsJson = "[]"
+            }
+            if let topicsData = try? JSONSerialization.data(withJSONObject: desc.topics),
+               let topicsStr = String(data: topicsData, encoding: .utf8) {
+                topicsJson = topicsStr
+            } else {
+                topicsJson = "[]"
+            }
             sqlite3_bind_text(stmt, 1, obsId,             -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(stmt, 2, frame.id,          -1, SQLITE_TRANSIENT)
             sqlite3_bind_double(stmt, 3, frame.timestamp)

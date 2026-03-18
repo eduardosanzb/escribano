@@ -41,6 +41,7 @@ scripts/poc-vllm-mlx/__pycache__/
 scripts/poc-vllm-mlx/.venv/
 scripts/poc-vllm-mlx/docs/
 scripts/poc-mlx-swift/.swiftpm/**/xcuserdata/
+apps/recorder/.swiftpm/xcode/xcuserdata/
 
 # Legacy scripts
 src/scripts/__pycache__/

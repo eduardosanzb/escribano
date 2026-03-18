@@ -295,10 +295,20 @@
         const data = await res.json();
 
         const activitySelect = document.getElementById('activity-select');
-        activitySelect.innerHTML = data.activity_types.map(type => `<option value="${type}">${type}</option>`).join('');
+        for (const type of data.activity_types) {
+          const opt = document.createElement('option');
+          opt.value = type;
+          opt.textContent = type;
+          activitySelect.appendChild(opt);
+        }
 
         const appSelect = document.getElementById('app-select');
-        appSelect.innerHTML = data.apps.map(app => `<option value="${app}">${app}</option>`).join('');
+        for (const app of data.apps) {
+          const opt = document.createElement('option');
+          opt.value = app;
+          opt.textContent = app;
+          appSelect.appendChild(opt);
+        }
 
         const recordingSelect = document.getElementById('recording-select');
         data.recordings.forEach(rec => {
@@ -367,25 +377,63 @@
         const card = document.createElement('article');
         card.className = 'observation-card';
 
-        const sourceBadge = obs.frame_id ? 'Recorder' : 'Batch';
-        const sourceHtml = `<span class="badge badge-source">${sourceBadge}</span>`;
-
-        const activityHtml = obs.activity_type ? `<span class="badge badge-activity">${obs.activity_type}</span>` : '';
-        const appBadges = (obs.apps || []).map(app => `<span class="badge badge-app">${app}</span>`).join('');
-        const topicBadges = (obs.topics || []).map(topic => `<span class="badge badge-topic">${topic}</span>`).join('');
-
+        // Image
         const imagePath = resolveImage(obs.image_path);
-        const imageHtml = obs.image_path && imagePath ? `<img class="observation-image" src="${imagePath}" alt="Frame ${obs.id}" onclick="openModal('${imagePath}')">` : `<div style="height:180px;display:flex;align-items:center;justify-content:center;color:#666;background:#f3f4f6;">No image</div>`;
+        if (obs.image_path && imagePath) {
+          const img = document.createElement('img');
+          img.className = 'observation-image';
+          img.src = imagePath;
+          img.alt = `Frame ${obs.id}`;
+          img.addEventListener('click', () => openModal(imagePath));
+          card.appendChild(img);
+        } else {
+          const placeholder = document.createElement('div');
+          placeholder.style.cssText = 'height:180px;display:flex;align-items:center;justify-content:center;color:#666;background:#f3f4f6;';
+          placeholder.textContent = 'No image';
+          card.appendChild(placeholder);
+        }
 
-        card.innerHTML = `
-          ${imageHtml}
-          <div class="observation-content">
-            <div class="observation-timestamp">${formatTimestamp(obs.timestamp)} • ${obs.recording_id}</div>
-            <div class="badges">${sourceHtml}${activityHtml}${appBadges}${topicBadges}</div>
-            <p class="observation-description">${obs.vlm_description || obs.text || 'No description'}</p>
-          </div>
-        `;
+        // Content
+        const content = document.createElement('div');
+        content.className = 'observation-content';
 
+        const timestamp = document.createElement('div');
+        timestamp.className = 'observation-timestamp';
+        timestamp.textContent = `${formatTimestamp(obs.timestamp)} • ${obs.recording_id}`;
+        content.appendChild(timestamp);
+
+        const badges = document.createElement('div');
+        badges.className = 'badges';
+        const sourceBadge = document.createElement('span');
+        sourceBadge.className = 'badge badge-source';
+        sourceBadge.textContent = obs.frame_id ? 'Recorder' : 'Batch';
+        badges.appendChild(sourceBadge);
+        if (obs.activity_type) {
+          const ab = document.createElement('span');
+          ab.className = 'badge badge-activity';
+          ab.textContent = obs.activity_type;
+          badges.appendChild(ab);
+        }
+        for (const app of (obs.apps || [])) {
+          const b = document.createElement('span');
+          b.className = 'badge badge-app';
+          b.textContent = app;
+          badges.appendChild(b);
+        }
+        for (const topic of (obs.topics || [])) {
+          const b = document.createElement('span');
+          b.className = 'badge badge-topic';
+          b.textContent = topic;
+          badges.appendChild(b);
+        }
+        content.appendChild(badges);
+
+        const desc = document.createElement('p');
+        desc.className = 'observation-description';
+        desc.textContent = obs.vlm_description || obs.text || 'No description';
+        content.appendChild(desc);
+
+        card.appendChild(content);
         grid.appendChild(card);
       });
 

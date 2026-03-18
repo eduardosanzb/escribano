@@ -344,9 +344,10 @@ export function createMlxIntelligenceService(
       mode === 'vlm' ? getVlmSocketPath() : getLlmSocketPath();
     if (existsSync(staleSocket)) {
       debugLog(`Cleanup: removing stale socket ${staleSocket}`);
-      spawnSync('pkill', ['-f', `mlx_bridge.py.*--mode.*${mode}`], {
-        encoding: 'utf8',
-      });
+      const stalePid = bridgeState.process?.pid;
+      if (stalePid) {
+        try { process.kill(stalePid, 'SIGTERM'); } catch { /* already gone */ }
+      }
       try {
         unlinkSync(staleSocket);
       } catch {

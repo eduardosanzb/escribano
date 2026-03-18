@@ -10,7 +10,6 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -250,13 +249,12 @@ export async function recorderStatus(follow = false): Promise<void> {
   const logFile = path.join(LOGS_DIR, 'escribano-recorder.log');
   if (existsSync(logFile)) {
     try {
-      const content = readFileSync(logFile, 'utf8').trim().split('\n');
-      const tail = content.slice(-20);
+      const result = spawnSync('tail', ['-n', '20', logFile], { encoding: 'utf8' });
       console.log('Recent logs:');
-      for (const line of tail) {
+      for (const line of (result.stdout ?? '').trimEnd().split('\n')) {
         console.log(`  ${line}`);
       }
-    } catch (error) {
+    } catch {
       console.log(`Recent logs       : (error reading ${logFile})`);
     }
   } else {
@@ -271,8 +269,9 @@ export async function recorderStatus(follow = false): Promise<void> {
       filesToTail.push(errorLogFile);
     }
     const tail = spawn('tail', ['-f', ...filesToTail], { stdio: 'inherit' });
-    tail.on('exit', () => process.exit(0));
-    await new Promise(() => {});
+    process.on('SIGINT', () => { tail.kill('SIGTERM'); process.exit(0); });
+    process.on('SIGTERM', () => { tail.kill('SIGTERM'); process.exit(0); });
+    await new Promise<void>((resolve) => tail.on('exit', () => resolve()));
   }
 }
 

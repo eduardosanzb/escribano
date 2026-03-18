@@ -20,15 +20,27 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var analyzerTask: Task<Void, Never>?
 
     /// Called by NSApplication when the app has finished launching.
+    private var sigtermSource: DispatchSourceSignal?
+    private var sigintSource: DispatchSourceSignal?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        signal(SIGTERM) { _ in
+        // Block default POSIX handlers so DispatchSource can intercept them.
+        signal(SIGTERM, SIG_IGN)
+        signal(SIGINT,  SIG_IGN)
+
+        sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        sigtermSource?.setEventHandler {
             print("[escribano-recorder] SIGTERM — shutting down")
             NSApp.terminate(nil)
         }
-        signal(SIGINT) { _ in
+        sigtermSource?.resume()
+
+        sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+        sigintSource?.setEventHandler {
             print("[escribano-recorder] SIGINT — shutting down")
             NSApp.terminate(nil)
         }
+        sigintSource?.resume()
 
         Task { @MainActor in
             await self.start()
@@ -39,7 +51,6 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         // Permission check: wait for Screen Recording permission before proceeding.
         // This is necessary because every swift build creates a new CDHash,
         // so TCC forgets the permission each time during development.
-        print(CGPreflightScreenCaptureAccess())
         if !CGPreflightScreenCaptureAccess() {
             print("[escribano-recorder] Screen Recording permission not granted")
             print("[escribano-recorder] Requesting permission...")
@@ -56,8 +67,10 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
                 }
                 try? await Task.sleep(for: .seconds(1))
                 if attempts > 30 {
-                fatalError("[escribano-recorder] Aborting: couldn't get Screen Recording permission in a reasonable amount of time")
-              }
+                    print("[escribano-recorder] ERROR: Screen Recording permission not granted after 30s — exiting.")
+                    NSApp.terminate(nil)
+                    return
+                }
             }
             print("[escribano-recorder] Permission granted! Starting capture...")
         }

@@ -27,6 +27,13 @@ const BINARY_SRC = path.join(RECORDER_DIR, '.build', 'release', 'escribano');
 const BIN_DIR = path.join(homedir(), '.escribano', 'bin');
 const BINARY_DEST = path.join(BIN_DIR, 'escribano');
 const PLIST_LABEL = 'com.escribano.capture';
+// macOS 13+ requires the modern launchctl API (bootstrap/bootout) for GUI-domain
+// LaunchAgents. The deprecated load/unload silently fails on Ventura/Sonoma.
+const GUI_DOMAIN =
+  process.platform === 'darwin' && typeof process.getuid === 'function'
+    ? `gui/${process.getuid()}`
+    : '';
+const LAUNCHD_TARGET = `${GUI_DOMAIN}/${PLIST_LABEL}`;
 const PLIST_PATH = path.join(
   homedir(),
   'Library',
@@ -46,14 +53,15 @@ const RECORDER_SOCKET_PATH =
 // ── install ──────────────────────────────────────────────────────────────────
 
 export async function recorderInstall(): Promise<void> {
-  // 1. Check for the Swift CLI
-  const swiftCheck = spawnSync('swift', ['--version'], {
-    encoding: 'utf8',
-  });
-  if (swiftCheck.error || swiftCheck.status !== 0) {
-    console.error('Error: swift command not found.');
+  // 1. Check for pre-built binary bundled with the npm package.
+  //    Build it first with: pnpm build:recorder
+  if (!existsSync(BUNDLED_BINARY)) {
     console.error(
-      'Install Xcode or the Swift toolchain (https://developer.apple.com/xcode/ or https://swift.org/download/)'
+      `Error: pre-built recorder binary not found at ${BUNDLED_BINARY}`
+    );
+    console.error('Build it first: pnpm build:recorder');
+    console.error(
+      '(This compiles the Swift binary and signs it with your Developer certificate.)'
     );
     process.exit(1);
   }
@@ -107,15 +115,26 @@ export async function recorderInstall(): Promise<void> {
   writeFileSync(PLIST_PATH, plist, 'utf8');
   console.log(`Plist written: ${PLIST_PATH}`);
 
-  // 7. Unload existing agent if present (ignore errors)
+  // 6. Unregister existing agent if present (ignore errors — may not be registered)
   try {
-    execSync(`launchctl unload "${PLIST_PATH}" 2>/dev/null`);
+    execSync(`launchctl bootout ${LAUNCHD_TARGET} 2>/dev/null`);
   } catch {}
 
-  // 8. Load LaunchAgent
-  execSync(`launchctl load "${PLIST_PATH}"`);
-  console.log(`LaunchAgent loaded: ${PLIST_LABEL}`);
-  console.log('escribano-recorder is now running and will start on login.');
+  // 7. Register LaunchAgent in the GUI domain (macOS 13+ requires bootstrap, not load)
+  execSync(`launchctl bootstrap ${GUI_DOMAIN} "${PLIST_PATH}"`);
+  console.log(`LaunchAgent registered: ${LAUNCHD_TARGET}`);
+  console.log('');
+  console.log('escribano-recorder installed successfully!');
+  console.log('');
+  console.log('NEXT STEP — Grant Screen Recording permission:');
+  console.log(
+    '  1. Open: System Settings > Privacy & Security > Screen Recording'
+  );
+  console.log(`  2. Enable: ${BINARY_DEST}`);
+  console.log('');
+  console.log('The recorder will retry automatically every 30 seconds.');
+  console.log('Once permission is granted it will start capturing within 30s.');
+  console.log(`Logs: ${LOGS_DIR}/escribano-recorder.log`);
 }
 
 function generatePlist(binaryPath: string): string {
@@ -183,18 +202,24 @@ export async function recorderStatus(follow = false): Promise<void> {
     return;
   }
 
-  // launchd status
+  // launchd status — use `launchctl print` (modern API, macOS 13+)
   try {
-    const result = execSync(`launchctl list ${PLIST_LABEL} 2>&1`, {
+    const result = execSync(`launchctl print ${LAUNCHD_TARGET} 2>&1`, {
       encoding: 'utf8',
     });
-    const pidMatch = result.match(/"PID"\s*=\s*(\d+)/);
-    const running = pidMatch
-      ? `running (PID ${pidMatch[1]})`
-      : 'stopped (will restart)';
+    const pidMatch = result.match(/\bpid\s*=\s*(\d+)/i);
+    let running: string;
+    if (pidMatch) {
+      const pid = Number(pidMatch[1]);
+      running = pid > 0 ? `running (PID ${pid})` : 'stopped (will restart)';
+    } else {
+      running = 'stopped (will restart)';
+    }
     console.log(`Agent status      : ${running}`);
   } catch {
-    console.log('Agent status      : stopped');
+    console.log(
+      'Agent status      : not registered (run: escribano recorder install)'
+    );
   }
   // Pending frames from DB
   if (existsSync(DB_PATH)) {
@@ -259,17 +284,19 @@ export async function recorderRestart(): Promise<void> {
 
   console.log('Stopping recorder...');
   try {
-    execSync(`launchctl unload "${PLIST_PATH}"`);
-  } catch (error) {
+    // bootout unregisters the service from the GUI domain (macOS 13+ modern API)
+    execSync(`launchctl bootout ${LAUNCHD_TARGET} 2>/dev/null`);
+  } catch {
     console.warn(
-      'Warning: unable to unload LaunchAgent (it may not be running)'
+      'Warning: unable to bootout LaunchAgent (it may not be registered)'
     );
   }
 
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
   console.log('Starting recorder...');
-  execSync(`launchctl load "${PLIST_PATH}"`);
+  // bootstrap registers the service in the GUI domain (macOS 13+ modern API)
+  execSync(`launchctl bootstrap ${GUI_DOMAIN} "${PLIST_PATH}"`);
   console.log('Recorder restarted. Run `escribano recorder status` to verify.');
 }
 

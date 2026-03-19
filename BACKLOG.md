@@ -75,11 +75,12 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 #### Phase 2: Python Bridge VLM (started 2026-03-16)
 - ✅ Removed the abandoned `mlx-swift-lm` dependency; recorder now talks to a Python bridge over a Unix socket
 - ✅ Added `VLMInferenceService.port.swift` + `PythonBridge.vlm.adapter.swift` so `FrameAnalyzer` can call any backend via the port interface
-- [ ] Planned: Create `Prompts.swift` + `ResponseParser.swift` for NDJSON responses, and add `ObservationStore` port + SQLite adapter (FrameStore/SQLiteFrameStore already exist in `apps/recorder/Sources/`)
+- ✅ Created `Prompts.swift` + `ResponseParser.swift` for NDJSON responses, and added `ObservationStore` port + SQLite adapter (FrameStore/SQLiteFrameStore already exist in `apps/recorder/Sources/`)
 - ✅ Renamed `VLMAnalyzer.swift` to `FrameAnalyzer.swift`, wired it through `main.swift`, and added the recorder settings in `apps/recorder/Package.swift`
 - ✅ Deployed schema migration `015_observations_frame_fk.sql` (frames → observations FK) and backpressure fixes in `StreamCapture.swift`/`Backpressure.swift`
 - ✅ Python bridge uses `ESCRIBANO_BRIDGE_PATH`/`ESCRIBANO_PYTHON_PATH` overrides for dev flows
 - ✅ 1,043 recorder frames with `frame_id` links (Mar 13‑16) power live summaries now; new `pnpm recorder:monitor` script watches recorder + bridge CPU/memory usage
+- **Phase 2 complete (2026-03-19)**
 - **Ref**: `docs/adr/010-swift-native-visual-intelligence.md` (see Addendum for Python bridge pivot)
 
 #### Phase 3: Continuous Session Aggregation — ADR-011
@@ -107,6 +108,14 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [ ] Artifact caching by `(from_ts, to_ts, format)` unique key; `--force` to regenerate
 - [ ] macOS notification on artifact completion (osascript)
 - [ ] **Ref**: `docs/adr/011-continuous-session-aggregation.md`
+
+#### Phase 4: Distribution Pipeline (ADR-012)
+- [ ] Package the recorder as `Escribano.app` and ship a `.dmg`
+- [ ] Embed a standalone Python environment in the app bundle
+- [ ] Implement async model download and resume with recorder backpressure
+- [ ] Add Makefile + GitHub Actions build/sign/notarize pipeline
+- [ ] Sign inner binaries, app bundle, and release DMG
+- [ ] **Ref**: `docs/adr/012-distribution-pipeline.md`
 
 #### Release Prerequisite: Apple Developer ID Signing
 - [ ] **Sign `escribano` binary with Apple Developer ID certificate** — stable Team ID signature survives rebuilds for all users
@@ -164,6 +173,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ### 2026-03
 
+- **Phase 2 complete** — Python bridge NDJSON parser, prompts, and observation storage are in place; recorder frame analysis is wired through the port/adapters
 - **Recorder Dev Mode Working** — Permission granted to Terminal.app persists across builds; `pnpm recorder:dev` workflow validated; pHash dedup correctly skipping identical frames
 - **pHash Dedup POC (Phase C)** — Validated pHash threshold=8 cleanly separates noise (0-4 bits) from content (10+ bits) across 6 scenarios; dHash, VN FeaturePrint, SCFrameStatus all rejected as primary dedup
 - **SCStream POC (Phase B)** — Validated `SCStream` with Swift 6 concurrency patterns (`@MainActor`, `sampleHandlerQueue: .main`, `MainActor.assumeIsolated`, `nonisolated(unsafe) let`); 5s frame interval confirmed exact; SCStream chosen as Phase 1 capture API

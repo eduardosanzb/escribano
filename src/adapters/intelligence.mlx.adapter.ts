@@ -762,17 +762,21 @@ export function createMlxIntelligenceService(
                 generation_tokens: response.stats.generation_tokens ?? 0,
                 prompt_tps: response.stats.prompt_tps ?? 0,
                 generation_tps: response.stats.generation_tps ?? 0,
-                inference_ms: Math.round((response.stats.generate_time_s ?? 0) * 1000),
+                inference_ms: Math.round(
+                  (response.stats.generate_time_s ?? 0) * 1000
+                ),
                 peak_memory_gb: response.stats.peak_memory_gb ?? 0,
               }
             : undefined;
 
           // Parse interleaved output
           // TODO: this next line destroys the usability of this method; because tights the parsin login to specifric output format, it makes it very hard to change the output format in the future without breaking this method. We should consider changing the output format to be more structured (e.g. JSONL with frame numbers) to avoid this brittle parsing logic.
-          const batchResults = parseInterleavedOutput(rawText, batch).map((r) => ({
-            ...r,
-            vlm_stats,
-          }));
+          const batchResults = parseInterleavedOutput(rawText, batch).map(
+            (r) => ({
+              ...r,
+              vlm_stats,
+            })
+          );
 
           // Append results and invoke callback with cumulative progress
           for (const result of batchResults) {

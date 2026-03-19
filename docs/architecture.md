@@ -359,7 +359,7 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 | **Always-On Recorder (Swift)** | | |
 | `FrameStore` | `SQLiteFrameStore.swift` | Swift-native frame storage + batch claiming |
 | `ObservationStore` | `SQLiteObservationStore.swift` | Swift-native observation persistence |
-| `VLMRunner` | `VLMRunner.swift` | MLX-Swift-LM in-process inference (Phase 2) |
+| `VLMInferenceService` | `PythonBridge.vlm.adapter.swift` | Swift → Python bridge adapter (Unix socket, `mlx_bridge.py`) |
 | `ResponseParser` | `ResponseParser.swift` | Decoupled VLM output parsing |
 | **Publishing** | | |
 | `PublishingService` | `publishing.outline.adapter.ts` | Outline wiki publishing |
@@ -480,7 +480,7 @@ When `summary-v3.md` was used with only 3 of 6 variables replaced, the LLM:
 
 ## Always-On Recorder Architecture
 
-> **Status**: Phase 1 complete (Swift capture agent). Phase 2 (Swift-native VLM analyzer) in progress.
+> **Status**: Phase 1 complete (Swift capture agent). Phase 2 complete (FrameAnalyzer.swift drives Python bridge VLM via Unix socket — mlx-swift-lm was dropped due to 15× perf regression, see ADR-010 addendum).
 > See [ADR-009](adr/009-always-on-recorder.md) and [ADR-010](adr/010-swift-native-visual-intelligence.md) for the full decision records.
 
 Alongside the batch video pipeline, Escribano has a second operating mode: **continuous screen capture** via a Swift LaunchAgent with **in-process VLM analysis**, sharing the same SQLite database. This unified architecture eliminates the Python bridge for always-on capture, running inference entirely in Swift on Apple Silicon.
@@ -496,13 +496,14 @@ Alongside the batch video pipeline, Escribano has a second operating mode: **con
 │  │                                                               │  │
 │  │  ┌────────────────────┐      ┌──────────────────────────┐    │  │
 │  │  │  Capture Task      │      │  VLM Analyzer Task       │    │  │
-│  │  │                    │      │                          │    │  │
+│  │  │  (StreamCapture)   │      │  (FrameAnalyzer)         │    │  │
 │  │  │ • SCStream 1s      │      │ • Poll frames (analyzed)  │    │  │
 │  │  │ • pHash dedup      │      │ • Claim batch            │    │  │
-│  │  │ • Write JPEG       │      │ • MLX-VLM inference      │    │  │
-│  │  │ • Insert frames DB │◄────►│ • Parse response         │    │  │
-│  │  │                    │      │ • Write observations     │    │  │
-│  │  │ (Backpressure)     │      │ • Mark analyzed = 1      │    │  │
+│  │  │ • Write JPEG       │      │ • Call Python bridge     │    │  │
+│  │  │ • Insert frames DB │◄────►│   (Unix socket, VLM)    │    │  │
+│  │  │                    │      │ • Parse response         │    │  │
+│  │  │ (Backpressure)     │      │ • Write observations     │    │  │
+│  │  │                    │      │ • Mark analyzed = 1      │    │  │
 │  │  └────────────────────┘      └──────────────────────────┘    │  │
 │  │                                                               │  │
 │  └───────────────────────────────────────────────────────────────┘  │
@@ -528,11 +529,11 @@ Alongside the batch video pipeline, Escribano has a second operating mode: **con
 
 **Swift Capture Agent** (`apps/recorder/`, `com.escribano.capture` LaunchAgent):
 - Single executable with two concurrent async tasks (no process spawning)
-- Capture task: 1-second intervals via `SCStream`, pHash dedup (threshold=4), writes JPEG + `frames` row
+- Capture task (`StreamCapture`): 1-second intervals via `SCStream`, pHash dedup (threshold=4), writes JPEG + `frames` row
 - Backpressure: pauses at `ESCRIBANO_CAPTURE_HIGH_WATER=500`, resumes at `ESCRIBANO_CAPTURE_LOW_WATER=100`
-- VLM Analyzer task: polls `frames WHERE analyzed=0`, claims batch, runs MLX-VLM inference in-process, writes `observations` with `frame_id` FK, marks `analyzed=1`
-- VLM model: loaded once at startup, stays in memory (~2GB), not unloaded until process exit
-- Decoupled parsing: `ResponseParser` separates VLM output format from parsing logic
+- VLM Analyzer task (`FrameAnalyzer`): polls `frames WHERE analyzed=0`, claims batch, sends to Python bridge via Unix socket (`/tmp/escribano-recorder-vlm.sock`), writes `observations` with `frame_id` FK, marks `analyzed=1`
+- VLM model runs in the Python bridge process (`mlx_bridge.py`, copied to `~/.escribano/scripts/` on `recorder install`); separate socket from batch pipeline (`-recorder-vlm.sock` vs `-vlm.sock`)
+- Decoupled parsing: `ResponseParser.swift` separates VLM output format from parsing logic
 
 **Node.js CLI** (`src/index.ts`, `src/actions/`):
 - `escribano recorder install` — builds Swift binary, installs LaunchAgent plist, registers with launchctl
@@ -566,11 +567,11 @@ TopicBlocks + Artifact Generation (TS, reuses existing logic)
 
 ### Architecture Rationale (ADR-010)
 
-**Why Swift-native for always-on?**
-- **Single process** — No Python bridge, no IPC overhead, no separate process coordination
-- **Simpler backpressure** — Both capture and VLM analysis in same event loop, shared memory
-- **Lower startup cost** — MLX-Swift already running; no spawning Python interpreter on each batch
-- **Batch processing** — VLM Analyzer task runs asynchronously, doesn't block capture task
+**Why Swift + Python bridge for always-on?**
+- **Single Swift process** — No separate Node.js analyzer; capture and VLM analysis in same binary
+- **Simpler backpressure** — Both tasks in same process, shared SQLite connection
+- **Reuses proven bridge** — `mlx_bridge.py` runs at 170-190 tok/s; mlx-swift-lm was 15× slower for VLM (see ADR-010 addendum)
+- **Async decoupling** — VLM Analyzer task runs asynchronously, doesn't block capture task
 
 **Why keep Python bridge for batch?**
 - `--file` mode already works well with existing pipeline (Whisper → VLM → Segmentation)
@@ -588,19 +589,21 @@ TopicBlocks + Artifact Generation (TS, reuses existing logic)
 Swift Capture Agent starts
      │
      ▼
- [VLM] Load model (mlx-swift-lm)
-   • Qwen3-VL-2B-4bit (~2GB)
-   • Kept in memory for process lifetime
-   • Not unloaded between batches
+ FrameAnalyzer connects to Python bridge
+   • Python bridge spawned: mlx_bridge.py (--mode vlm)
+   • Socket: /tmp/escribano-recorder-vlm.sock
+   • VLM model loaded in Python process (Qwen3-VL-4B-Instruct-4bit, ~4GB)
+   • Model stays loaded for process lifetime
      │
      ▼
  Capture + VLM Analyzer tasks run concurrently
+   • Swift sends frame paths over socket → Python returns descriptions
      │
      ▼
  Process terminates (launchd restart on crash, or manual kill)
      │
      ▼
- [VLM] Model unloaded → memory freed
+ [VLM] Python bridge exits → model unloaded → memory freed
 ```
 
 ### Dev Workflow
@@ -623,7 +626,7 @@ npx escribano recorder status    # agent state, pending frames, disk usage
 Following the same clean architecture principles as TypeScript, Swift adapters use protocol-based decoupling:
 
 ```swift
-// Port: abstraction
+// Port: frame storage
 protocol FrameStore {
   func savePending(frame: CapturedFrame) throws
   func claimBatch(limit: Int, lockId: UUID) throws -> [Frame]
@@ -631,9 +634,15 @@ protocol FrameStore {
 }
 
 // Adapter: SQLite implementation
-class SQLiteFrameStore: FrameStore {
-  // Implementation details hidden
+class SQLiteFrameStore: FrameStore { ... }
+
+// Port: VLM inference
+protocol VLMInferenceService {
+  func analyze(imagePaths: [String]) async throws -> [FrameDescription]
 }
+
+// Adapter: Python bridge (drives mlx_bridge.py over Unix socket)
+class PythonBridgeVLMAdapter: VLMInferenceService { ... }
 ```
 
 This enables future storage backends (Turso, PostgreSQL) without changing VLM analyzer or capture task logic.

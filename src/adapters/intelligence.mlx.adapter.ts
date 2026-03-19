@@ -15,7 +15,7 @@
  * See docs/adr/006-mlx-vlm-adapter.md for full design.
  */
 
-import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { createConnection, type Socket } from 'node:net';
 import { dirname, resolve } from 'node:path';
@@ -346,7 +346,11 @@ export function createMlxIntelligenceService(
       debugLog(`Cleanup: removing stale socket ${staleSocket}`);
       const stalePid = bridgeState.process?.pid;
       if (stalePid) {
-        try { process.kill(stalePid, 'SIGTERM'); } catch { /* already gone */ }
+        try {
+          process.kill(stalePid, 'SIGTERM');
+        } catch {
+          /* already gone */
+        }
       }
       try {
         unlinkSync(staleSocket);

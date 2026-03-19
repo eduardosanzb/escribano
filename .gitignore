@@ -65,3 +65,4 @@ scripts/poc-mlx-swift/.build
 apps/recorder/.build
 apps/recorder/.build
 .claude/
+node_modules

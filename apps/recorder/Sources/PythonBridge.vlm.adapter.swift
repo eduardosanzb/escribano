@@ -108,9 +108,13 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
             .appendingPathComponent(".escribano/logs")
         try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
         let logURL = logDir.appendingPathComponent("mlx-bridge-recorder-vlm.log")
+        let stdoutLogURL = logDir.appendingPathComponent("mlx-bridge-recorder-vlm-stdout.log")
         try? FileManager.default.removeItem(at: logURL)
+        try? FileManager.default.removeItem(at: stdoutLogURL)
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        FileManager.default.createFile(atPath: stdoutLogURL.path, contents: nil)
         let stderrLogHandle = try? FileHandle(forWritingTo: logURL)
+        let stdoutLogHandle = try? FileHandle(forWritingTo: stdoutLogURL)
         let stderrPipe = Pipe()
         proc.standardError = stderrPipe
         stderrPipe.fileHandleForReading.readabilityHandler = { handle in
@@ -123,7 +127,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         process = proc
         storedPID = proc.processIdentifier
         log("[PythonBridge] Python PID: \(proc.processIdentifier)")
-        try await waitForReady(stdout: stdoutPipe)
+        try await waitForReady(stdout: stdoutPipe, logHandle: stdoutLogHandle)
         try connectSocket()
         isStarted = true
         log("[PythonBridge] Ready. Socket connected at \(socketPath)")
@@ -190,7 +194,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         return env
     }
 
-    private func waitForReady(stdout: Pipe) async throws {
+    private func waitForReady(stdout: Pipe, logHandle: FileHandle?) async throws {
         log("[PythonBridge] Waiting for model load (may take 30-120s on first run)...")
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let buffer = LineBuffer()
@@ -211,6 +215,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
             stdout.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
+                logHandle?.write(data)
                 buffer.text += String(data: data, encoding: .utf8) ?? ""
                 while let newlineRange = buffer.text.range(of: "\n") {
                     let line = String(buffer.text[..<newlineRange.lowerBound])
@@ -223,10 +228,8 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                        status == "ready"
                     {
                         guard resumed.trySet() else { return }
-                        stdout.fileHandleForReading.readabilityHandler = nil
                         timer.cancel()
                         continuation.resume(returning: ())
-                        return
                     }
                 }
             }
@@ -366,6 +369,12 @@ private final class LineBuffer: @unchecked Sendable {
 private final class ResumeFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var _value: Bool = false
+
+    var isSet: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _value
+    }
 
     /// Atomically transitions false → true. Returns true only for the first caller;
     /// subsequent callers get false and must not resume the continuation.

@@ -63,9 +63,13 @@ export async function recorderInstall(): Promise<void> {
   // 1. Check for pre-built binary bundled with the npm package.
   //    Build it first with: pnpm build:recorder
   if (!existsSync(BUNDLED_BINARY)) {
-    console.error(`Error: pre-built recorder binary not found at ${BUNDLED_BINARY}`);
+    console.error(
+      `Error: pre-built recorder binary not found at ${BUNDLED_BINARY}`
+    );
     console.error('Build it first: pnpm build:recorder');
-    console.error('(This compiles the Swift binary and signs it with your Developer certificate.)');
+    console.error(
+      '(This compiles the Swift binary and signs it with your Developer certificate.)'
+    );
     process.exit(1);
   }
 
@@ -103,10 +107,14 @@ export async function recorderInstall(): Promise<void> {
   console.log('escribano-recorder installed successfully!');
   console.log('');
   console.log('NEXT STEP — Grant Screen Recording permission:');
-  console.log('  1. Open: System Settings > Privacy & Security > Screen Recording');
+  console.log(
+    '  1. Open: System Settings > Privacy & Security > Screen Recording'
+  );
   console.log(`  2. Enable: ${BINARY_DEST}`);
   console.log('');
-  console.log('The recorder will retry automatically every 30 seconds.');
+  console.log(
+    'The recorder will retry automatically every 30 seconds. (Unless you are using dev mode; then you must restart it manually with `pnpm recorder:dev`.)'
+  );
   console.log('Once permission is granted it will start capturing within 30s.');
   console.log(`Logs: ${LOGS_DIR}/escribano-recorder.log`);
 }

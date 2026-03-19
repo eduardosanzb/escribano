@@ -125,6 +125,7 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_DEBUG_PHASH` | Log every pHash comparison + rolling stats every 100 frames | `false` |
 | `ESCRIBANO_CAPTURE_HIGH_WATER` | Pause capture when this many frames are pending analysis | `500` |
 | `ESCRIBANO_CAPTURE_LOW_WATER` | Resume capture when pending frames drop below this | `100` |
+| `ESCRIBANO_MLX_RECORDER_SOCKET` | Unix socket path for recorder's Python VLM bridge | `/tmp/escribano-recorder-vlm.sock` |
 
 **Note:** Recorder variables are injected into the LaunchAgent plist at install time. If you change these values in `~/.escribano/.env`, you must re-run `npx escribano recorder install` for the changes to take effect in the background agent.
 
@@ -151,9 +152,18 @@ src/
 ├── 0_types.ts                         # Core types, interfaces, Zod schemas
 ├── index.ts                           # CLI entry point (single command)
 ├── batch-context.ts                   # Shared init/processing for batch runs
+├── config.ts                          # Config file loader (~/.escribano/.env)
+├── prerequisites.ts                   # Doctor checks (dependency validation)
+├── python-deps.ts                     # Python venv setup & mlx-vlm install
+├── python-utils.ts                    # Python environment resolution helpers
 ├── actions/
 │   ├── process-recording-v3.ts        # V3 Pipeline: Recording → VLM → Segments → TopicBlocks
-│   └── generate-summary-v3.ts         # V3 Summary: TopicBlocks → LLM → Markdown
+│   ├── generate-summary-v3.ts         # V3 Narrative: TopicBlocks → LLM → Markdown
+│   ├── generate-artifact-v3.ts        # V3 Card/Standup: Subject grouping → LLM → Markdown
+│   ├── analyze-frames.ts              # Standalone VLM frame analysis action
+│   ├── outline-index.ts               # Rebuild Outline global index
+│   ├── publish-summary-v3.ts          # Publish single artifact to Outline
+│   └── sync-to-outline.ts             # Sync all artifacts to Outline
 ├── adapters/
 │   ├── capture.cap.adapter.ts         # Cap recording discovery
 │   ├── capture.filesystem.adapter.ts  # Video files with auto audio extraction
@@ -161,23 +171,39 @@ src/
 │   ├── audio.silero.adapter.ts        # VAD preprocessing (Python)
 │   ├── video.ffmpeg.adapter.ts        # Frame extraction + scene detection
 │   ├── intelligence.ollama.adapter.ts # LLM inference (Ollama, for summary generation)
-│   └── intelligence.mlx.adapter.ts    # VLM & LLM inference (MLX-VLM for frames, MLX-LM for text)
+│   ├── intelligence.mlx.adapter.ts    # VLM & LLM inference (MLX-VLM for frames, MLX-LM for text)
+│   └── publishing.outline.adapter.ts  # Outline wiki publishing adapter
 ├── services/                          # Pure business logic (no I/O)
 │   ├── frame-sampling.ts              # Adaptive frame reduction
 │   ├── vlm-service.ts                 # VLM orchestration (backend-agnostic)
 │   ├── activity-segmentation.ts       # Group by activity continuity
-│   └── temporal-alignment.ts          # Attach audio by timestamp
+│   ├── temporal-alignment.ts          # Attach audio by timestamp
+│   └── app-normalization.ts           # Normalize app names for context matching
+├── stats/                             # Pipeline telemetry
+│   ├── index.ts
+│   ├── observer.ts                    # Phase timing observer
+│   ├── repository.ts                  # Run history persistence
+│   ├── resource-tracker.ts            # Memory/CPU tracking
+│   └── types.ts                       # Telemetry types
 ├── db/
 │   ├── index.ts                       # DB connection & repository factory
 │   ├── migrate.ts                     # Auto-run SQL migrations
+│   ├── helpers.ts                     # Query helpers
 │   ├── repositories/                  # SQLite implementations
 │   └── types.ts                       # Manual DB types
 ├── domain/
-│   └── recording.ts                   # Recording entity & state machine
+│   ├── recording.ts                   # Recording entity & state machine
+│   ├── classification.ts              # Classification domain logic
+│   ├── time-range.ts                  # Time range value object
+│   └── transcript.ts                  # Transcript value object
 ├── pipeline/
 │   └── context.ts                     # AsyncLocalStorage observability
 └── utils/
-    └── index.ts                       # Buffer utilities
+    ├── index.ts                       # Buffer utilities
+    ├── model-detector.ts              # RAM-based LLM model auto-selection
+    ├── env-logger.ts                  # Log env vars for debugging
+    ├── id-normalization.ts            # ID normalization helpers
+    └── parallel.ts                    # Parallel processing utilities
 ```
 
 ### Deprecated (V2)
@@ -288,10 +314,18 @@ npx escribano doctor                    # Check dependencies and system requirem
 npx escribano --help                    # Show all CLI options
 npx escribano --version                 # Show version number
 
+# Recorder subcommands
+npx escribano recorder install          # Build Swift binary, install LaunchAgent, register with launchctl
+npx escribano recorder status           # Show agent state, pending frames, disk usage
+npx escribano recorder restart          # Restart the LaunchAgent
+
 # Development & testing
 pnpm quality-test                       # Process all 7 videos with summary (dev)
 pnpm quality-test:fast                  # Process without summary generation (dev)
 pnpm dashboard                          # Start web dashboard at http://localhost:3456
+pnpm recorder:dev                       # swift build -c release + run recorder binary (dev mode)
+pnpm recorder:monitor                   # Monitor recorder resource usage
+pnpm build:recorder                     # Build Swift recorder binary only
 ```
 
 ### Options

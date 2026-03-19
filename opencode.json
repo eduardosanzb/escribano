@@ -1,4 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "plugin": ["worktree"],
   "instructions": ["CLAUDE.md", "BACKLOG.md"]
 }

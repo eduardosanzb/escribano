@@ -104,7 +104,9 @@ export async function recorderInstall(): Promise<void> {
   );
   console.log(`  2. Enable: ${BINARY_DEST}`);
   console.log('');
-  console.log('The recorder will retry automatically every 30 seconds.');
+  console.log(
+    'The recorder will retry automatically every 30 seconds. (Unless you are using dev mode; then you must restart it manually with `pnpm recorder:dev`.)'
+  );
   console.log('Once permission is granted it will start capturing within 30s.');
   console.log(`Logs: ${LOGS_DIR}/escribano-recorder.log`);
 }

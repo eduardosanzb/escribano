@@ -187,7 +187,7 @@ Your screen (live, all displays)
 ScreenCaptureKit (Swift) → 1s interval → pHash dedup → frames DB
      │                                   (skips identical frames)
      ▼
-Node.js batch analyzer → VLM inference (every 2 min)
+Swift FrameAnalyzer → Python bridge (VLM, Unix socket) → observations DB
      │
      ▼
 Activity segmentation → TopicBlocks
@@ -273,12 +273,10 @@ On first run, macOS will ask for Screen Recording permission. Grant it — the a
 - Stores unique frames to `~/.escribano/frames/` with timestamps
 - Runs as a LaunchAgent — starts on login, restarts on crash
 
-### What it doesn't do yet
+### What's next
 
-- VLM analysis of captured frames (Phase 2, coming soon)
-- Automatic artifact generation from live sessions
-
-Until Phase 2 is complete, the recorder captures and stores frames. You can process a specific time window manually once VLM analysis is wired up.
+- Automatic artifact generation from live sessions (trigger `escribano` after capture to process and generate)
+- Apple Developer ID signing (so TCC permission survives binary rebuilds for all users)
 
 ---
 
@@ -412,7 +410,8 @@ Full architecture: [docs/architecture.md](docs/architecture.md)
 - [x] Multiple artifact formats
 - [x] Auto-detect best LLM model
 - [x] Always-on recorder — Phase 1 (capture + pHash dedup + LaunchAgent)
-- [ ] Always-on recorder — Phase 2 (VLM analysis + auto artifact generation)
+- [x] Always-on recorder — Phase 2 (VLM analysis via Swift → Python bridge)
+- [ ] Always-on recorder — Phase 3 (auto artifact generation from live sessions)
 - [ ] MCP server for AI assistants
 - [ ] Auto-detect ffmpeg hardware acceleration
 - [ ] OCR on keyframes for code/URLs

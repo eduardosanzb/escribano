@@ -5,8 +5,9 @@ import CoreImage
 
 /// StreamCapture: Manages SCStream lifecycle and frame processing.
 @MainActor
-final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
+final class StreamCapture: NSObject {
     private var stream:       SCStream?
+    private var bridge:       StreamBridge?
     private let displayID:    UInt32
     private let ciContext   = CIContext()
     private let pHasher     = PHash()
@@ -43,6 +44,9 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         
         super.init()
 
+        let bridge = StreamBridge(capture: self)
+        self.bridge = bridge
+
         let config = SCStreamConfiguration()
         config.width                = display.width  / 2   
         config.height               = display.height / 2
@@ -50,9 +54,9 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         config.pixelFormat          = kCVPixelFormatType_32BGRA
 
         let filter = SCContentFilter(display: display, excludingWindows: [])
-        stream = SCStream(filter: filter, configuration: config, delegate: self)
+        stream = SCStream(filter: filter, configuration: config, delegate: bridge)
         
-        try stream?.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main)
+        try stream?.addStreamOutput(bridge, type: .screen, sampleHandlerQueue: .main)
         try await stream?.startCapture()
 
         print("[StreamCapture] Started — display \(displayID), \(display.width/2)x\(display.height/2)")
@@ -80,38 +84,9 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         print("[StreamCapture] Resumed.")
     }
 
-    // MARK: — SCStreamOutput
-
-    nonisolated func stream(
-        _ stream: SCStream,
-        didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
-        of type: SCStreamOutputType
-    ) {
-        var isComplete = true
-        if let attachments = CMSampleBufferGetSampleAttachmentsArray(
-                sampleBuffer, createIfNecessary: false) as? [NSDictionary],
-           let first  = attachments.first,
-           let rawInt = (first[SCStreamFrameInfo.status] as? NSNumber)?.intValue,
-           let status = SCFrameStatus(rawValue: rawInt) {
-            isComplete = (status == .complete)
-        }
-        guard isComplete else { return }
-        
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-
-        nonisolated(unsafe) let safeBuffer = pixelBuffer
-        MainActor.assumeIsolated { self.processFrame(safeBuffer) }
-    }
-
-    nonisolated func stream(_ stream: SCStream, didStopWithError error: any Error) {
-        Task { @MainActor in
-            print("[StreamCapture] Stream error: \(error.localizedDescription)")
-        }
-    }
-
     // MARK: — Frame processing
 
-    private func processFrame(_ pixelBuffer: CVPixelBuffer) {
+    fileprivate func processFrame(_ pixelBuffer: CVPixelBuffer) {
         guard !isPaused else { return }
         framesSeen += 1
         
@@ -190,6 +165,10 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
+    fileprivate func handleStreamError(_ error: any Error) {
+        print("[StreamCapture] Stream error: \(error.localizedDescription)")
+    }
+
     private func saveJPEG(_ image: CGImage, to url: URL) {
         guard let dest = CGImageDestinationCreateWithURL(
             url as CFURL, "public.jpeg" as CFString, 1, nil
@@ -197,5 +176,56 @@ final class StreamCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         CGImageDestinationAddImage(dest, image,
             [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
         CGImageDestinationFinalize(dest)
+    }
+}
+
+// MARK: - StreamBridge
+
+/// Non-isolated trampoline for ScreenCaptureKit callbacks.
+///
+/// StreamCapture is @MainActor, but ScreenCaptureKit is @preconcurrency imported.
+/// If StreamCapture directly conforms to the ScreenCaptureKit protocols, Swift 6
+/// can insert a hidden actor check into the protocol witness thunk. That check is
+/// what crashes when ScreenCaptureKit calls back from a non-main queue.
+///
+/// This bridge is plain NSObject with no actor isolation, so the witness thunk
+/// stays free of actor checks. It forwards work back to StreamCapture on the
+/// MainActor explicitly via Task.
+final class StreamBridge: NSObject, SCStreamOutput, SCStreamDelegate {
+    private weak var capture: StreamCapture?
+
+    init(capture: StreamCapture) {
+        self.capture = capture
+    }
+
+    func stream(
+        _ stream: SCStream,
+        didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+        of type: SCStreamOutputType
+    ) {
+        var isComplete = true
+        if let attachments = CMSampleBufferGetSampleAttachmentsArray(
+                sampleBuffer, createIfNecessary: false) as? [NSDictionary],
+           let first  = attachments.first,
+           let rawInt = (first[SCStreamFrameInfo.status] as? NSNumber)?.intValue,
+           let status = SCFrameStatus(rawValue: rawInt) {
+            isComplete = (status == .complete)
+        }
+        guard isComplete else { return }
+
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+
+        nonisolated(unsafe) let safeBuffer = pixelBuffer
+        let capture = capture
+        Task { @MainActor [capture] in
+            capture?.processFrame(safeBuffer)
+        }
+    }
+
+    func stream(_ stream: SCStream, didStopWithError error: any Error) {
+        let capture = capture
+        Task { @MainActor [capture] in
+            capture?.handleStreamError(error)
+        }
     }
 }

@@ -39,6 +39,9 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         }
         sigintSource?.resume()
 
+        let buildCommit = ProcessInfo.processInfo.environment["ESCRIBANO_BUILD_COMMIT"] ?? "unknown"
+        log("[escribano-recorder] Build commit: \(buildCommit)")
+
         Task { @MainActor in
             await self.start()
         }

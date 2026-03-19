@@ -66,3 +66,4 @@ apps/recorder/.build
 apps/recorder/.build
 .claude/
 node_modules
+apps/recorder/Sources/BuildInfo.swift

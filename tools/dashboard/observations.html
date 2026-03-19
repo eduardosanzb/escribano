@@ -202,6 +202,35 @@
         background: var(--pico-background-color);
       }
 
+      .badge-vlm {
+        font-family: monospace;
+        background: #f3f4f6;
+        border-color: #9ca3af;
+        color: #374151;
+        cursor: default;
+        position: relative;
+      }
+
+      .badge-vlm .vlm-tooltip {
+        display: none;
+        position: absolute;
+        bottom: calc(100% + 6px);
+        left: 0;
+        background: #1f2937;
+        color: #f9fafb;
+        font-size: 0.7rem;
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        white-space: nowrap;
+        z-index: 10;
+        line-height: 1.6;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      }
+
+      .badge-vlm:hover .vlm-tooltip {
+        display: block;
+      }
+
       .toast {
         position: fixed;
         bottom: 20px;
@@ -447,6 +476,28 @@
             const b = document.createElement("span");
             b.className = "badge badge-topic";
             b.textContent = topic;
+            badges.appendChild(b);
+          }
+          if (obs.vlm_stats) {
+            const s = obs.vlm_stats;
+            const modelShort = (s.model || "").split("/").pop() || s.model;
+            const perFrameMs = s.inference_ms && s.batch_size ? s.inference_ms / s.batch_size : s.inference_ms;
+            const inferenceS = perFrameMs ? (perFrameMs / 1000).toFixed(1) + "s" : "";
+            const b = document.createElement("span");
+            b.className = "badge badge-vlm";
+            b.textContent = `${modelShort}${inferenceS ? " · " + inferenceS : ""}`;
+            const tooltip = document.createElement("span");
+            tooltip.className = "vlm-tooltip";
+            tooltip.innerHTML = [
+              s.batch_size != null ? `batch: ${s.batch_size} frames` : null,
+              s.inference_ms != null ? `batch total: ${s.inference_ms}ms` : null,
+              perFrameMs != null ? `per frame: ${Math.round(perFrameMs)}ms` : null,
+              s.prompt_tokens != null ? `prompt: ${s.prompt_tokens} tok` : null,
+              s.generation_tokens != null ? `gen: ${s.generation_tokens} tok` : null,
+              s.generation_tps != null ? `${Math.round(s.generation_tps)} t/s` : null,
+              s.peak_memory_gb != null ? `peak mem: ${s.peak_memory_gb.toFixed(1)} GB` : null,
+            ].filter(Boolean).join("<br>");
+            b.appendChild(tooltip);
             badges.appendChild(b);
           }
           content.appendChild(badges);

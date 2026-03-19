@@ -930,8 +930,8 @@ app.get('/api/observations/:recordingId', (req, res) => {
     const { recordingId } = req.params;
     const observations = db
       .prepare(
-        `SELECT id, timestamp, image_path, vlm_description, vlm_raw_response, activity_type, apps, topics, type
-         FROM observations 
+        `SELECT id, timestamp, image_path, vlm_description, vlm_raw_response, activity_type, apps, topics, type, vlm_stats
+         FROM observations
          WHERE recording_id = ? AND type = 'visual'
          ORDER BY timestamp ASC`
       )
@@ -1019,7 +1019,7 @@ app.get('/api/observations', (req, res) => {
 
     const observations = db
       .prepare(
-        `SELECT id, recording_id, type, timestamp, frame_id, image_path, vlm_description, vlm_raw_response, activity_type, apps, topics, text
+        `SELECT id, recording_id, type, timestamp, frame_id, image_path, vlm_description, vlm_raw_response, activity_type, apps, topics, text, vlm_stats
          FROM observations
          WHERE ${whereSql}
          ORDER BY timestamp DESC
@@ -1030,6 +1030,7 @@ app.get('/api/observations', (req, res) => {
         ...obs,
         apps: obs.apps ? (() => { try { return JSON.parse(obs.apps); } catch { return []; } })() : [],
         topics: obs.topics ? (() => { try { return JSON.parse(obs.topics); } catch { return []; } })() : [],
+        vlm_stats: obs.vlm_stats ? (() => { try { return JSON.parse(obs.vlm_stats); } catch { return null; } })() : null,
       }));
 
     res.json({

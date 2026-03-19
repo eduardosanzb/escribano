@@ -766,6 +766,7 @@ export function createMlxIntelligenceService(
                   (response.stats.generate_time_s ?? 0) * 1000
                 ),
                 peak_memory_gb: response.stats.peak_memory_gb ?? 0,
+                batch_size: batch.length,
               }
             : undefined;
 

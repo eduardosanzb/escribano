@@ -735,10 +735,18 @@ export function createMlxIntelligenceService(
             throw new Error('No response from VLM inference');
           }
 
-          // Extract raw text from first response
+          // Extract raw text and stats from first response
           const response = responses[0] as {
             text?: string;
             error?: string;
+            stats?: {
+              prompt_tokens?: number;
+              generation_tokens?: number;
+              prompt_tps?: number;
+              generation_tps?: number;
+              peak_memory_gb?: number;
+              generate_time_s?: number;
+            };
           };
           if (response.error) {
             throw new Error(`VLM inference failed: ${response.error}`);
@@ -747,9 +755,28 @@ export function createMlxIntelligenceService(
           const rawText = response.text || '';
           debugLog(`VLM returned ${rawText.length} chars`);
 
+          const vlm_stats = response.stats
+            ? {
+                model: mlxConfig.model,
+                prompt_tokens: response.stats.prompt_tokens ?? 0,
+                generation_tokens: response.stats.generation_tokens ?? 0,
+                prompt_tps: response.stats.prompt_tps ?? 0,
+                generation_tps: response.stats.generation_tps ?? 0,
+                inference_ms: Math.round(
+                  (response.stats.generate_time_s ?? 0) * 1000
+                ),
+                peak_memory_gb: response.stats.peak_memory_gb ?? 0,
+              }
+            : undefined;
+
           // Parse interleaved output
           // TODO: this next line destroys the usability of this method; because tights the parsin login to specifric output format, it makes it very hard to change the output format in the future without breaking this method. We should consider changing the output format to be more structured (e.g. JSONL with frame numbers) to avoid this brittle parsing logic.
-          const batchResults = parseInterleavedOutput(rawText, batch);
+          const batchResults = parseInterleavedOutput(rawText, batch).map(
+            (r) => ({
+              ...r,
+              vlm_stats,
+            })
+          );
 
           // Append results and invoke callback with cumulative progress
           for (const result of batchResults) {

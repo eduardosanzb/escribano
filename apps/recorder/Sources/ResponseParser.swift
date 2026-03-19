@@ -56,7 +56,7 @@ enum ResponseParser {
             let topicsStr = String(afterDesc[topicsRange.upperBound...]).trimmingCharacters(in: .whitespaces)
             topics = parseList(topicsStr)
         }
-        return FrameDescription(description: description, activity: activity, apps: apps, topics: topics)
+        return FrameDescription(description: description, activity: activity, apps: apps, topics: topics, vlmStats: nil)
     }
     // MARK: - Helpers
     /// Map VLM-generated activity words to canonical values.

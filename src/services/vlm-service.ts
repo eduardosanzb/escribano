@@ -20,6 +20,16 @@ export interface VLMConfig {
   ) => void;
 }
 
+export interface VLMInferenceStats {
+  model: string;
+  prompt_tokens: number;
+  generation_tokens: number;
+  prompt_tps: number;
+  generation_tps: number;
+  inference_ms: number;
+  peak_memory_gb: number;
+}
+
 export interface FrameDescription {
   index: number;
   timestamp: number;
@@ -29,6 +39,7 @@ export interface FrameDescription {
   topics: string[];
   imagePath: string;
   raw_response?: string;
+  vlm_stats?: VLMInferenceStats;
 }
 
 const DEFAULT_CONFIG: VLMConfig = {

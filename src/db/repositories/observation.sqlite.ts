@@ -31,9 +31,9 @@ export function createSqliteObservationRepository(
       INSERT INTO observations (
         id, recording_id, frame_id, type, timestamp, end_timestamp,
         image_path, ocr_text, vlm_description, vlm_raw_response, activity_type, apps, topics,
-        text, audio_source, audio_type, embedding, created_at
+        text, audio_source, audio_type, embedding, vlm_stats, created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     delete: db.prepare('DELETE FROM observations WHERE id = ?'),
     deleteByRecording: db.prepare(
@@ -85,6 +85,7 @@ export function createSqliteObservationRepository(
         observation.audio_source,
         observation.audio_type,
         observation.embedding,
+        observation.vlm_stats ?? null,
         now
       );
     },
@@ -111,6 +112,7 @@ export function createSqliteObservationRepository(
             obs.audio_source,
             obs.audio_type,
             obs.embedding,
+            obs.vlm_stats ?? null,
             now
           );
         }

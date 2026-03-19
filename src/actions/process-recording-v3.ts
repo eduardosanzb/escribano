@@ -343,6 +343,9 @@ export async function processRecordingV3(
                     apps: JSON.stringify(result.apps),
                     topics: JSON.stringify(result.topics),
                     embedding: null,
+                    vlm_stats: result.vlm_stats
+                      ? JSON.stringify(result.vlm_stats)
+                      : null,
                     text: null,
                     audio_source: null,
                     audio_type: null,

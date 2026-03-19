@@ -36,6 +36,7 @@
     "ollama": "OLLAMA_NUM_PARALLEL=4 OLLAMA_MAX_LOADED_MODELS=3 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_CONTEXT_LENGTH=262144 ollama serve",
     "index:rebuild": "tsx --env-file=.env src/scripts/rebuild-index.ts",
     "build:recorder": "bash scripts/build-recorder.sh",
+    "prerecorder:dev": "tsx --env-file=.env scripts/migrate.ts",
     "recorder:dev": "tsx --env-file=.env scripts/ensure-python-env.ts && swift build --package-path apps/recorder -c release && launchctl bootout gui/$(id -u) com.escribano.analyze 2>/dev/null; launchctl bootout gui/$(id -u) com.escribano.recorder 2>/dev/null; pkill -f 'apps/recorder/.build/release/escribano' 2>/dev/null; sleep 0.5; set -a && . .env && set +a && ESCRIBANO_BUILD_COMMIT=$(git rev-parse --short HEAD) apps/recorder/.build/release/escribano",
     "recorder:install": "npx . recorder install",
     "recorder:monitor": "tsx scripts/monitor-resources.ts"

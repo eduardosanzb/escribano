@@ -43,7 +43,7 @@ const ESCRIBANO_VENV_PYTHON = resolve(
 describe('getPythonPackagesToInstall', () => {
   it('returns deduplicated MLX packages only (no audio)', () => {
     const packages = getPythonPackagesToInstall();
-    expect(packages).toContain('mlx-vlm>=0.9.0');
+    expect(packages).toContain('mlx-vlm[torch]>=0.4.0');
     expect(packages).toContain('mlx-lm>=0.9.0');
     expect(packages).toContain('mlx>=0.14.0');
     // Should not contain audio packages
@@ -111,7 +111,7 @@ describe('detectPipCommand', () => {
 
   it('returns uv command when uv is available', () => {
     mockExecSync.mockReturnValue('uv 0.1.0');
-    expect(detectPipCommand()).toBe('uv pip install mlx-vlm mlx mlx-lm');
+    expect(detectPipCommand()).toBe('uv pip install mlx-vlm[torch] mlx mlx-lm');
   });
 
   it('returns pip3 command when pip3 is available', () => {
@@ -120,7 +120,7 @@ describe('detectPipCommand', () => {
         throw new Error('uv not found');
       })
       .mockReturnValue('pip 23.0');
-    expect(detectPipCommand()).toBe('pip3 install mlx-vlm mlx mlx-lm');
+    expect(detectPipCommand()).toBe('pip3 install mlx-vlm[torch] mlx mlx-lm');
   });
 
   it('returns pip command as fallback', () => {
@@ -132,7 +132,7 @@ describe('detectPipCommand', () => {
         throw new Error('pip3 not found');
       })
       .mockReturnValue('pip 23.0');
-    expect(detectPipCommand()).toBe('pip install mlx-vlm mlx mlx-lm');
+    expect(detectPipCommand()).toBe('pip install mlx-vlm[torch] mlx mlx-lm');
   });
 
   it('returns python3 -m pip as final fallback', () => {
@@ -140,7 +140,7 @@ describe('detectPipCommand', () => {
       throw new Error('not found');
     });
     expect(detectPipCommand()).toBe(
-      'python3 -m pip install mlx-vlm mlx mlx-lm'
+      'python3 -m pip install mlx-vlm[torch] mlx mlx-lm'
     );
   });
 });

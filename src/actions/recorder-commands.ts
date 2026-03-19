@@ -6,14 +6,7 @@
  */
 
 import { execSync, spawn } from 'node:child_process';
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,7 +34,6 @@ const PLIST_PATH = path.join(
   `${PLIST_LABEL}.plist`
 );
 const LOGS_DIR = path.join(homedir(), '.escribano', 'logs');
-const FRAMES_DIR = path.join(homedir(), '.escribano', 'frames');
 const DB_PATH = path.join(homedir(), '.escribano', 'escribano.db');
 const BRIDGE_SRC = path.join(PACKAGE_ROOT, 'scripts', 'mlx_bridge.py');
 const SCRIPTS_DIR = path.join(homedir(), '.escribano', 'scripts');
@@ -130,7 +122,7 @@ function generatePlist(binaryPath: string): string {
       envMap[key] = value;
     }
   }
-  envMap['ESCRIBANO_MLX_LOG_FILE'] = RECORDER_MLX_LOG;
+  envMap.ESCRIBANO_MLX_LOG_FILE = RECORDER_MLX_LOG;
 
   const envVars = Object.entries(envMap)
     .map(
@@ -247,7 +239,7 @@ export async function recorderStatus(follow = false): Promise<void> {
       for (const line of tail) {
         console.log(`  ${line}`);
       }
-    } catch (error) {
+    } catch (_error) {
       console.log(`Recent logs       : (error reading ${logFile})`);
     }
   } else {
@@ -279,7 +271,7 @@ export async function recorderRestart(): Promise<void> {
   console.log('Stopping recorder...');
   try {
     execSync(`launchctl unload "${PLIST_PATH}"`);
-  } catch (error) {
+  } catch (_error) {
     console.warn(
       'Warning: unable to unload LaunchAgent (it may not be running)'
     );
@@ -297,18 +289,4 @@ export async function recorderRestart(): Promise<void> {
   console.log('Starting recorder...');
   execSync(`launchctl load "${PLIST_PATH}"`);
   console.log('Recorder restarted. Run `escribano recorder status` to verify.');
-}
-
-function dirSizeBytes(dir: string): number {
-  let total = 0;
-  if (!existsSync(dir)) return 0;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      total += dirSizeBytes(full);
-    } else {
-      total += statSync(full).size;
-    }
-  }
-  return total;
 }

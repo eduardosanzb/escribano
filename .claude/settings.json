@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'ROOT=$(git rev-parse --show-toplevel) && ln -sf \"$ROOT/node_modules\" node_modules >&2 && ln -sf \"$ROOT/.env\" .env >&2 && echo \"$PWD\"'",
+            "timeout": 30,
+            "statusMessage": "Linking node_modules and .env from main repo..."
+          }
+        ]
+      }
+    ]
+  }
+}

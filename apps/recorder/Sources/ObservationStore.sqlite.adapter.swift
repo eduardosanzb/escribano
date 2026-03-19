@@ -11,7 +11,7 @@ private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.sel
 actor SQLiteObservationStore: ObservationStore {
     private var handle: OpaquePointer?
     // Must match the version set after migration 015 runs.
-    static let expectedSchemaVersion: Int32 = 15
+    static let expectedSchemaVersion: Int32 = 16
     // MARK: - Init
     /// Opens a second SQLite connection to the same DB file.
     /// Having two connections (FrameStore + ObservationStore) is fine in WAL mode:
@@ -75,8 +75,8 @@ actor SQLiteObservationStore: ObservationStore {
         let sql = """
             INSERT INTO observations
               (id, frame_id, type, timestamp, image_path,
-               vlm_description, activity_type, apps, topics, created_at)
-            VALUES (?, ?, 'visual', ?, ?, ?, ?, ?, ?, datetime('now'))
+               vlm_description, activity_type, apps, topics, vlm_stats, created_at)
+            VALUES (?, ?, 'visual', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         """
         for (frame, desc) in zip(frames, descriptions) {
             var stmt: OpaquePointer?
@@ -107,6 +107,11 @@ actor SQLiteObservationStore: ObservationStore {
             sqlite3_bind_text(stmt, 6, desc.activity,     -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(stmt, 7, appsJson,          -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(stmt, 8, topicsJson,        -1, SQLITE_TRANSIENT)
+            if let statsJson = desc.vlmStats?.toJsonString() {
+                sqlite3_bind_text(stmt, 9, statsJson,     -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 9)
+            }
             let rc = sqlite3_step(stmt)
             guard rc == SQLITE_DONE else {
                 throw ObservationStoreError.insertFailed(String(cString: sqlite3_errmsg(handle)))

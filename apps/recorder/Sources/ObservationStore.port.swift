@@ -7,11 +7,37 @@ import Foundation
 // "Sendable" means this value is safe to pass across actor and task boundaries —
 // Swift 6 enforces this at compile time. Structs with only value-type fields
 // (String, [String]) are automatically Sendable.
+struct VLMStats: Sendable {
+    let model: String
+    let promptTokens: Int
+    let generationTokens: Int
+    let promptTps: Double
+    let generationTps: Double
+    let inferenceMs: Int
+    let peakMemoryGb: Double
+
+    func toJsonString() -> String? {
+        let dict: [String: Any] = [
+            "model":             model,
+            "prompt_tokens":     promptTokens,
+            "generation_tokens": generationTokens,
+            "prompt_tps":        promptTps,
+            "generation_tps":    generationTps,
+            "inference_ms":      inferenceMs,
+            "peak_memory_gb":    peakMemoryGb,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+              let str  = String(data: data, encoding: .utf8) else { return nil }
+        return str
+    }
+}
+
 struct FrameDescription: Sendable {
     let description: String  // e.g. "Fixing TypeScript type error in the fetch handler"
     let activity: String     // normalized: "debugging" | "coding" | "review" | ... | "other"
     let apps: [String]       // e.g. ["VS Code", "Chrome"]
     let topics: [String]     // e.g. ["TypeScript", "API"]
+    let vlmStats: VLMStats?
 }
 // MARK: - DbFrame
 // A row read from the `frames` table. Used by VLMAnalyzer to pass frames into the

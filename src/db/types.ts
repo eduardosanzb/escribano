@@ -51,6 +51,7 @@ export interface DbObservation {
   audio_source: 'mic' | 'system' | null;
   audio_type: 'speech' | 'music' | 'silence' | null;
   embedding: Buffer | null;
+  vlm_stats: string | null;
   created_at: string;
 }
 

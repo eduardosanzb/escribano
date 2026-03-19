@@ -1,0 +1,1 @@
+ALTER TABLE observations ADD COLUMN vlm_stats TEXT DEFAULT NULL;

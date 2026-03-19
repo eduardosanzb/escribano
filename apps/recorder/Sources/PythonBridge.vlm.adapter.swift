@@ -157,8 +157,12 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                 "maxTokens": maxTokens,
             ] as [String: Any],
         ]
-        let rawText = try await sendAndReceive(request: request)
-        let descriptions = ResponseParser.parseInterleavedOutput(rawText)
+        let (rawText, stats) = try await sendAndReceive(request: request)
+        let parsed = ResponseParser.parseInterleavedOutput(rawText)
+        let descriptions = parsed.map { d in
+            FrameDescription(description: d.description, activity: d.activity,
+                             apps: d.apps, topics: d.topics, vlmStats: stats)
+        }
         log("[PythonBridge] Parsed \(descriptions.count)/\(frames.count) frame descriptions")
         return descriptions
     }
@@ -270,7 +274,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         log("[PythonBridge] Socket connected (fd=\(fd))")
     }
 
-    private func sendAndReceive(request: [String: Any]) async throws -> String {
+    private func sendAndReceive(request: [String: Any]) async throws -> (String, VLMStats?) {
         guard let fh = fileHandle else {
             throw PythonBridgeError.notStarted
         }
@@ -318,10 +322,22 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                     }
                     if let done = json["done"] as? Bool, done {
                         let text = json["text"] as? String ?? ""
+                        var stats: VLMStats? = nil
+                        if let s = json["stats"] as? [String: Any] {
+                            stats = VLMStats(
+                                model:            self.modelId,
+                                promptTokens:     s["prompt_tokens"]     as? Int    ?? 0,
+                                generationTokens: s["generation_tokens"] as? Int    ?? 0,
+                                promptTps:        s["prompt_tps"]        as? Double ?? 0,
+                                generationTps:    s["generation_tps"]    as? Double ?? 0,
+                                inferenceMs:      Int((s["generate_time_s"] as? Double ?? 0) * 1000),
+                                peakMemoryGb:     s["peak_memory_gb"]    as? Double ?? 0
+                            )
+                        }
                         guard resumed.trySet() else { return }
                         handle.readabilityHandler = nil
                         timer.cancel()
-                        continuation.resume(returning: text)
+                        continuation.resume(returning: (text, stats))
                         return
                     }
                 }

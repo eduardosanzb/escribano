@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'ln -sf $(git rev-parse --show-toplevel)/node_modules node_modules >&2 && echo \"$PWD\"'",
+            "timeout": 30,
+            "statusMessage": "Linking node_modules from main repo..."
+          }
+        ]
+      }
+    ]
+  }
+}

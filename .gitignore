@@ -64,6 +64,7 @@ scripts/poc-phash-dedup/.build
 scripts/poc-mlx-swift/.build
 apps/recorder/.build
 apps/recorder/.build
-.claude/
+.claude/*
+!.claude/settings.json
 node_modules
 apps/recorder/Sources/BuildInfo.swift

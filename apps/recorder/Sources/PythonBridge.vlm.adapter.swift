@@ -157,7 +157,12 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                 "maxTokens": maxTokens,
             ] as [String: Any],
         ]
-        let (rawText, stats) = try await sendAndReceive(request: request)
+        let (rawText, rawStats) = try await sendAndReceive(request: request)
+        let stats = rawStats.map { s in
+            VLMStats(model: s.model, promptTokens: s.promptTokens, generationTokens: s.generationTokens,
+                     promptTps: s.promptTps, generationTps: s.generationTps, inferenceMs: s.inferenceMs,
+                     peakMemoryGb: s.peakMemoryGb, batchSize: frames.count)
+        }
         let parsed = ResponseParser.parseInterleavedOutput(rawText)
         let descriptions = parsed.map { d in
             FrameDescription(description: d.description, activity: d.activity,
@@ -331,7 +336,8 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                                 promptTps:        s["prompt_tps"]        as? Double ?? 0,
                                 generationTps:    s["generation_tps"]    as? Double ?? 0,
                                 inferenceMs:      Int((s["generate_time_s"] as? Double ?? 0) * 1000),
-                                peakMemoryGb:     s["peak_memory_gb"]    as? Double ?? 0
+                                peakMemoryGb:     s["peak_memory_gb"]    as? Double ?? 0,
+                                batchSize:        0  // filled in by caller once frame count is known
                             )
                         }
                         guard resumed.trySet() else { return }

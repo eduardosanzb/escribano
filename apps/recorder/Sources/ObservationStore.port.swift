@@ -15,6 +15,7 @@ struct VLMStats: Sendable {
     let generationTps: Double
     let inferenceMs: Int
     let peakMemoryGb: Double
+    let batchSize: Int
 
     func toJsonString() -> String? {
         let dict: [String: Any] = [
@@ -25,6 +26,7 @@ struct VLMStats: Sendable {
             "generation_tps":    generationTps,
             "inference_ms":      inferenceMs,
             "peak_memory_gb":    peakMemoryGb,
+            "batch_size":        batchSize,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
               let str  = String(data: data, encoding: .utf8) else { return nil }

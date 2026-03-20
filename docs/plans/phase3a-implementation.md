@@ -1125,18 +1125,22 @@ In `recorderStatus()`, after the pending frames block (around line 224), add:
 ```typescript
 // TopicBlock count from DB
 if (existsSync(DB_PATH)) {
+  let db: Database | undefined;
   try {
-    const db = new Database(DB_PATH, { readonly: true });
+    db = new Database(DB_PATH, { readonly: true });
     const tbRow = db
       .prepare("SELECT COUNT(*) as cnt FROM topic_blocks WHERE recording_id = '__recorder__'")
       .get() as { cnt: number };
     const unclaimedRow = db
       .prepare("SELECT COUNT(*) as cnt FROM observations WHERE tb_id IS NULL AND vlm_description IS NOT NULL")
       .get() as { cnt: number };
-    db.close();
     console.log(`Topic blocks      : ${tbRow.cnt} (${unclaimedRow.cnt} unclaimed observations)`);
   } catch {
     // topic_blocks table may not exist yet (pre-migration-017)
+  } finally {
+    if (db) {
+      db.close();
+    }
   }
 }
 ```

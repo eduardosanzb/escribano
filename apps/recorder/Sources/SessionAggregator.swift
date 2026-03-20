@@ -36,6 +36,7 @@ actor SessionAggregator {
     private let minObservations: Int
     private let pollInterval: Double   // seconds
     private let maxObsPerCycle: Int
+    private let llmBatchSize: Int
 
     // Sentinel recording ID for recorder-generated TopicBlocks
     private let recorderRecordingId = "__recorder__"
@@ -64,11 +65,15 @@ actor SessionAggregator {
         self.maxObsPerCycle = Int(
             ProcessInfo.processInfo.environment["ESCRIBANO_TB_MAX_OBS_PER_CYCLE"] ?? ""
         ) ?? 300
+
+        self.llmBatchSize = Int(
+            ProcessInfo.processInfo.environment["ESCRIBANO_TB_LLM_BATCH_SIZE"] ?? ""
+        ) ?? 50
     }
 
     /// Main aggregation loop. Runs until Task is cancelled.
     func aggregateLoop() async {
-        log("[SessionAggregator] Starting. Gap=\(Int(gapThreshold))s MinObs=\(minObservations) Poll=\(Int(pollInterval))s MaxObs=\(maxObsPerCycle)")
+        log("[SessionAggregator] Starting. Gap=\(Int(gapThreshold))s MinObs=\(minObservations) Poll=\(Int(pollInterval))s MaxObs=\(maxObsPerCycle) LLMBatch=\(llmBatchSize)")
 
         while !Task.isCancelled {
             do {
@@ -143,25 +148,39 @@ actor SessionAggregator {
     // MARK: - Window Processing
 
     /// Process a single time window: group observations via LLM, create TopicBlocks.
+    /// Large windows are split into sub-batches of llmBatchSize to keep prompts small.
     /// Returns the number of TopicBlocks created.
     private func processWindow(_ window: [UnclaimedObservation]) async throws -> Int {
-        let fromTs = window.first!.capturedAt
-        let toTs = window.last!.capturedAt
-
-        let prompt = buildGroupingPrompt(window)
-
-        let response: String
-        do {
-            response = try await textService.generateText(prompt: prompt, maxTokens: 2000)
-        } catch {
-            throw SessionAggregatorError.textGenerationFailed(error.localizedDescription)
+        // Split the window into sub-batches to keep each text_infer prompt small.
+        let subBatches = stride(from: 0, to: window.count, by: llmBatchSize).map { start in
+            Array(window[start..<min(start + llmBatchSize, window.count)])
         }
 
-        let groups = parseGroupingResponse(response, observations: window)
+        var allGroups: [ParsedGroup] = []
 
-        if groups.isEmpty {
-            // Fallback: treat entire window as one TopicBlock
-            log("[SessionAggregator] No groups parsed — creating single TB for window")
+        for subBatch in subBatches {
+            let prompt = buildGroupingPrompt(subBatch)
+            let response: String
+            do {
+                response = try await textService.generateText(prompt: prompt, maxTokens: 2000)
+            } catch {
+                log("[SessionAggregator] text_infer failed for sub-batch: \(error.localizedDescription)")
+                // Fallback: treat sub-batch as a single TB with dominant activity label
+                let tb = createTopicBlock(from: subBatch, label: dominantActivity(subBatch))
+                try await tbStore.save(tb)
+                let claimed = try await obsStore.claimObservations(
+                    ids: subBatch.map { $0.id }, tbId: tb.id
+                )
+                log("[SessionAggregator] Fallback TB \(tb.id): \(claimed)/\(subBatch.count) obs claimed")
+                continue
+            }
+            let parsed = parseGroupingResponse(response, observations: subBatch)
+            allGroups.append(contentsOf: parsed)
+        }
+
+        if allGroups.isEmpty {
+            // All sub-batches failed parsing — treat whole window as one TB
+            log("[SessionAggregator] No groups parsed across all sub-batches — creating single TB")
             let tb = createTopicBlock(from: window, label: dominantActivity(window))
             try await tbStore.save(tb)
             let claimed = try await obsStore.claimObservations(
@@ -172,18 +191,31 @@ actor SessionAggregator {
         }
 
         var created = 0
-        for group in groups {
+        for group in allGroups {
             let groupObs = group.observationIds.compactMap { targetId in
                 window.first { $0.id == targetId }
             }
             guard !groupObs.isEmpty else { continue }
-
             let tb = createTopicBlock(from: groupObs, label: group.label)
             try await tbStore.save(tb)
             let claimed = try await obsStore.claimObservations(
                 ids: groupObs.map { $0.id }, tbId: tb.id
             )
             log("[SessionAggregator] TB \(tb.id) (\(group.label)): \(claimed)/\(groupObs.count) obs claimed")
+            created += 1
+        }
+
+        // Claim any observations the LLM did not assign to any group (previously lost).
+        let claimedIds = Set(allGroups.flatMap { $0.observationIds })
+        let unclaimed = window.filter { !claimedIds.contains($0.id) }
+        if !unclaimed.isEmpty {
+            log("[SessionAggregator] \(unclaimed.count) obs not assigned to any group — creating catch-all TB")
+            let tb = createTopicBlock(from: unclaimed, label: dominantActivity(unclaimed))
+            try await tbStore.save(tb)
+            let claimed = try await obsStore.claimObservations(
+                ids: unclaimed.map { $0.id }, tbId: tb.id
+            )
+            log("[SessionAggregator] Catch-all TB \(tb.id): \(claimed)/\(unclaimed.count) obs claimed")
             created += 1
         }
 

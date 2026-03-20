@@ -180,10 +180,8 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         )
         self.aggregator = aggregator
         self.aggregatorTask = Task {
-            // Wait for VLM service to be ready before starting aggregation.
-            // The FrameAnalyzer.start() call above ensures the bridge is up.
-            // We add a small delay to let the first few observations accumulate.
-            try? await Task.sleep(for: .seconds(30))
+            // Bridge is already up (analyzer.start() awaited above).
+            // WorkQueue serialises bridge calls — SA starts immediately.
             await aggregator.aggregateLoop()
         }
         log("[escribano-recorder] SessionAggregator task started.")

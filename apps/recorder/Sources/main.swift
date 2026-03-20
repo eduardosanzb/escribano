@@ -19,6 +19,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var analyzer: FrameAnalyzer?
     private var analyzerTask: Task<Void, Never>?
     private var vlmAdapter: PythonBridgeVLMAdapter?
+    private var workQueue: WorkQueue?
     private var tbStore: (any TopicBlockStore)?
     private var aggregator: SessionAggregator?
     private var aggregatorTask: Task<Void, Never>?
@@ -138,8 +139,12 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         //    terminateSync() without needing an async context.
         let vlmService = PythonBridgeVLMAdapter()
         self.vlmAdapter = vlmService
-        let sharedQueue = WorkQueue()
-        let analyzer = FrameAnalyzer(obsStore: obsStore, vlmService: vlmService, queue: sharedQueue)
+        let realtimeStreak = Int(
+            ProcessInfo.processInfo.environment["ESCRIBANO_QUEUE_REALTIME_STREAK"] ?? ""
+        ) ?? 10
+        let workQueue = WorkQueue(maxRealtimeStreak: realtimeStreak)
+        self.workQueue = workQueue
+        let analyzer = FrameAnalyzer(obsStore: obsStore, vlmService: vlmService, queue: workQueue)
         self.analyzer = analyzer
         // 3. Start the analyzer in a background Task. start() blocks until the Python
         //    process is ready, then analyzeLoop() runs forever without blocking capture.
@@ -171,7 +176,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             obsStore: obsStore,
             tbStore: tbStore,
             textService: vlmService,
-            queue: sharedQueue
+            queue: workQueue
         )
         self.aggregator = aggregator
         self.aggregatorTask = Task {
@@ -191,7 +196,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         }
 
         let threshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "4") ?? 4
-        log("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold)")
+        log("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold) QueueStreak=\(realtimeStreak)")
     }
 
     func applicationWillTerminate(_ notification: Notification) {

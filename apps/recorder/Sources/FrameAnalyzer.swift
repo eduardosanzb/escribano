@@ -24,11 +24,13 @@ enum FrameAnalyzerError: Error, LocalizedError {
 actor FrameAnalyzer {
     private let obsStore:   any ObservationStore
     private let vlmService: any VLMInferenceService
+    private let queue:      WorkQueue
     private let batchSize:    Int
     private let pollInterval: Double
-    init(obsStore: any ObservationStore, vlmService: any VLMInferenceService) {
+    init(obsStore: any ObservationStore, vlmService: any VLMInferenceService, queue: WorkQueue) {
         self.obsStore    = obsStore
         self.vlmService  = vlmService
+        self.queue       = queue
         self.batchSize   = Int(ProcessInfo.processInfo.environment["ESCRIBANO_ANALYZE_BATCH_SIZE"] ?? "") ?? 5
         self.pollInterval = 10.0
     }
@@ -57,7 +59,9 @@ actor FrameAnalyzer {
                 let t0 = Date()
                 let descriptions: [FrameDescription]
                 do {
-                    descriptions = try await vlmService.runBatch(frames: frames)
+                    descriptions = try await queue.submit(priority: .realtime) { [vlmService] in
+                        try await vlmService.runBatch(frames: frames)
+                    }
                 } catch {
                     print("[FrameAnalyzer] VLM inference error: \(error.localizedDescription)")
                     for frame in frames {

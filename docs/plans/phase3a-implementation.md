@@ -100,7 +100,7 @@ sentinel recording.
 
 ```sql
 -- Link observations to their TopicBlock
-ALTER TABLE observations ADD COLUMN tb_id TEXT REFERENCES topic_blocks(id);
+ALTER TABLE observations ADD COLUMN tb_id TEXT REFERENCES topic_blocks(id) ON DELETE SET NULL;
 CREATE INDEX idx_observations_tb ON observations(tb_id);
 
 -- Time-range columns on topic_blocks

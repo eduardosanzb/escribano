@@ -231,6 +231,7 @@ actor SQLiteObservationStore: ObservationStore {
     /// Atomically claim observations for a TopicBlock.
     func claimObservations(ids: [String], tbId: String) async throws -> Int {
         guard !ids.isEmpty else { return 0 }
+        log("[ObservationStore] claimObservations: tbId=\(tbId) ids=\(ids.count)")
         let placeholders = ids.map { _ in "?" }.joined(separator: ", ")
         let sql = "UPDATE observations SET tb_id = ? WHERE tb_id IS NULL AND id IN (\(placeholders))"
 
@@ -249,9 +250,13 @@ actor SQLiteObservationStore: ObservationStore {
 
         let rc = sqlite3_step(stmt)
         guard rc == SQLITE_DONE else {
-            throw ObservationStoreError.queryFailed(String(cString: sqlite3_errmsg(handle)))
+            let errMsg = String(cString: sqlite3_errmsg(handle))
+            log("[ObservationStore] claimObservations FAILED rc=\(rc): \(errMsg) [SQLITE_CONSTRAINT=19, SQLITE_BUSY=5]")
+            throw ObservationStoreError.queryFailed(errMsg)
         }
-        return Int(sqlite3_changes(handle))
+        let changes = Int(sqlite3_changes(handle))
+        log("[ObservationStore] claimObservations OK: \(changes) row(s) updated")
+        return changes
     }
 
     func close() async {

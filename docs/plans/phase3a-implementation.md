@@ -576,10 +576,10 @@ SessionAggregator (actor)
 │   └── textService: TextGenerationService  (LLM grouping via VLM bridge)
 │
 ├── Configuration (from env):
-│   ├── SESSION_GAP_THRESHOLD: 1200s (20 min)
-│   ├── TB_MIN_OBSERVATIONS: 5
-│   ├── TB_POLL_INTERVAL: 120s (2 min)
-│   └── TB_MAX_OBSERVATIONS_PER_CYCLE: 300
+│   ├── ESCRIBANO_SESSION_GAP_THRESHOLD: 1200s (20 min)
+│   ├── ESCRIBANO_TB_MIN_OBSERVATIONS: 5
+│   ├── ESCRIBANO_TB_POLL_INTERVAL: 120s (2 min)
+│   └── ESCRIBANO_TB_MAX_OBSERVATIONS_PER_CYCLE: 300
 │
 ├── aggregateLoop():
 │   │   while !Task.isCancelled:

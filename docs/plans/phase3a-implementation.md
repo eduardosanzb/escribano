@@ -668,7 +668,7 @@ actor SessionAggregator {
 
         self.maxObsPerCycle = Int(
             ProcessInfo.processInfo.environment["ESCRIBANO_TB_MAX_OBS_PER_CYCLE"] ?? ""
-        ) ?? 500
+        ) ?? 300
     }
 
     /// Main aggregation loop. Runs until Task is cancelled.

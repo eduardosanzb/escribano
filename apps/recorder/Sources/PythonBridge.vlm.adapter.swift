@@ -43,8 +43,6 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     private var fileHandle: FileHandle?
     private var requestId: Int = 0
     private var isStarted: Bool = false
-    /// Counts in-flight vlm_infer requests. generateText() waits until this is 0.
-    private var pendingVLMCount: Int = 0
     /// PID stored nonisolated so applicationWillTerminate can kill the bridge
     /// synchronously without an async context. nonisolated(unsafe) is safe here
     /// because storedPID is only written once (in start()) before any concurrent
@@ -140,8 +138,6 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
             throw PythonBridgeError.notStarted
         }
         guard !frames.isEmpty else { return [] }
-        pendingVLMCount += 1
-        defer { pendingVLMCount -= 1 }
         requestId += 1
         let id = requestId
         var content: [[String: String]] = []
@@ -179,11 +175,6 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     func generateText(prompt: String, maxTokens: Int = 2000) async throws -> String {
         guard isStarted else {
             throw PythonBridgeError.notStarted
-        }
-        // Yield to any pending vlm_infer requests before sending text_infer.
-        // Each Task.sleep releases the actor so runBatch() can enter.
-        while pendingVLMCount > 0 {
-            try await Task.sleep(for: .milliseconds(500))
         }
         requestId += 1
         let id = requestId

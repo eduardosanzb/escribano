@@ -190,6 +190,8 @@ actor SessionAggregator {
             allGroups.append(contentsOf: parsed)
         }
 
+        log("[SessionAggregator] Sub-batch loop done: \(allGroups.count) group(s) from \(subBatches.count) batch(es)")
+
         if allGroups.isEmpty {
             // All sub-batches failed parsing — treat whole window as one TB
             log("[SessionAggregator] No groups parsed across all sub-batches — creating single TB")
@@ -207,6 +209,7 @@ actor SessionAggregator {
             let groupObs = group.observationIds.compactMap { targetId in
                 window.first { $0.id == targetId }
             }
+            log("[SessionAggregator] Group '\(group.label)': \(group.observationIds.count) IDs → \(groupObs.count) matched in window")
             guard !groupObs.isEmpty else { continue }
             let tb = createTopicBlock(from: groupObs, label: group.label)
             try await tbStore.save(tb)

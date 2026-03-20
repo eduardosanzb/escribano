@@ -39,6 +39,7 @@ actor WorkQueue {
     private var nextSequence: UInt64 = 0
     private var isProcessing = false
     private var realtimeStreak = 0
+    private var lastLoggedBucket: Int = -1
     private let maxRealtimeStreak: Int
 
     // MARK: - Init
@@ -70,6 +71,7 @@ actor WorkQueue {
                 }
             )
             queue.append(entry)
+            logQueueIfNeeded()
             if !isProcessing {
                 isProcessing = true
                 Task { await self.processLoop() }
@@ -122,7 +124,9 @@ actor WorkQueue {
                 .min(by: Self.entryOrder)!.offset
         }
 
-        return queue.remove(at: idx)
+        let entry = queue.remove(at: idx)
+        logQueueIfNeeded()
+        return entry
     }
 
     /// Ordering: priority first (lower rawValue = higher priority), then FIFO by sequence.
@@ -134,5 +138,30 @@ actor WorkQueue {
             return a.element.priority < b.element.priority
         }
         return a.element.sequence < b.element.sequence
+    }
+
+    /// Log queue depth only when it crosses a new 25%-bucket of maxRealtimeStreak.
+    /// Bucket 0=empty, 1=≤25%, 2=≤50%, 3=≤75%, 4=≤100%, 5=>100%.
+    private func logQueueIfNeeded() {
+        let size = queue.count
+        let bucket: Int
+        if size == 0 {
+            bucket = 0
+        } else {
+            let pct = maxRealtimeStreak > 0 ? (size * 100) / maxRealtimeStreak : 100
+            switch pct {
+            case 0..<25:   bucket = 1
+            case 25..<50:  bucket = 2
+            case 50..<75:  bucket = 3
+            case 75...100: bucket = 4
+            default:       bucket = 5
+            }
+        }
+        guard bucket != lastLoggedBucket else { return }
+        lastLoggedBucket = bucket
+        let realtimeCount = queue.filter { $0.priority == .realtime }.count
+        let normalCount   = queue.filter { $0.priority == .normal }.count
+        let pct = maxRealtimeStreak > 0 ? (size * 100) / maxRealtimeStreak : 0
+        log("[WorkQueue] size=\(size)/\(maxRealtimeStreak) (\(pct)%) realtime=\(realtimeCount) normal=\(normalCount) streak=\(realtimeStreak)")
     }
 }

@@ -161,7 +161,8 @@ actor SessionAggregator {
 
         var allGroups: [ParsedGroup] = []
 
-        for subBatch in subBatches {
+        for (subBatchIdx, subBatch) in subBatches.enumerated() {
+            log("[SessionAggregator] Sub-batch \(subBatchIdx + 1)/\(subBatches.count): \(subBatch.count) obs, submitting text_infer...")
             let prompt = buildGroupingPrompt(subBatch)
             let response: String
             do {
@@ -179,7 +180,13 @@ actor SessionAggregator {
                 log("[SessionAggregator] Fallback TB \(tb.id): \(claimed)/\(subBatch.count) obs claimed")
                 continue
             }
+            log("[SessionAggregator] text_infer complete: \(response.count) chars. Preview: \(response.prefix(120).replacingOccurrences(of: "\n", with: " "))")
             let parsed = parseGroupingResponse(response, observations: subBatch)
+            if parsed.isEmpty {
+                log("[SessionAggregator] WARN: 0 groups parsed from text_infer response. Raw (first 500 chars): \(response.prefix(500).replacingOccurrences(of: "\n", with: "\\n"))")
+            } else {
+                log("[SessionAggregator] Parsed \(parsed.count) group(s) from sub-batch \(subBatchIdx + 1)")
+            }
             allGroups.append(contentsOf: parsed)
         }
 

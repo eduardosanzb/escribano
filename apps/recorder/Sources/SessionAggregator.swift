@@ -30,6 +30,7 @@ actor SessionAggregator {
     private let obsStore: any ObservationStore
     private let tbStore: any TopicBlockStore
     private let textService: any TextGenerationService
+    private let queue: WorkQueue
 
     // Configuration
     private let gapThreshold: Double   // seconds
@@ -44,11 +45,13 @@ actor SessionAggregator {
     init(
         obsStore: any ObservationStore,
         tbStore: any TopicBlockStore,
-        textService: any TextGenerationService
+        textService: any TextGenerationService,
+        queue: WorkQueue
     ) {
         self.obsStore = obsStore
         self.tbStore = tbStore
         self.textService = textService
+        self.queue = queue
 
         self.gapThreshold = Double(
             ProcessInfo.processInfo.environment["ESCRIBANO_SESSION_GAP_THRESHOLD"] ?? ""
@@ -162,7 +165,9 @@ actor SessionAggregator {
             let prompt = buildGroupingPrompt(subBatch)
             let response: String
             do {
-                response = try await textService.generateText(prompt: prompt, maxTokens: 2000)
+                response = try await queue.submit(priority: .normal) { [textService] in
+                    try await textService.generateText(prompt: prompt, maxTokens: 2000)
+                }
             } catch {
                 log("[SessionAggregator] text_infer failed for sub-batch: \(error.localizedDescription)")
                 // Fallback: treat sub-batch as a single TB with dominant activity label

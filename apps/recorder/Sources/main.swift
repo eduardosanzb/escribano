@@ -138,7 +138,8 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         //    terminateSync() without needing an async context.
         let vlmService = PythonBridgeVLMAdapter()
         self.vlmAdapter = vlmService
-        let analyzer = FrameAnalyzer(obsStore: obsStore, vlmService: vlmService)
+        let sharedQueue = WorkQueue()
+        let analyzer = FrameAnalyzer(obsStore: obsStore, vlmService: vlmService, queue: sharedQueue)
         self.analyzer = analyzer
         // 3. Start the analyzer in a background Task. start() blocks until the Python
         //    process is ready, then analyzeLoop() runs forever without blocking capture.
@@ -169,7 +170,8 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         let aggregator = SessionAggregator(
             obsStore: obsStore,
             tbStore: tbStore,
-            textService: vlmService
+            textService: vlmService,
+            queue: sharedQueue
         )
         self.aggregator = aggregator
         self.aggregatorTask = Task {

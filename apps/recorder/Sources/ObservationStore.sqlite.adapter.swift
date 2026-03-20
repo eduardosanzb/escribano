@@ -184,7 +184,9 @@ actor SQLiteObservationStore: ObservationStore {
             FROM observations o
             LEFT JOIN frames f ON o.frame_id = f.id
             WHERE o.tb_id IS NULL
+              AND o.frame_id IS NOT NULL
               AND o.vlm_description IS NOT NULL
+              AND o.timestamp >= 1577836800.0
             ORDER BY effective_ts ASC
             LIMIT ?
         """

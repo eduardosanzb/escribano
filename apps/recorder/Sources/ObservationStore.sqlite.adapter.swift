@@ -10,8 +10,8 @@ private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.sel
 // Swift guarantees the sqlite3* handle is accessed by only one task at a time.
 actor SQLiteObservationStore: ObservationStore {
     private var handle: OpaquePointer?
-    // Must match the version set after migration 015 runs.
-    static let expectedSchemaVersion: Int32 = 16
+    // Must match the version set after migration 017 runs.
+    static let expectedSchemaVersion: Int32 = 17
     // MARK: - Init
     /// Opens a second SQLite connection to the same DB file.
     /// Having two connections (FrameStore + ObservationStore) is fine in WAL mode:
@@ -34,6 +34,24 @@ actor SQLiteObservationStore: ObservationStore {
         ]
         for pragma in pragmas {
             sqlite3_exec(handle, pragma, nil, nil, nil)
+        }
+
+        // Schema version check (matches FrameStore pattern)
+        var version: Int32 = 0
+        let versionSql = "PRAGMA user_version"
+        var versionStmt: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, versionSql, -1, &versionStmt, nil) == SQLITE_OK else {
+            throw ObservationStoreError.queryFailed("Failed to check schema version")
+        }
+        defer { sqlite3_finalize(versionStmt) }
+        if sqlite3_step(versionStmt) == SQLITE_ROW {
+            version = sqlite3_column_int(versionStmt, 0)
+        }
+        guard version >= Self.expectedSchemaVersion else {
+            throw ObservationStoreError.queryFailed(
+                "Database schema out of date (version \(version), expected \(Self.expectedSchemaVersion)). " +
+                "Run 'escribano recorder install' from Node.js."
+            )
         }
     }
     // MARK: - ObservationStore Protocol
@@ -153,11 +171,100 @@ actor SQLiteObservationStore: ObservationStore {
         sqlite3_bind_text(stmt, 1, id, -1, SQLITE_TRANSIENT)
         sqlite3_step(stmt)
     }
+
+    /// Fetch observations not yet claimed by any TopicBlock.
+    func fetchUnclaimed(limit: Int) async throws -> [UnclaimedObservation] {
+        let sql = """
+            SELECT o.id, o.frame_id, o.timestamp, o.vlm_description,
+                   o.activity_type, o.apps, o.topics,
+                   COALESCE(
+                       CAST(strftime('%s', f.captured_at) AS REAL),
+                       o.timestamp
+                   ) AS effective_ts
+            FROM observations o
+            LEFT JOIN frames f ON o.frame_id = f.id
+            WHERE o.tb_id IS NULL
+              AND o.vlm_description IS NOT NULL
+            ORDER BY effective_ts ASC
+            LIMIT ?
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw ObservationStoreError.queryFailed(String(cString: sqlite3_errmsg(handle)))
+        }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int(stmt, 1, Int32(limit))
+
+        var results: [UnclaimedObservation] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let obsId = String(cString: sqlite3_column_text(stmt, 0))
+            let frameId: String? = sqlite3_column_type(stmt, 1) != SQLITE_NULL
+                ? String(cString: sqlite3_column_text(stmt, 1)) : nil
+            let timestamp = sqlite3_column_double(stmt, 2)
+            let vlmDesc = sqlite3_column_type(stmt, 3) != SQLITE_NULL
+                ? String(cString: sqlite3_column_text(stmt, 3)) : ""
+            let activity = sqlite3_column_type(stmt, 4) != SQLITE_NULL
+                ? String(cString: sqlite3_column_text(stmt, 4)) : "other"
+            let appsJson = sqlite3_column_type(stmt, 5) != SQLITE_NULL
+                ? String(cString: sqlite3_column_text(stmt, 5)) : "[]"
+            let topicsJson = sqlite3_column_type(stmt, 6) != SQLITE_NULL
+                ? String(cString: sqlite3_column_text(stmt, 6)) : "[]"
+            let effectiveTs = sqlite3_column_double(stmt, 7)
+
+            let apps = parseJsonArray(appsJson)
+            let topics = parseJsonArray(topicsJson)
+
+            results.append(UnclaimedObservation(
+                id: obsId,
+                frameId: frameId,
+                timestamp: timestamp,
+                capturedAt: effectiveTs,
+                vlmDescription: vlmDesc,
+                activityType: activity,
+                apps: apps,
+                topics: topics
+            ))
+        }
+        return results
+    }
+
+    /// Atomically claim observations for a TopicBlock.
+    func claimObservations(ids: [String], tbId: String) async throws -> Int {
+        guard !ids.isEmpty else { return 0 }
+        let placeholders = ids.map { _ in "?" }.joined(separator: ", ")
+        let sql = "UPDATE observations SET tb_id = ? WHERE tb_id IS NULL AND id IN (\(placeholders))"
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw ObservationStoreError.queryFailed(String(cString: sqlite3_errmsg(handle)))
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        // Bind tb_id as first parameter
+        sqlite3_bind_text(stmt, 1, tbId, -1, SQLITE_TRANSIENT)
+        // Bind observation IDs
+        for (i, id) in ids.enumerated() {
+            sqlite3_bind_text(stmt, Int32(i + 2), id, -1, SQLITE_TRANSIENT)
+        }
+
+        let rc = sqlite3_step(stmt)
+        guard rc == SQLITE_DONE else {
+            throw ObservationStoreError.queryFailed(String(cString: sqlite3_errmsg(handle)))
+        }
+        return Int(sqlite3_changes(handle))
+    }
+
     func close() async {
         sqlite3_close(handle)
         handle = nil
     }
     // MARK: - Private Helpers
+    private func parseJsonArray(_ json: String) -> [String] {
+        guard let data = json.data(using: .utf8),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [String]
+        else { return [] }
+        return arr
+    }
     private func exec(_ sql: String) throws {
         var errmsg: UnsafeMutablePointer<CChar>?
         let rc = sqlite3_exec(handle, sql, nil, nil, &errmsg)

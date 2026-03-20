@@ -386,12 +386,12 @@ def handle_request(
         log(f"Received request: id={request_id} method={method}", "debug")
 
         # Validate method compatibility with bridge mode
-        if BRIDGE_MODE == "llm" and method == "vlm_infer":
+        if BRIDGE_MODE == "llm" and method in ("vlm_infer", "text_infer"):
             send_response(
                 conn,
                 {
                     "id": request_id,
-                    "error": "vlm_infer not available in LLM-only mode",
+                    "error": f"{method} not available in LLM-only mode",
                     "done": True,
                 },
             )
@@ -409,6 +409,14 @@ def handle_request(
             return
 
         if method == "vlm_infer":
+            handle_vlm_infer(
+                conn, model_obj, processor_obj, config_obj, params, request_id
+            )
+        elif method == "text_infer":
+            # text_infer reuses the VLM model for text-only generation.
+            # This works because Qwen3-VL handles text-only prompts natively.
+            # We call handle_vlm_infer directly — it already handles image=None
+            # when no image paths are in the messages.
             handle_vlm_infer(
                 conn, model_obj, processor_obj, config_obj, params, request_id
             )

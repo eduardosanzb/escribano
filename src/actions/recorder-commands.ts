@@ -223,6 +223,33 @@ export async function recorderStatus(follow = false): Promise<void> {
     console.log(`Pending frames    : (DB not found at ${DB_PATH})`);
   }
 
+  // Topic blocks from DB (Phase 3a)
+  if (existsSync(DB_PATH)) {
+    let db: any;
+    try {
+      db = new Database(DB_PATH, { readonly: true });
+      const tbRow = db
+        .prepare(
+          "SELECT COUNT(*) as cnt FROM topic_blocks WHERE recording_id = '__recorder__'"
+        )
+        .get() as { cnt: number };
+      const unclaimedRow = db
+        .prepare(
+          'SELECT COUNT(*) as cnt FROM observations WHERE tb_id IS NULL AND vlm_description IS NOT NULL'
+        )
+        .get() as { cnt: number };
+      console.log(
+        `Topic blocks      : ${tbRow.cnt} (${unclaimedRow.cnt} unclaimed observations)`
+      );
+    } catch {
+      // topic_blocks table may not exist yet (pre-migration-017)
+    } finally {
+      if (db) {
+        db.close();
+      }
+    }
+  }
+
   // Bridge socket & logs
   if (existsSync(RECORDER_SOCKET_PATH)) {
     console.log(`VLM bridge socket : alive (${RECORDER_SOCKET_PATH})`);

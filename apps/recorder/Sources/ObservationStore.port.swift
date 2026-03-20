@@ -55,6 +55,20 @@ struct DbFrame: Sendable {
     let height: Int
     let retryCount: Int
 }
+
+// MARK: - UnclaimedObservation
+// An observation row enriched with its frame's captured_at timestamp.
+// Used by SessionAggregator for gap-aware windowing.
+struct UnclaimedObservation: Sendable {
+    let id: String
+    let frameId: String?
+    let timestamp: Double         // observation.timestamp (Unix epoch seconds)
+    let capturedAt: Double        // frame.captured_at as Unix epoch, or observation.timestamp as fallback
+    let vlmDescription: String
+    let activityType: String
+    let apps: [String]            // parsed from JSON
+    let topics: [String]          // parsed from JSON
+}
 // ============================================================================
 // Port interface
 // ============================================================================
@@ -100,6 +114,15 @@ protocol ObservationStore: AnyObject, Sendable {
     /// Increment `retry_count` for a frame. If retry_count reaches 3, set `analyzed = 2`
     /// (permanently skipped — won't appear in future claimFrames calls).
     func markFrameFailed(id: String) async throws
+    /// Fetch observations not yet claimed by any TopicBlock.
+    /// Returns observations ordered by timestamp ASC (oldest first).
+    /// Uses frame.captured_at when available for accurate timestamps.
+    /// - Parameter limit: Maximum number of observations to return (default 300)
+    func fetchUnclaimed(limit: Int) async throws -> [UnclaimedObservation]
+    /// Atomically claim observations for a TopicBlock.
+    /// Sets tb_id on all observation IDs. Uses WHERE tb_id IS NULL guard
+    /// to prevent double-claiming. Returns the count of rows actually updated.
+    func claimObservations(ids: [String], tbId: String) async throws -> Int
     /// NEW — releases the sqlite3 handle on shutdown
     func close() async
 }

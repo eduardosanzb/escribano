@@ -27,7 +27,7 @@ import Foundation
 ///   An actor in Swift serializes access to its mutable state — only one task
 ///   can run inside the actor at a time. This prevents two concurrent runBatch()
 ///   calls from racing on the socket write/read state.
-actor PythonBridgeVLMAdapter: VLMInferenceService {
+actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     // MARK: - Configuration
 
     private let socketPath: String // e.g. /tmp/escribano-recorder-vlm.sock
@@ -170,6 +170,26 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         }
         log("[PythonBridge] Parsed \(descriptions.count)/\(frames.count) frame descriptions")
         return descriptions
+    }
+
+    func generateText(prompt: String, maxTokens: Int = 2000) async throws -> String {
+        guard isStarted else {
+            throw PythonBridgeError.notStarted
+        }
+        requestId += 1
+        let id = requestId
+
+        let request: [String: Any] = [
+            "id": id,
+            "method": "text_infer",
+            "params": [
+                "messages": [["role": "user", "content": prompt]],
+                "maxTokens": maxTokens,
+            ] as [String: Any],
+        ]
+
+        let (rawText, _) = try await sendAndReceive(request: request)
+        return rawText
     }
 
     func stop() async {

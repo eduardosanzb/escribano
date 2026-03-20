@@ -19,6 +19,9 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var analyzer: FrameAnalyzer?
     private var analyzerTask: Task<Void, Never>?
     private var vlmAdapter: PythonBridgeVLMAdapter?
+    private var tbStore: (any TopicBlockStore)?
+    private var aggregator: SessionAggregator?
+    private var aggregatorTask: Task<Void, Never>?
 
     /// Called by NSApplication when the app has finished launching.
     private var sigtermSource: DispatchSourceSignal?
@@ -150,6 +153,34 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         }
         log("[escribano-recorder] VLM analyzer task started.")
 
+        // 4. Create TopicBlockStore and SessionAggregator for Phase 3a.
+        //    The aggregator polls unclaimed observations every TB_POLL_INTERVAL
+        //    and groups them into TopicBlocks using the VLM bridge for semantic grouping.
+        let tbStore: any TopicBlockStore
+        do {
+            tbStore = try SQLiteTopicBlockStore(path: dbPath)
+        } catch {
+            log("[escribano-recorder] ERROR: Cannot open topic block store: \(error.localizedDescription)")
+            exit(1)
+        }
+        self.tbStore = tbStore
+
+        // vlmService conforms to both VLMInferenceService and TextGenerationService
+        let aggregator = SessionAggregator(
+            obsStore: obsStore,
+            tbStore: tbStore,
+            textService: vlmService
+        )
+        self.aggregator = aggregator
+        self.aggregatorTask = Task {
+            // Wait for VLM service to be ready before starting aggregation.
+            // The FrameAnalyzer.start() call above ensures the bridge is up.
+            // We add a small delay to let the first few observations accumulate.
+            try? await Task.sleep(for: .seconds(30))
+            await aggregator.aggregateLoop()
+        }
+        log("[escribano-recorder] SessionAggregator task started.")
+
         bp.onPause = { [weak self] in
             self?.captures.forEach { $0.pause() }
         }
@@ -165,6 +196,8 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         log("[escribano-recorder] applicationWillTerminate — cleaning up")
         // Cancel the analyzer task synchronously so the cancellation flag is set immediately.
         analyzerTask?.cancel()
+        // Cancel the aggregator task
+        aggregatorTask?.cancel()
         // Kill the Python bridge via its stored PID. Child processes are NOT automatically
         // killed when the parent exits on macOS — they become orphaned.
         // terminateSync() uses kill(pid, SIGTERM) directly, which is reliable regardless

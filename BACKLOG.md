@@ -86,10 +86,12 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 #### Phase 3: Continuous Session Aggregation — ADR-011
 
 ##### POC: VLM-as-LLM (small machine validation)
-- [ ] Send text-only prompt to `mlx_bridge.py --mode vlm` (no images) using same artifact-generation prompt
-- [ ] Compare output quality vs `Qwen3-4B-Instruct` (current minimum LLM tier from `model-detector.ts`)
-- [ ] If pass → add `vlm-as-llm` fallback tier in `model-detector.ts` for machines with ≤ 16GB RAM (including M1 Air 16GB)
-- [ ] **Goal**: Eliminate separate LLM model load on M1 Air 16GB — one model for everything
+- [x] Send text-only prompt to `mlx_bridge.py --mode vlm` (no images) using same artifact-generation prompt
+- [x] Compare output quality vs `Qwen3-4B-Instruct` (current minimum LLM tier from `model-detector.ts`)
+- [x] If pass → add `vlm-as-llm` fallback tier in `model-detector.ts` for machines with ≤ 16GB RAM (including M1 Air 16GB)
+- [x] **Goal**: Eliminate separate LLM model load on M1 Air 16GB — one model for everything
+
+**POC complete (2026-03-19)** — The bridge/Swift architecture is validated. The recorder can reuse the same long-lived Python socket for frame analysis and text generation; the remaining implementation detail is to route `text_infer` to the loaded model's text backbone instead of the VLM image path.
 
 ##### Phase 3a: SessionAggregator (Swift actor in recorder)
 - [ ] Schema migration `016_session_aggregation.sql` — add `tb_id` to observations, `from_ts`/`to_ts`/`observation_count` to topic_blocks
@@ -196,7 +198,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ## Strategic Bets (6+ months)
 
-- **Multimodal convergence** — Single Qwen3-VL model for both frame analysis AND artifact generation text. Eliminates the VLM+LLM two-model split. On M1 Air 16GB: one model (~4-5GB) stays loaded, does everything. Contingent on VLM-as-LLM POC results (Phase 3a prerequisite).
+- **Multimodal convergence** — Single Qwen3-VL model for both frame analysis AND artifact generation text. Eliminates the VLM+LLM two-model split. On M1 Air 16GB: one model (~4-5GB) stays loaded, does everything. VLM-as-LLM POC validated the shared-bridge approach; Phase 3a now only needs the recorder wiring.
 - **Cloud inference tier** — Hosted option for users without local hardware
 - **Team/Enterprise** — Collaboration features, shared work memory
 - **Cross-platform** — Linux/Windows support (currently macOS Apple Silicon only)

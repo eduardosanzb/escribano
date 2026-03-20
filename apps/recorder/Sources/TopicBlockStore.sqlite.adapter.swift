@@ -32,6 +32,7 @@ actor SQLiteTopicBlockStore: TopicBlockStore {
     }
 
     func save(_ block: TopicBlockInsert) async throws {
+        log("[TopicBlockStore] save() called: id=\(block.id) recording=\(block.recordingId) obs=\(block.observationCount) from=\(Int(block.fromTs)) to=\(Int(block.toTs))")
         let sql = """
             INSERT INTO topic_blocks
               (id, recording_id, context_ids, classification, duration,
@@ -40,7 +41,9 @@ actor SQLiteTopicBlockStore: TopicBlockStore {
         """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
-            throw TopicBlockStoreError.insertFailed(String(cString: sqlite3_errmsg(handle)))
+            let errMsg = String(cString: sqlite3_errmsg(handle))
+            log("[TopicBlockStore] save() prepare FAILED: \(errMsg)")
+            throw TopicBlockStoreError.insertFailed(errMsg)
         }
         defer { sqlite3_finalize(stmt) }
 
@@ -55,8 +58,11 @@ actor SQLiteTopicBlockStore: TopicBlockStore {
 
         let rc = sqlite3_step(stmt)
         guard rc == SQLITE_DONE else {
-            throw TopicBlockStoreError.insertFailed(String(cString: sqlite3_errmsg(handle)))
+            let errMsg = String(cString: sqlite3_errmsg(handle))
+            log("[TopicBlockStore] save() step FAILED rc=\(rc): \(errMsg) [SQLITE_CONSTRAINT=19, SQLITE_BUSY=5]")
+            throw TopicBlockStoreError.insertFailed(errMsg)
         }
+        log("[TopicBlockStore] save() OK: \(block.id)")
     }
 
     func count() async throws -> Int {

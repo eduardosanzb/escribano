@@ -71,12 +71,12 @@ actor SessionAggregator {
 
         self.llmBatchSize = Int(
             ProcessInfo.processInfo.environment["ESCRIBANO_TB_LLM_BATCH_SIZE"] ?? ""
-        ) ?? 50
+        ) ?? 100
     }
 
     /// Main aggregation loop. Runs until Task is cancelled.
     func aggregateLoop() async {
-        log("[SessionAggregator] Starting. Gap=\(Int(gapThreshold))s MinObs=\(minObservations) Poll=\(Int(pollInterval))s MaxObs=\(maxObsPerCycle) LLMBatch=\(llmBatchSize)")
+        log("[SessionAggregator] Starting. Gap=\(Int(gapThreshold))s MinObs=\(minObservations) IdlePoll=\(Int(pollInterval))s MaxObs=\(maxObsPerCycle) LLMBatch=\(llmBatchSize)")
 
         while !Task.isCancelled {
             do {
@@ -110,8 +110,6 @@ actor SessionAggregator {
                 if totalTBs > 0 {
                     log("[SessionAggregator] Cycle complete: created \(totalTBs) TopicBlock(s)")
                 }
-
-                try await Task.sleep(for: .seconds(pollInterval))
 
             } catch is CancellationError {
                 break
@@ -167,7 +165,7 @@ actor SessionAggregator {
             let response: String
             do {
                 response = try await queue.submit(priority: .normal) { [textService] in
-                    try await textService.generateText(prompt: prompt, maxTokens: 2000)
+                    try await textService.generateText(prompt: prompt, maxTokens: 4000)
                 }
             } catch {
                 log("[SessionAggregator] text_infer failed for sub-batch: \(error.localizedDescription)")

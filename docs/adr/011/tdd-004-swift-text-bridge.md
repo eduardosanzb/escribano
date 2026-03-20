@@ -23,6 +23,17 @@ protocol TextGenerationService: AnyObject, Sendable {
 
 This is separate from `VLMInferenceService` because the consumer needs a smaller contract.
 
+`TextGenerationResult` lives in `scripts/poc-swift-text-bridge/Sources/BridgeTypes.swift` for the POC and should move into the recorder target in Phase 3a. Its shape is:
+
+- `text: String` — generated text
+- `elapsedMs: Int` — wall-clock round-trip time
+- `promptTokens: Int` — tokens in the prompt
+- `generationTokens: Int` — tokens generated
+- `totalTokens: Int` — prompt + generation tokens
+- `promptTps: Double` — prompt processing speed (tokens/s)
+- `generationTps: Double` — generation speed (tokens/s)
+- `peakMemoryGb: Double` — peak GPU memory during inference
+
 ## 4. Python contract
 
 `mlx_bridge.py` in `--mode vlm` should accept:
@@ -38,6 +49,8 @@ Response:
 ```
 
 This is a dedicated `text_infer` request on the VLM bridge, not a reused `llm_infer` path.
+
+Note on naming: `text_infer` intentionally uses a single `prompt` string instead of `rawPrompt` or `messages`. `llm_infer` keeps the more general `rawPrompt`/`messages` shape because it supports chat-style inputs and future branching; `text_infer` is only for already-formatted artifact prompts, so the simpler field name is deliberate.
 
 ## 5. Findings from the POC
 

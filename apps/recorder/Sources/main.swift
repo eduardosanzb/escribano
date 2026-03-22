@@ -20,6 +20,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var analyzerTask: Task<Void, Never>?
     private var vlmAdapter: PythonBridgeVLMAdapter?
     private var workQueue: WorkQueue?
+    private var analyzerFrameStore: (any FrameStore)?
     private var tbStore: (any TopicBlockStore)?
     private var aggregator: SessionAggregator?
     private var aggregatorTask: Task<Void, Never>?
@@ -134,6 +135,19 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             exit(1)
         }
         self.obsStore = obsStore
+        // Open a dedicated SQLiteFrameStore connection for FrameAnalyzer.
+        // FrameAnalyzer runs on its own actor executor (background thread) while
+        // StreamCapture/Backpressure use the original `store` on @MainActor.
+        // WAL mode supports multiple concurrent connections — this avoids data races
+        // on a single sqlite3* handle.
+        let analyzerFrameStore: any FrameStore
+        do {
+            analyzerFrameStore = try SQLiteFrameStore(path: dbPath)
+        } catch {
+            log("[escribano-recorder] ERROR: Cannot open analyzer frame store: \(error.localizedDescription)")
+            exit(1)
+        }
+        self.analyzerFrameStore = analyzerFrameStore
         // 2. Create the VLM adapter (Python bridge) and inject it into FrameAnalyzer.
         //    Also store a direct reference so applicationWillTerminate can call
         //    terminateSync() without needing an async context.
@@ -144,7 +158,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         ) ?? 10
         let workQueue = WorkQueue(maxRealtimeStreak: realtimeStreak)
         self.workQueue = workQueue
-        let analyzer = FrameAnalyzer(frameStore: store, obsStore: obsStore, vlmService: vlmService, queue: workQueue)
+        let analyzer = FrameAnalyzer(frameStore: analyzerFrameStore, obsStore: obsStore, vlmService: vlmService, queue: workQueue)
         self.analyzer = analyzer
         // 3. Start the analyzer in a background Task. start() blocks until the Python
         //    process is ready, then analyzeLoop() runs forever without blocking capture.
@@ -209,6 +223,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         // of how the bridge was launched or what env vars it has.
         vlmAdapter?.terminateSync()
         store?.close()
+        analyzerFrameStore?.close()
     }
 }
 

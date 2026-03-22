@@ -406,12 +406,105 @@ The pipeline saves progress aggressively to enable crash recovery:
 - **observation_clusters** — Join table
 - **cluster_merges** — Audio-visual merge records
 
-## Code Conventions
+## Code Quality Rules
 
-- Single types file — `0_types.ts` is the source of truth
-- Ports & Adapters — External systems accessed through interfaces
-- Repository Pattern — Decouples business logic from storage
-- Functional over classes — Factory functions return typed interfaces
+### Architecture: Clean Architecture with Ports & Adapters
+
+This project follows strict Clean Architecture. **The dependency rule is non-negotiable: dependencies point inward.**
+
+```
+ADAPTERS (infrastructure) → ACTIONS (use cases) → SERVICES (pure logic) → DOMAIN (core)
+```
+
+#### Layer Rules
+
+**Domain** (`src/domain/*.ts`):
+- NEVER import from adapters, actions, db, config, or utils
+- Pure value objects and state machines only
+- No side effects, no I/O, no `process.env`
+
+**Services** (`src/services/*.ts`):
+- NEVER import from adapters or actions
+- May import from domain and peer services
+- Must be **pure functions**: no file I/O, no network calls, no `process.env` reads
+- If a service needs I/O, it belongs in `src/actions/` instead
+- Receive dependencies (intelligence service, etc.) as parameters via port interfaces
+
+**Actions** (`src/actions/*.ts`):
+- May import from domain, services, and adapter interfaces (ports)
+- NEVER import from other actions
+- This is the orchestration layer — file reads, LLM calls, DB writes happen here
+- Use `withPipeline()` + `step()` from `pipeline/context.ts` for observability
+
+**Adapters** (`src/adapters/*.ts`):
+- NEVER import from other adapters (no cross-adapter dependencies)
+- NEVER import `config.ts` directly — receive config through factory function parameters
+- NEVER access the database directly — that's the repository layer's job
+- Always implement a port interface from `0_types.ts`
+- Export a factory function: `createXxxService()` returning the port interface type
+
+#### Naming Conventions
+
+| What | Pattern | Example |
+|------|---------|---------|
+| Adapter files | `[port].[implementation].adapter.ts` | `intelligence.mlx.adapter.ts` |
+| Adapter factories | `createXxxService()` | `createMlxIntelligenceService()` |
+| Swift port files | `[Port].port.swift` | `FrameStore.port.swift` |
+| Swift adapter files | `[Port].[impl].adapter.swift` | `FrameStore.sqlite.adapter.swift` |
+| Test files | `src/tests/**/*.test.ts` or co-located `*.test.ts` | `temporal-alignment.test.ts` |
+
+### Configuration
+
+- **Always use `loadConfig()`** from `src/config.ts` — NEVER read `process.env.ESCRIBANO_*` directly
+- All env var defaults must be defined in the Zod schema in `config.ts` — never in adapter code
+- Adapters receive config via factory function parameters or by calling `loadConfig()` inside the factory
+
+### Logging
+
+- **Always use `createLogger(prefix)`** from `src/utils/logger.ts` — NEVER use bare `console.log` in library code
+- `debug()` is gated by config flags — use it for verbose output
+- `info()`, `warn()`, `error()` always emit
+- Prefixes: `[MLX]`, `[Ollama]`, `[FFmpeg]`, `[Pipeline]`, etc.
+
+### Error Handling
+
+- Use domain error types from `src/domain/errors.ts` for typed errors
+- Cleanup code (process teardown, socket cleanup) must log errors at debug level — NEVER use empty `catch {}`
+- Loops over collections (publishing, frame processing) must collect errors and continue — NEVER stop on first failure
+- Always include context in error messages: file path, frame index, recording ID
+
+### Type Safety
+
+- NEVER use `z.any()` in Zod schemas — use typed unions
+- NEVER use `as any` to access internal library APIs
+- Validate DB query results before type assertions — don't blindly cast `as DbRecording`
+
+### Multi-Language Boundaries (TypeScript ↔ Python ↔ Swift)
+
+- **NDJSON protocol**: All IPC uses newline-delimited JSON over Unix domain sockets
+- **SQLite shared access**: Both TS and Swift use WAL mode + `busy_timeout = 5000`
+- **Schema versioning**: Both languages check `PRAGMA user_version` at startup
+- **XML in plists**: Always escape `&`, `<`, `>`, `"`, `'` when generating XML plist files
+- **Python path**: Use the resolution chain in `python-utils.ts` — never hardcode paths
+
+### Testing
+
+- All pure services (`src/services/`) must have corresponding test files
+- Follow existing patterns in `tests/services/frame-sampling.test.ts`
+- Use factory helpers (e.g., `createObservation()`) for test data — don't inline object literals
+- Test file location: `src/tests/` mirroring source structure
+
+### Post-Change Audit Checklist
+
+After writing or modifying code, verify:
+- [ ] No new `process.env.ESCRIBANO_*` reads outside `config.ts`
+- [ ] No new imports between adapters
+- [ ] No new `console.log` in library code (use `createLogger`)
+- [ ] No empty `catch {}` blocks (log at debug level)
+- [ ] No `z.any()` or `as any` in type definitions
+- [ ] Services in `src/services/` remain pure (no `fs`, no `fetch`, no `process.env`)
+- [ ] New public functions have corresponding test coverage
+- [ ] Factory functions return port interface types, not concrete types
 
 ## Task Tracking
 

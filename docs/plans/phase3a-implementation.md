@@ -2,9 +2,13 @@
 
 ## Goal
 
+<<<<<<< ours
 Add a `SessionAggregator` Swift actor to the recorder daemon that continuously groups analyzed observations
 into TopicBlocks using LLM-based semantic grouping via the existing Python bridge. This is Phase 3a of ADR-011
 (Continuous Session Aggregation).
+=======
+Add a `SessionAggregator` Swift actor to the recorder daemon that continuously groups analyzed observations into TopicBlocks using LLM-based semantic grouping via the existing Python bridge. This is Phase 3a of ADR-011 (Continuous Session Aggregation).
+>>>>>>> theirs
 
 ## Prerequisites
 
@@ -28,6 +32,7 @@ Swift Recorder Process
 
 ## Key Decisions
 
+<<<<<<< ours
 | Decision              | Choice                                    | Rationale                                                                 |
 | --------------------- | ----------------------------------------- | ------------------------------------------------------------------------- |
 | Sentinel recording    | `id='__recorder__'` in `recordings` table | Avoids recreating `topic_blocks` table to drop NOT NULL on `recording_id` |
@@ -35,6 +40,15 @@ Swift Recorder Process
 | Activity segmentation | Skipped                                   | Go directly from observations → LLM grouping                              |
 | Max obs per cycle     | 300                                       | Prevents overprocessing large backlogs                                    |
 | Migration number      | 017                                       | 016 already exists (`observations_vlm_stats.sql`)                         |
+=======
+| Decision | Choice | Rationale |
+|---|---|---|
+| Sentinel recording | `id='__recorder__'` in `recordings` table | Avoids recreating `topic_blocks` table to drop NOT NULL on `recording_id` |
+| LLM in daemon | Yes, via existing VLM bridge `text_infer` | VLM-as-LLM POC validated; same process, same model, same socket |
+| Activity segmentation | Skipped | Go directly from observations → LLM grouping |
+| Max obs per cycle | 500 | Prevents overprocessing large backlogs |
+| Migration number | 017 | 016 already exists (`observations_vlm_stats.sql`) |
+>>>>>>> theirs
 
 ---
 
@@ -44,9 +58,13 @@ Swift Recorder Process
 
 ### What
 
+<<<<<<< ours
 Add a `text_infer` method handler that reuses the VLM model for text-only generation. The `vlm_infer` handler
 already supports `image=None` when no images are in messages, so `text_infer` is a thin wrapper that enforces
 text-only mode.
+=======
+Add a `text_infer` method handler that reuses the VLM model for text-only generation. The `vlm_infer` handler already supports `image=None` when no images are in messages, so `text_infer` is a thin wrapper that enforces text-only mode.
+>>>>>>> theirs
 
 ### Changes
 
@@ -64,9 +82,13 @@ elif method == "text_infer":
     )
 ```
 
+<<<<<<< ours
 Also update the mode validation block. Currently `text_infer` would fall through to the "Unknown method" error
 in VLM mode. The `text_infer` method should be allowed in **both** VLM and LLM modes (in VLM mode it reuses
 the VLM; in LLM mode it could use the LLM — but for now we only need VLM mode):
+=======
+Also update the mode validation block. Currently `text_infer` would fall through to the "Unknown method" error in VLM mode. The `text_infer` method should be allowed in **both** VLM and LLM modes (in VLM mode it reuses the VLM; in LLM mode it could use the LLM — but for now we only need VLM mode):
+>>>>>>> theirs
 
 ```python
 # Update the mode validation block (~line 388-409):
@@ -91,16 +113,24 @@ echo '{"id":1,"method":"text_infer","params":{"messages":[{"role":"user","conten
 
 ### What
 
+<<<<<<< ours
 Add `tb_id` FK to observations, add time-range columns to topic_blocks, create indexes, and insert the
 sentinel recording.
 
 > [!IMPORTANT] backup the current db manually before doing any changes ~/.escribano/escribano.db
+=======
+Add `tb_id` FK to observations, add time-range columns to topic_blocks, create indexes, and insert the sentinel recording.
+>>>>>>> theirs
 
 ### SQL
 
 ```sql
 -- Link observations to their TopicBlock
+<<<<<<< ours
 ALTER TABLE observations ADD COLUMN tb_id TEXT REFERENCES topic_blocks(id) ON DELETE SET NULL;
+=======
+ALTER TABLE observations ADD COLUMN tb_id TEXT REFERENCES topic_blocks(id);
+>>>>>>> theirs
 CREATE INDEX idx_observations_tb ON observations(tb_id);
 
 -- Time-range columns on topic_blocks
@@ -128,7 +158,10 @@ INSERT OR IGNORE INTO recordings (
 ### Why NOT recreate topic_blocks
 
 SQLite doesn't support `ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL`. We'd need to:
+<<<<<<< ours
 
+=======
+>>>>>>> theirs
 1. Create a new table without the constraint
 2. Copy data
 3. Drop old table
@@ -139,16 +172,22 @@ This is risky with existing data. The sentinel recording approach is simpler and
 ### Verification
 
 After running `npx escribano recorder install` (which triggers migrations):
+<<<<<<< ours
 
+=======
+>>>>>>> theirs
 ```sql
 PRAGMA user_version;  -- Should be 17
 SELECT * FROM recordings WHERE id = '__recorder__';  -- Should return 1 row
 SELECT sql FROM sqlite_master WHERE name = 'observations';  -- Should show tb_id column
 ```
 
+<<<<<<< ours
 we should leavea note on the migration and also on the CLAUDE.md and README.md about this syntethci
 relationshiop
 
+=======
+>>>>>>> theirs
 ---
 
 ## Step 3: Swift — `TextGenerationService` Protocol
@@ -157,8 +196,12 @@ relationshiop
 
 ### What
 
+<<<<<<< ours
 Define a port protocol for text-only generation, separate from `VLMInferenceService` (which is frame-focused).
 The `SessionAggregator` depends on this protocol, not on the concrete `PythonBridgeVLMAdapter`.
+=======
+Define a port protocol for text-only generation, separate from `VLMInferenceService` (which is frame-focused). The `SessionAggregator` depends on this protocol, not on the concrete `PythonBridgeVLMAdapter`.
+>>>>>>> theirs
 
 ### Code
 
@@ -200,8 +243,12 @@ protocol TextGenerationService: AnyObject, Sendable {
 
 ### What
 
+<<<<<<< ours
 Make `PythonBridgeVLMAdapter` conform to `TextGenerationService` by adding a `generateText()` method that
 sends a `text_infer` request over the same socket.
+=======
+Make `PythonBridgeVLMAdapter` conform to `TextGenerationService` by adding a `generateText()` method that sends a `text_infer` request over the same socket.
+>>>>>>> theirs
 
 ### Changes
 
@@ -238,8 +285,12 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
 ### Why this works
 
 - `sendAndReceive` is already implemented and handles the NDJSON protocol
+<<<<<<< ours
 - `text_infer` on the Python side calls `handle_vlm_infer` which passes `image=None` when no image paths are
   in messages
+=======
+- `text_infer` on the Python side calls `handle_vlm_infer` which passes `image=None` when no image paths are in messages
+>>>>>>> theirs
 - Same socket, same model, same process — no extra RAM or startup time
 
 ---
@@ -251,7 +302,10 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
 ### What
 
 Add two new methods to the `ObservationStore` protocol:
+<<<<<<< ours
 
+=======
+>>>>>>> theirs
 - `fetchUnclaimed(limit:)` — get observations where `tb_id IS NULL`
 - `claimObservations(ids:tbId:)` — atomically set `tb_id` on observations
 
@@ -263,7 +317,11 @@ Add to the `ObservationStore` protocol (after `markFrameFailed`):
     /// Fetch observations not yet claimed by any TopicBlock.
     /// Returns observations ordered by timestamp ASC (oldest first).
     /// Uses frame.captured_at when available for accurate timestamps.
+<<<<<<< ours
     /// - Parameter limit: Maximum number of observations to return (default 300)
+=======
+    /// - Parameter limit: Maximum number of observations to return (default 500)
+>>>>>>> theirs
     func fetchUnclaimed(limit: Int) async throws -> [UnclaimedObservation]
 
     /// Atomically claim observations for a TopicBlock.
@@ -560,7 +618,10 @@ actor SQLiteTopicBlockStore: TopicBlockStore {
 ### What
 
 The core actor that:
+<<<<<<< ours
 
+=======
+>>>>>>> theirs
 1. Polls unclaimed observations on a timer
 2. Groups them by gap-aware windowing
 3. For each window, calls the VLM bridge with a text-only prompt for semantic grouping
@@ -576,6 +637,7 @@ SessionAggregator (actor)
 │   └── textService: TextGenerationService  (LLM grouping via VLM bridge)
 │
 ├── Configuration (from env):
+<<<<<<< ours
 │   ├── ESCRIBANO_SESSION_GAP_THRESHOLD: 1200s (20 min)
 │   ├── ESCRIBANO_TB_MIN_OBSERVATIONS: 5
 │   ├── ESCRIBANO_TB_POLL_INTERVAL: 120s (2 min)
@@ -584,6 +646,16 @@ SessionAggregator (actor)
 ├── aggregateLoop():
 │   │   while !Task.isCancelled:
 │   │     1. fetchUnclaimed(limit: 300)
+=======
+│   ├── SESSION_GAP_THRESHOLD: 1200s (20 min)
+│   ├── TB_MIN_OBSERVATIONS: 5
+│   ├── TB_POLL_INTERVAL: 120s (2 min)
+│   └── TB_MAX_OBSERVATIONS_PER_CYCLE: 500
+│
+├── aggregateLoop():
+│   │   while !Task.isCancelled:
+│   │     1. fetchUnclaimed(limit: 500)
+>>>>>>> theirs
 │   │     2. if empty → sleep(pollInterval), continue
 │   │     3. splitByGap(observations, threshold) → windows[]
 │   │     4. for each window with >= minObservations:
@@ -668,7 +740,11 @@ actor SessionAggregator {
 
         self.maxObsPerCycle = Int(
             ProcessInfo.processInfo.environment["ESCRIBANO_TB_MAX_OBS_PER_CYCLE"] ?? ""
+<<<<<<< ours
         ) ?? 300
+=======
+        ) ?? 500
+>>>>>>> theirs
     }
 
     /// Main aggregation loop. Runs until Task is cancelled.
@@ -1060,7 +1136,10 @@ Add `SessionAggregator` as a third async task alongside StreamCapture and FrameA
 ### File: `apps/recorder/Sources/FrameStore.sqlite.adapter.swift`
 
 Change line 25:
+<<<<<<< ours
 
+=======
+>>>>>>> theirs
 ```swift
     static let expectedSchemaVersion: Int32 = 17  // was 15
 ```
@@ -1068,23 +1147,33 @@ Change line 25:
 ### File: `apps/recorder/Sources/ObservationStore.sqlite.adapter.swift`
 
 Change line 14:
+<<<<<<< ours
 
+=======
+>>>>>>> theirs
 ```swift
     static let expectedSchemaVersion: Int32 = 17  // was 16
 ```
 
 ### Why
 
+<<<<<<< ours
 Both stores check `PRAGMA user_version >= expectedSchemaVersion` on startup. After migration 017 runs, the
 user_version will be 17. The stores need to accept this version (and any future version ≥ 17).
 
 Note: Both stores already use `>=` comparison (via `FrameStoreError.schemaMismatch` which checks
 `version >= Self.expectedSchemaVersion`). Wait — actually, `FrameStore.sqlite.adapter.swift` line 58 does:
 
+=======
+Both stores check `PRAGMA user_version >= expectedSchemaVersion` on startup. After migration 017 runs, the user_version will be 17. The stores need to accept this version (and any future version ≥ 17).
+
+Note: Both stores already use `>=` comparison (via `FrameStoreError.schemaMismatch` which checks `version >= Self.expectedSchemaVersion`). Wait — actually, `FrameStore.sqlite.adapter.swift` line 58 does:
+>>>>>>> theirs
 ```swift
 guard version >= Self.expectedSchemaVersion else {
 ```
 
+<<<<<<< ours
 So setting `expectedSchemaVersion = 17` means it requires _at least_ 17. This is correct — after migration 017
 runs, `user_version` will be 17.
 
@@ -1094,6 +1183,13 @@ add one for consistency, OR leave it as-is since it doesn't validate schema. The
 
 In `SQLiteObservationStore.init()`, after the pragma block, add:
 
+=======
+So setting `expectedSchemaVersion = 17` means it requires *at least* 17. This is correct — after migration 017 runs, `user_version` will be 17.
+
+But `SQLiteObservationStore` does NOT have a version check currently. It just opens the connection. We should add one for consistency, OR leave it as-is since it doesn't validate schema. The safest approach: bump `expectedSchemaVersion` on both stores and add a version check to `SQLiteObservationStore.init()`:
+
+In `SQLiteObservationStore.init()`, after the pragma block, add:
+>>>>>>> theirs
 ```swift
         // Schema version check (matches FrameStore pattern)
         var versionStmt: OpaquePointer?
@@ -1123,6 +1219,7 @@ Add TopicBlock count to the status output, alongside pending frames.
 In `recorderStatus()`, after the pending frames block (around line 224), add:
 
 ```typescript
+<<<<<<< ours
 // TopicBlock count from DB
 if (existsSync(DB_PATH)) {
   let db: Database | undefined;
@@ -1143,6 +1240,24 @@ if (existsSync(DB_PATH)) {
     }
   }
 }
+=======
+    // TopicBlock count from DB
+    if (existsSync(DB_PATH)) {
+      try {
+        const db = new Database(DB_PATH, { readonly: true });
+        const tbRow = db
+          .prepare("SELECT COUNT(*) as cnt FROM topic_blocks WHERE recording_id = '__recorder__'")
+          .get() as { cnt: number };
+        const unclaimedRow = db
+          .prepare('SELECT COUNT(*) as cnt FROM observations WHERE tb_id IS NULL AND vlm_description IS NOT NULL')
+          .get() as { cnt: number };
+        db.close();
+        console.log(`Topic blocks      : ${tbRow.cnt} (${unclaimedRow.cnt} unclaimed observations)`);
+      } catch {
+        // topic_blocks table may not exist yet (pre-migration-017)
+      }
+    }
+>>>>>>> theirs
 ```
 
 ---
@@ -1198,6 +1313,7 @@ npx escribano recorder status
 ## Files Summary
 
 ### New Files (6)
+<<<<<<< ours
 
 | File                                                         | Description                                                                   |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------- |
@@ -1230,6 +1346,37 @@ npx escribano recorder status
 | `src/services/subject-grouping.ts`                     | Reference for LLM grouping prompt + parsing logic |
 | `prompts/subject-grouping.md`                          | Reference for grouping prompt template            |
 | `src/db/migrate.ts`                                    | Runs migration 017, bumps user_version            |
+=======
+| File | Description |
+|---|---|
+| `migrations/017_session_aggregation.sql` | Schema: tb_id on observations, time-range on topic_blocks, sentinel recording |
+| `apps/recorder/Sources/TextGenerationService.port.swift` | Port protocol for text-only generation |
+| `apps/recorder/Sources/TopicBlockStore.port.swift` | Port protocol + types for TopicBlock persistence |
+| `apps/recorder/Sources/TopicBlockStore.sqlite.adapter.swift` | SQLite adapter implementing TopicBlockStore |
+| `apps/recorder/Sources/SessionAggregator.swift` | Core actor: gap windowing + LLM grouping + TB creation |
+
+### Modified Files (6)
+| File | Changes |
+|---|---|
+| `scripts/mlx_bridge.py` | Add `text_infer` method handler (~5 lines) |
+| `apps/recorder/Sources/PythonBridge.vlm.adapter.swift` | Conform to TextGenerationService, add `generateText()` method |
+| `apps/recorder/Sources/ObservationStore.port.swift` | Add `UnclaimedObservation` struct, `fetchUnclaimed`, `claimObservations` to protocol |
+| `apps/recorder/Sources/ObservationStore.sqlite.adapter.swift` | Implement `fetchUnclaimed`, `claimObservations`, `parseJsonArray`, bump version to 17, add version check |
+| `apps/recorder/Sources/FrameStore.sqlite.adapter.swift` | Bump `expectedSchemaVersion` to 17 |
+| `apps/recorder/Sources/main.swift` | Wire SessionAggregator as Task 3, add cleanup |
+| `src/actions/recorder-commands.ts` | Add TB count + unclaimed obs to status output |
+
+### Unchanged Files (for reference)
+| File | Why Referenced |
+|---|---|
+| `apps/recorder/Sources/FrameAnalyzer.swift` | Pattern reference for actor + poll loop |
+| `apps/recorder/Sources/VLMInferenceService.port.swift` | Pattern reference for port protocol |
+| `apps/recorder/Sources/Prompts.swift` | Reference for prompt structure |
+| `apps/recorder/Sources/ResponseParser.swift` | Reference for VLM output parsing |
+| `src/services/subject-grouping.ts` | Reference for LLM grouping prompt + parsing logic |
+| `prompts/subject-grouping.md` | Reference for grouping prompt template |
+| `src/db/migrate.ts` | Runs migration 017, bumps user_version |
+>>>>>>> theirs
 
 ---
 
@@ -1258,7 +1405,10 @@ Steps 1-6 can be done in any order. Steps 7-8 depend on 1-6. Step 9 depends on 2
 ## Post-Phase 3a: What Comes Next (Phase 3b)
 
 Phase 3b adds the Node.js `generate` subcommand that queries TopicBlocks by time range:
+<<<<<<< ours
 
+=======
+>>>>>>> theirs
 - `npx escribano generate --today --format standup`
 - `npx escribano generate --from 9am --to 12pm --format card`
 - Flush-aggregate step (same gap logic in Node.js)

@@ -33,7 +33,6 @@ actor SessionAggregator {
     private let queue: WorkQueue
 
     // Configuration
-    private let gapThreshold: Double   // seconds
     private let minObservations: Int
     private let pollInterval: Double   // seconds
     private let maxObsPerCycle: Int
@@ -53,13 +52,9 @@ actor SessionAggregator {
         self.textService = textService
         self.queue = queue
 
-        self.gapThreshold = Double(
-            ProcessInfo.processInfo.environment["ESCRIBANO_SESSION_GAP_THRESHOLD"] ?? ""
-        ) ?? 1200.0  // 20 min default
-
         self.minObservations = Int(
             ProcessInfo.processInfo.environment["ESCRIBANO_TB_MIN_OBSERVATIONS"] ?? ""
-        ) ?? 5
+        ) ?? 3
 
         self.pollInterval = Double(
             ProcessInfo.processInfo.environment["ESCRIBANO_TB_POLL_INTERVAL"] ?? ""
@@ -76,7 +71,7 @@ actor SessionAggregator {
 
     /// Main aggregation loop. Runs until Task is cancelled.
     func aggregateLoop() async {
-        log("[SessionAggregator] Starting. Gap=\(Int(gapThreshold))s MinObs=\(minObservations) IdlePoll=\(Int(pollInterval))s MaxObs=\(maxObsPerCycle) LLMBatch=\(llmBatchSize)")
+        log("[SessionAggregator] Starting. MinObs=\(minObservations) IdlePoll=\(Int(pollInterval))s MaxObs=\(maxObsPerCycle) LLMBatch=\(llmBatchSize)")
 
         while !Task.isCancelled {
             do {
@@ -87,28 +82,24 @@ actor SessionAggregator {
                     continue
                 }
 
-                log("[SessionAggregator] Found \(observations.count) unclaimed observations")
-
-                let windows = splitByGap(observations)
-                var totalTBs = 0
-
-                for window in windows {
-                    guard window.count >= minObservations else {
-                        log("[SessionAggregator] Skipping window with \(window.count) obs (< \(minObservations) min)")
-                        continue
-                    }
-
-                    do {
-                        let created = try await processWindow(window)
-                        totalTBs += created
-                    } catch {
-                        log("[SessionAggregator] Error processing window: \(error.localizedDescription)")
-                        // Continue with next window — don't fail the whole cycle
-                    }
+                if observations.count < minObservations {
+                    log("[SessionAggregator] Found \(observations.count) unclaimed (< \(minObservations) min) — waiting")
+                    try await Task.sleep(for: .seconds(pollInterval))
+                    continue
                 }
 
-                if totalTBs > 0 {
-                    log("[SessionAggregator] Cycle complete: created \(totalTBs) TopicBlock(s)")
+                log("[SessionAggregator] Found \(observations.count) unclaimed observations — processing")
+                do {
+                    let created = try await processWindow(observations)
+                    if created > 0 {
+                        log("[SessionAggregator] Cycle complete: created \(created) TopicBlock(s)")
+                    } else {
+                        log("[SessionAggregator] No TBs created — waiting for more observations")
+                        try await Task.sleep(for: .seconds(pollInterval))
+                    }
+                } catch {
+                    log("[SessionAggregator] Error processing observations: \(error.localizedDescription)")
+                    try await Task.sleep(for: .seconds(pollInterval))
                 }
 
             } catch is CancellationError {
@@ -120,30 +111,6 @@ actor SessionAggregator {
         }
 
         log("[SessionAggregator] Loop exited.")
-    }
-
-    // MARK: - Gap-Aware Windowing
-
-    /// Split observations into windows separated by gaps > threshold.
-    /// Observations are already sorted by capturedAt ASC from fetchUnclaimed.
-    private func splitByGap(_ observations: [UnclaimedObservation]) -> [[UnclaimedObservation]] {
-        guard !observations.isEmpty else { return [] }
-
-        var windows: [[UnclaimedObservation]] = []
-        var currentWindow: [UnclaimedObservation] = [observations[0]]
-
-        for i in 1..<observations.count {
-            let gap = observations[i].capturedAt - observations[i - 1].capturedAt
-            if gap > gapThreshold {
-                windows.append(currentWindow)
-                currentWindow = [observations[i]]
-            } else {
-                currentWindow.append(observations[i])
-            }
-        }
-        windows.append(currentWindow)
-
-        return windows
     }
 
     // MARK: - Window Processing

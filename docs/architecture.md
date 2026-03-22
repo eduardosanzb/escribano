@@ -19,12 +19,16 @@ Dependencies point inward. The domain layer knows **nothing** about adapters, da
 │   (Naming: [port].[implementation].adapter.ts)                  │
 │├─────────────────────────────────────────────────────────────────┤
 │                     APPLICATION (Use Cases)                     │
-│   (ProcessSession, ClassifySession, GenerateArtifact)           │
+│   (ProcessRecordingV3, GenerateSummaryV3, GenerateArtifactV3)   │
 │   (Orchestrates the Domain and calls Ports)                     │
 │├─────────────────────────────────────────────────────────────────┤
+│                     SERVICES (Pure Logic)                        │
+│   (frame-sampling, activity-segmentation, temporal-alignment)   │
+│   (No I/O, no env vars, no adapters — pure functions only)      │
+│├─────────────────────────────────────────────────────────────────┤
 │                       DOMAIN (Core)                             │
-│   (Entities: Session, Artifact)                                 │
-│   (Value Objects: Transcript, VisualLog, Classification)        │
+│   (Entities: Recording, Observation, Context, TopicBlock)       │
+│   (Value Objects: Transcript, TimeRange, Classification)        │
 │   (Pure Business Logic & Rules)                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -38,13 +42,13 @@ This allows:
 - **Testability:** Easy testing with mock adapters.
 - **Evolution:** Adding new capabilities (like Video Processing) by adding new Ports, not rewriting the core.
 
-### 3. Domain Events
+### 3. State Machine Transitions
 
-State changes emit domain events, enabling loose coupling and event-driven automation.
-- `SessionRecorded`: A new capture has been detected.
-- `VisualLogExtracted`: Screenshots/scenes have been processed.
-- `SessionClassified`: The AI has determined the session type.
-- `ArtifactGenerated`: A document has been created.
+Recording lifecycle is managed by a state machine in `src/domain/recording.ts`:
+- `raw` → `processing` (via `startProcessing`)
+- `processing` → step advancement (via `advanceStep`)
+- `processing` → `processed` (via `completeProcessing`)
+- `processing` → `error` (via `failProcessing`)
 
 ## Domain Model (v3: VLM-First + Swift-Native Recorder)
 
@@ -62,7 +66,7 @@ Escribano now runs in **two parallel paths**, sharing the same database and doma
 
 2. **Always-On Recorder (Swift)**: LaunchAgent, continuous capture
    - Capture: SCStream → frames table (pHash dedup)
-   - Analysis: Swift-native MLX-VLM → observations (in-process, no Python bridge)
+   - Analysis: Python bridge MLX-VLM → observations (via Unix socket to mlx_bridge.py)
    - Segmentation: Same TS logic as batch (observations → TopicBlocks)
 
 **Key insight**: The `observations` table is the canonical intermediate output. Both paths write to it, and all downstream logic (segmentation, artifacts) reads from it, enabling unified processing.
@@ -483,7 +487,7 @@ When `summary-v3.md` was used with only 3 of 6 variables replaced, the LLM:
 > **Status**: Phase 1 complete (Swift capture agent). Phase 2 complete (FrameAnalyzer.swift drives Python bridge VLM via Unix socket — mlx-swift-lm was dropped due to 15× perf regression, see ADR-010 addendum).
 > See [ADR-009](adr/009-always-on-recorder.md) and [ADR-010](adr/010-swift-native-visual-intelligence.md) for the full decision records.
 
-Alongside the batch video pipeline, Escribano has a second operating mode: **continuous screen capture** via a Swift LaunchAgent with **in-process VLM analysis**, sharing the same SQLite database. This unified architecture eliminates the Python bridge for always-on capture, running inference entirely in Swift on Apple Silicon.
+Alongside the batch video pipeline, Escribano has a second operating mode: **continuous screen capture** via a Swift LaunchAgent with **VLM analysis via Python bridge**, sharing the same SQLite database. The Swift agent drives `mlx_bridge.py` over a Unix socket for inference — mlx-swift-lm was dropped due to a 15× performance regression (see ADR-010 addendum).
 
 ### Single-Process Design (Phase 2)
 
@@ -551,7 +555,7 @@ frames table (analyzed=0, frame_id stored)
      │
      │  Swift VLM Analyzer Task polls & claims batch
      ▼
-VLM inference (mlx-swift-lm, Qwen3-VL-2B-4bit, ~0.7s/frame)
+VLM inference (Python bridge mlx_bridge.py, Qwen3-VL-4B-Instruct-4bit)
      │
      ├── Success → observations (frame_id FK, vlm_description, activity_type, apps, topics)
      │             frames (analyzed=1)

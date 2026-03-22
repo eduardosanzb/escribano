@@ -48,7 +48,7 @@ struct FrameMetadata {
 // - Testability: Can mock FrameStore in unit tests
 // - Flexibility: Can swap backends (e.g., PostgreSQL, cloud storage)
 // - Separation: Business logic (StreamCapture, Backpressure) is decoupled from storage
-protocol FrameStore: AnyObject {
+protocol FrameStore: AnyObject, Sendable {
     // Schema version this store implementation expects.
     // The concrete implementation should check this on init and throw
     // FrameStoreError.schemaMismatch if the database is out of date.
@@ -61,6 +61,17 @@ protocol FrameStore: AnyObject {
     // Returns the count of frames awaiting analysis (analyzed = 0).
     // Throws FrameStoreError.queryFailed on failure.
     func pendingFrameCount() throws -> Int
+
+    /// Fetch up to `batchSize` frames pending analysis (analyzed = 0, retry_count < 3).
+    /// Returns oldest frames first (ORDER BY timestamp ASC).
+    func claimFrames(batchSize: Int) throws -> [DbFrame]
+
+    /// Set `analyzed = 1` for all frame IDs in the list (batch UPDATE).
+    func markFramesAnalyzed(ids: [String]) throws
+
+    /// Increment `retry_count` for a frame. If retry_count reaches 3, set `analyzed = 2`
+    /// (permanently skipped — won't appear in future claimFrames calls).
+    func markFrameFailed(id: String) throws
 
     // Releases resources (closes connections, etc.).
     func close()

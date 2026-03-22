@@ -17,7 +17,7 @@ private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.sel
 // Architecture note: This is the "Adapter" in the Port/Adapter pattern.
 // The Port (FrameStore protocol) is defined in FrameStore.swift and knows
 // nothing about SQLite. This adapter bridges the protocol to SQLite specifics.
-final class SQLiteFrameStore: FrameStore {
+final class SQLiteFrameStore: FrameStore, @unchecked Sendable {
     private var handle: OpaquePointer?
 
     // Must match the version set by migration 014_recorder_frames.sql
@@ -126,6 +126,76 @@ final class SQLiteFrameStore: FrameStore {
     func close() {
         sqlite3_close(handle)
         handle = nil
+    }
+
+    /// Fetch a batch of unanalyzed frames, oldest first.
+    func claimFrames(batchSize: Int) throws -> [DbFrame] {
+        let sql = """
+            SELECT id, display_id, captured_at, timestamp, image_path,
+                   phash, width, height, retry_count
+            FROM frames
+            WHERE analyzed = 0 AND retry_count < 3
+            ORDER BY timestamp ASC
+            LIMIT ?
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw FrameStoreError.queryFailed(String(cString: sqlite3_errmsg(handle)))
+        }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int(stmt, 1, Int32(batchSize))
+        var frames: [DbFrame] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let frame = DbFrame(
+                id:          String(cString: sqlite3_column_text(stmt, 0)),
+                displayId:   String(cString: sqlite3_column_text(stmt, 1)),
+                capturedAt:  String(cString: sqlite3_column_text(stmt, 2)),
+                timestamp:   sqlite3_column_double(stmt, 3),
+                imagePath:   String(cString: sqlite3_column_text(stmt, 4)),
+                phash:       String(cString: sqlite3_column_text(stmt, 5)),
+                width:       Int(sqlite3_column_int(stmt, 6)),
+                height:      Int(sqlite3_column_int(stmt, 7)),
+                retryCount:  Int(sqlite3_column_int(stmt, 8))
+            )
+            frames.append(frame)
+        }
+        return frames
+    }
+
+    /// Batch-mark frames as analyzed (analyzed = 1).
+    func markFramesAnalyzed(ids: [String]) throws {
+        guard !ids.isEmpty else { return }
+        let placeholders = ids.map { _ in "?" }.joined(separator: ", ")
+        let sql = "UPDATE frames SET analyzed = 1 WHERE id IN (\(placeholders))"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw FrameStoreError.queryFailed(String(cString: sqlite3_errmsg(handle)))
+        }
+        defer { sqlite3_finalize(stmt) }
+        for (i, id) in ids.enumerated() {
+            sqlite3_bind_text(stmt, Int32(i + 1), id, -1, SQLITE_TRANSIENT)
+        }
+        let rc = sqlite3_step(stmt)
+        guard rc == SQLITE_DONE else {
+            throw FrameStoreError.queryFailed(String(cString: sqlite3_errmsg(handle)))
+        }
+    }
+
+    /// Increment retry_count. If it reaches 3, permanently skip (analyzed = 2).
+    func markFrameFailed(id: String) throws {
+        let sql = """
+            UPDATE frames
+            SET retry_count = retry_count + 1,
+                analyzed    = CASE WHEN retry_count + 1 >= 3 THEN 2 ELSE 0 END
+            WHERE id = ?
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
+            return
+        }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, id, -1, SQLITE_TRANSIENT)
+        sqlite3_step(stmt)
     }
 
     // MARK: - Private Helpers

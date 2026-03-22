@@ -103,17 +103,9 @@ enum ObservationStoreError: Error, LocalizedError {
 //   always requires "await" in Swift 6. Using "async" in the protocol makes this explicit.
 //   "throws" allows DB errors to propagate up cleanly.
 protocol ObservationStore: AnyObject, Sendable {
-    /// Fetch up to `batchSize` frames pending analysis (analyzed = 0, retryCount < 3).
-    /// Returns oldest frames first (ORDER BY timestamp ASC).
-    func claimFrames(batchSize: Int) async throws -> [DbFrame]
     /// Insert one observations row per (frame, description) pair.
     /// `frame_id` links back to the frames table.
     func saveObservations(from frames: [DbFrame], descriptions: [FrameDescription]) async throws
-    /// Set `analyzed = 1` for all frame IDs in the list (batch UPDATE).
-    func markFramesAnalyzed(ids: [String]) async throws
-    /// Increment `retry_count` for a frame. If retry_count reaches 3, set `analyzed = 2`
-    /// (permanently skipped — won't appear in future claimFrames calls).
-    func markFrameFailed(id: String) async throws
     /// Fetch observations not yet claimed by any TopicBlock.
     /// Returns observations ordered by timestamp ASC (oldest first).
     /// Uses frame.captured_at when available for accurate timestamps.

@@ -144,7 +144,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         ) ?? 10
         let workQueue = WorkQueue(maxRealtimeStreak: realtimeStreak)
         self.workQueue = workQueue
-        let analyzer = FrameAnalyzer(obsStore: obsStore, vlmService: vlmService, queue: workQueue)
+        let analyzer = FrameAnalyzer(frameStore: store, obsStore: obsStore, vlmService: vlmService, queue: workQueue)
         self.analyzer = analyzer
         // 3. Start the analyzer in a background Task. start() blocks until the Python
         //    process is ready, then analyzeLoop() runs forever without blocking capture.

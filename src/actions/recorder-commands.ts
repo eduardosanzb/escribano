@@ -93,8 +93,8 @@ export async function recorderInstall(): Promise<void> {
   } catch {}
 
   // 7. Load LaunchAgent
-  execSync(`launchctl load "${PLIST_PATH}"`);
-  console.log(`LaunchAgent loaded: ${PLIST_LABEL}`);
+  execSync(`launchctl bootstrap ${GUI_DOMAIN} "${PLIST_PATH}"`);
+  console.log(`LaunchAgent registered: ${LAUNCHD_TARGET}`);
   console.log('');
   console.log('escribano-recorder installed successfully!');
   console.log('');
@@ -270,10 +270,10 @@ export async function recorderRestart(): Promise<void> {
 
   console.log('Stopping recorder...');
   try {
-    execSync(`launchctl unload "${PLIST_PATH}"`);
+    execSync(`launchctl bootout ${LAUNCHD_TARGET} 2>/dev/null`);
   } catch (_error) {
     console.warn(
-      'Warning: unable to unload LaunchAgent (it may not be running)'
+      'Warning: unable to bootout LaunchAgent (it may not be running)'
     );
   }
 
@@ -287,6 +287,6 @@ export async function recorderRestart(): Promise<void> {
 
   rotateRecorderLogs();
   console.log('Starting recorder...');
-  execSync(`launchctl load "${PLIST_PATH}"`);
+  execSync(`launchctl bootstrap ${GUI_DOMAIN} "${PLIST_PATH}"`);
   console.log('Recorder restarted. Run `escribano recorder status` to verify.');
 }

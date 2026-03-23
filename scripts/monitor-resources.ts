@@ -133,10 +133,16 @@ function getMemoryInfo(): { text: string } | null {
 }
 
 function isRecorder(command: string): boolean {
+  const trimmed = command.trim();
   return (
-    command.includes(RECORDER_PATTERN_DEV) ||
-    command.includes(RECORDER_PATTERN_INSTALLED)
+    trimmed.endsWith(RECORDER_PATTERN_DEV) ||
+    trimmed.endsWith(RECORDER_PATTERN_INSTALLED)
   );
+}
+
+function isShellWrapper(command: string): boolean {
+  const trimmed = command.trim();
+  return /^(?:\/bin\/)?(?:sh|bash|zsh|dash|ksh|fish)(?:\s|$)/.test(trimmed);
 }
 
 function isBridge(command: string): boolean {
@@ -204,6 +210,9 @@ function gatherRows(): Row[] {
   const samples = sampleProcesses([...recorderPids, ...bridgePids]);
   const rows: Row[] = [];
   for (const sample of samples) {
+    if (isShellWrapper(sample.command)) {
+      continue;
+    }
     if (isRecorder(sample.command)) {
       rows.push(buildRow('recorder (Swift)', sample));
     }

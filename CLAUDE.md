@@ -126,6 +126,11 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_CAPTURE_HIGH_WATER` | Pause capture when this many frames are pending analysis | `500` |
 | `ESCRIBANO_CAPTURE_LOW_WATER` | Resume capture when pending frames drop below this | `100` |
 | `ESCRIBANO_MLX_RECORDER_SOCKET` | Unix socket path for recorder's Python VLM bridge | `/tmp/escribano-recorder-vlm.sock` |
+| `ESCRIBANO_TB_POLL_INTERVAL` | Seconds between SessionAggregator polls | `120` |
+| `ESCRIBANO_TB_MIN_OBSERVATIONS` | Minimum observations to trigger aggregation | `3` |
+| `ESCRIBANO_TB_MAX_OBS_PER_CYCLE` | Max observations per aggregation cycle | `300` |
+| `ESCRIBANO_TB_LLM_BATCH_SIZE` | Observations per LLM sub-batch (keeps prompts small) | `100` |
+| `ESCRIBANO_QUEUE_REALTIME_STREAK` | Max consecutive realtime tasks before normal task runs (WorkQueue fairness) | `10` |
 
 **Note:** Recorder variables are injected into the LaunchAgent plist at install time. If you change these values in `~/.escribano/.env`, you must re-run `npx escribano recorder install` for the changes to take effect in the background agent.
 
@@ -135,6 +140,7 @@ The config file is auto-created on first run with sensible defaults and inline c
 - **Total Pipeline**: Combined optimizations achieve 4x speedup (102 min → 25.7 min for 3-hour videos)
 
 ### Deprecated
+- `ESCRIBANO_SESSION_GAP_THRESHOLD` — Removed (gap-based windowing no longer used; LLM prompt handles activity boundaries)
 - `ESCRIBANO_VLM_NUM_PREDICT` — Ollama VLM no longer used
 - `ESCRIBANO_EMBED_MODEL` — Embeddings disabled in V3
 - `ESCRIBANO_EMBED_BATCH_SIZE` — Embeddings disabled in V3

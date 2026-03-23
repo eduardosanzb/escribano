@@ -1,5 +1,22 @@
 # Phase 3a Implementation Plan — SessionAggregator
 
+> **STATUS: IMPLEMENTED (2026-03-22)** — This is a historical plan document. The actual implementation
+> diverged in several key ways:
+>
+> - **Gap-aware windowing (`splitByGap`) was removed** — the LLM prompt handles activity boundaries.
+> - **`ESCRIBANO_SESSION_GAP_THRESHOLD` was removed** — no longer needed.
+> - **`minObservations` default is 3** (not 5).
+> - **`maxObsPerCycle` default is 300** (not 500).
+> - **`WorkQueue`** was added to serialize bridge calls between FrameAnalyzer and SessionAggregator.
+> - **`FrameStore` / `ObservationStore` protocol split** — frame lifecycle moved to FrameStore.
+> - **Thread safety** — `FrameAnalyzer` uses a dedicated `analyzerFrameStore` SQLite connection.
+> - **Catch-all TB** — observations not assigned by the LLM are claimed into a catch-all TopicBlock.
+>
+> For the current implementation, see the actual source files in `apps/recorder/Sources/` and
+> the updated documentation in `docs/architecture.md` and `docs/adr/011-continuous-session-aggregation.md`.
+
+---
+
 ## Goal
 
 <<<<<<< ours

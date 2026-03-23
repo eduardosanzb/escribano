@@ -93,14 +93,16 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 **POC complete (2026-03-19)** — The bridge/Swift architecture is validated. The recorder can reuse the same long-lived Python socket for frame analysis and text generation; the remaining implementation detail is to route `text_infer` to the loaded model's text backbone instead of the VLM image path.
 
-##### Phase 3a: SessionAggregator (Swift actor in recorder)
-- [ ] Schema migration `016_session_aggregation.sql` — add `tb_id` to observations, `from_ts`/`to_ts`/`observation_count` to topic_blocks
-- [ ] `TopicBlockStore.port.swift` + `TopicBlockStore.sqlite.adapter.swift` — write topic_blocks, query by time range
-- [ ] `SessionAggregator.swift` — actor with gap-aware windowing, polls every `ESCRIBANO_TB_POLL_INTERVAL` (default 120s)
-- [ ] Wire `SessionAggregator` into `main.swift` as third async task alongside StreamCapture + FrameAnalyzer
-- [ ] `ESCRIBANO_SESSION_GAP_THRESHOLD` (default 20 min), `ESCRIBANO_TB_MIN_OBSERVATIONS` (default 5)
-- [ ] Backfill on startup: process all historical unclaimed observations via `WHERE tb_id IS NULL`
-- [ ] Update `escribano recorder status` to show TB count
+##### Phase 3a: SessionAggregator (Swift actor in recorder) ✅ complete
+- [x] Schema migration `017_session_aggregation.sql` — add `tb_id` to observations, `from_ts`/`to_ts`/`observation_count` to topic_blocks
+- [x] `TopicBlockStore.port.swift` + `TopicBlockStore.sqlite.adapter.swift` — write topic_blocks, query by time range
+- [x] `SessionAggregator.swift` — actor with LLM-based semantic grouping via shared VLM bridge, polls every `ESCRIBANO_TB_POLL_INTERVAL` (default 120s)
+- [x] Wire `SessionAggregator` into `main.swift` as third async task alongside StreamCapture + FrameAnalyzer, shared `WorkQueue` serializes bridge access
+- [x] `ESCRIBANO_TB_MIN_OBSERVATIONS` (default 3), `ESCRIBANO_TB_MAX_OBS_PER_CYCLE` (default 300), `ESCRIBANO_TB_LLM_BATCH_SIZE` (default 100)
+- [x] Backfill on startup: process all historical unclaimed observations via `WHERE tb_id IS NULL`
+- [x] Hot loop fix: removed `splitByGap()` gap-windowing (redundant with LLM prompt), simplified aggregateLoop to process all unclaimed obs as one batch, explicit sleep when no TBs created
+- [x] Protocol split: `FrameStore` owns frame lifecycle, `ObservationStore` owns observation lifecycle; dedicated `analyzerFrameStore` connection for thread safety
+- [x] `apps/recorder/README.md` created — architecture, dataflow, config reference
 
 ##### Phase 3b: Time-Range Artifact Generation (Node.js, on-demand)
 - [ ] Update `generate-summary-v3.ts` — accept `from_ts`/`to_ts` instead of (or in addition to) `recording_id`
@@ -175,6 +177,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ### 2026-03
 
+- **Phase 3a complete (2026-03-22)** — SessionAggregator creates TopicBlocks from live observations via LLM-based semantic grouping. Hot loop fix (removed splitByGap), protocol split (FrameStore/ObservationStore), thread safety (dedicated SQLite connections). Validated live: 3 aggregation cycles, 13 TopicBlocks from 54 observations, 100% frame-to-observation consistency.
 - **Phase 2 complete** — Python bridge NDJSON parser, prompts, and observation storage are in place; recorder frame analysis is wired through the port/adapters
 - **Recorder Dev Mode Working** — Permission granted to Terminal.app persists across builds; `pnpm recorder:dev` workflow validated; pHash dedup correctly skipping identical frames
 - **pHash Dedup POC (Phase C)** — Validated pHash threshold=8 cleanly separates noise (0-4 bits) from content (10+ bits) across 6 scenarios; dHash, VN FeaturePrint, SCFrameStatus all rejected as primary dedup

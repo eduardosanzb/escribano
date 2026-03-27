@@ -200,7 +200,10 @@ final class SQLiteFrameStore: FrameStore, @unchecked Sendable {
         }
         defer { sqlite3_finalize(stmt) }
         sqlite3_bind_text(stmt, 1, id, -1, SQLITE_TRANSIENT)
-        sqlite3_step(stmt)
+        let rc = sqlite3_step(stmt)
+        guard rc == SQLITE_DONE else {
+            throw FrameStoreError.queryFailed(String(cString: sqlite3_errmsg(handle)))
+        }
     }
 
     // MARK: - Private Helpers

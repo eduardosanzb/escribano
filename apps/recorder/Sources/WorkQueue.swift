@@ -88,7 +88,8 @@ actor WorkQueue {
                 }
             }
         } onCancel: {
-            // Remove the entry from queue if still pending
+            // Remove the entry from queue if still pending.
+            // Note: If work already started, it will complete (bridge calls are non-cancellable).
             Task { await self.removeEntry(id: entryId) }
         }
     }

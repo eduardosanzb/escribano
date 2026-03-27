@@ -235,7 +235,7 @@ export async function recorderStatus(follow = false): Promise<void> {
         .get() as { cnt: number };
       const unclaimedRow = db
         .prepare(
-          'SELECT COUNT(*) as cnt FROM observations WHERE tb_id IS NULL AND vlm_description IS NOT NULL'
+          'SELECT COUNT(*) as cnt FROM observations WHERE tb_id IS NULL AND vlm_description IS NOT NULL AND frame_id IS NOT NULL'
         )
         .get() as { cnt: number };
       console.log(

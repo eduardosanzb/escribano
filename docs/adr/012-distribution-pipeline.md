@@ -5,6 +5,18 @@
 | State    | Date       | Details |
 |----------|------------|---------|
 | Proposed | 2026-03-18 | Focuses on consumer Mac App distribution via `.dmg`, embedded Python, and async model downloads. |
+| Deferred     | 2026-03-27 | Full `.app`/`.dmg` packaging deferred for MVP. MVP distribution targets technical early adopters via CLI install (`npx escribano recorder install`) + GitHub Releases for the Swift binary. See note below. |
+
+### MVP Distribution Strategy (2026-03-27)
+
+The full `.app`/`.dmg` packaging described in this ADR is deferred. The MVP distribution targets technical early adopters who are comfortable with CLI installation:
+
+- **Recorder binary**: Pre-built Swift binary via GitHub Releases (or `swift build` from source)
+- **Node.js CLI**: `npx escribano` for batch processing and artifact generation
+- **LaunchAgent**: `npx escribano recorder install` for always-on capture
+- **Python bridge**: Auto-setup via `~/.escribano/venv` (existing zero-config flow)
+
+This avoids the complexity of `.app` bundle creation, embedded Python, code signing/notarization, and self-hosted CI runners. The `.app`/`.dmg` path remains the long-term plan for consumer distribution once the product loop is validated with early adopters.
 
 ## Context
 

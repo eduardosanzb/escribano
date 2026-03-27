@@ -103,6 +103,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [x] Hot loop fix: removed `splitByGap()` gap-windowing (redundant with LLM prompt), simplified aggregateLoop to process all unclaimed obs as one batch, explicit sleep when no TBs created
 - [x] Protocol split: `FrameStore` owns frame lifecycle, `ObservationStore` owns observation lifecycle; dedicated `analyzerFrameStore` connection for thread safety
 - [x] `apps/recorder/README.md` created — architecture, dataflow, config reference
+- **Phase 3a complete (2026-03-27)** — See PR #53. Design amended: LLM semantic grouping replaces pure gap-aware windowing. See ADR-011 Addendum.
 
 ##### Phase 3b: Time-Range Artifact Generation (Node.js, on-demand)
 - [ ] Update `generate-summary-v3.ts` — accept `from_ts`/`to_ts` instead of (or in addition to) `recording_id`
@@ -177,7 +178,9 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ### 2026-03
 
-- **Phase 3a complete (2026-03-22)** — SessionAggregator creates TopicBlocks from live observations via LLM-based semantic grouping. Hot loop fix (removed splitByGap), protocol split (FrameStore/ObservationStore), thread safety (dedicated SQLite connections). Validated live: 3 aggregation cycles, 13 TopicBlocks from 54 observations, 100% frame-to-observation consistency.
+- **Phase 3a complete (2026-03-27)** — SessionAggregator with LLM-based semantic grouping, WorkQueue priority serialization, protocol split (FrameStore/ObservationStore), migration 017. PR #53.
+- **VLM-as-LLM POC complete** — Validated single-model approach for frame analysis + text generation via shared Python bridge socket
+- **PR #55 merged** — Fixed deprecated `launchctl load/unload` → modern `bootstrap/bootout`, monitor false positives
 - **Phase 2 complete** — Python bridge NDJSON parser, prompts, and observation storage are in place; recorder frame analysis is wired through the port/adapters
 - **Recorder Dev Mode Working** — Permission granted to Terminal.app persists across builds; `pnpm recorder:dev` workflow validated; pHash dedup correctly skipping identical frames
 - **pHash Dedup POC (Phase C)** — Validated pHash threshold=8 cleanly separates noise (0-4 bits) from content (10+ bits) across 6 scenarios; dHash, VN FeaturePrint, SCFrameStatus all rejected as primary dedup

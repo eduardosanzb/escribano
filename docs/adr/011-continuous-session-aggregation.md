@@ -5,7 +5,7 @@
 | State | Date | Details |
 |---|---|---|
 | Proposed | 2026-03-17 | Phase 3: continuous TopicBlock generation + time-range artifact queries |
-| **Implemented** | **2026-03-22** | **Phase 3a: SessionAggregator live, LLM-based grouping, hot loop fix, protocol split** |
+| Accepted (amended) | 2026-03-27 | Phase 3a implemented in PR #53. Layer 2 changed: LLM-based semantic grouping replaces pure gap-aware windowing. See Addendum. |
 
 ## Context
 
@@ -413,3 +413,38 @@ BACKLOG.md                                  -- Phase 3 tasks, cleanup stale item
 - `src/utils/model-detector.ts` — Existing RAM-tier model selection
 - `src/services/activity-segmentation.ts` — Segmentation logic to reuse/port to Swift
 - `apps/recorder/Sources/FrameAnalyzer.swift` — Actor pattern to follow for SessionAggregator
+
+## Addendum: Layer 2 Implementation Reality (2026-03-27)
+
+### What Changed
+
+The original ADR specified Layer 2 (SessionAggregator) as **"Pure aggregation — NO LLM, NO model loading"** with gap-aware windowing using `SESSION_GAP_THRESHOLD` (20 min default). The actual implementation (PR #53) replaced this with **LLM-based semantic grouping**:
+
+| ADR-011 Design | Actual Implementation (PR #53) |
+|---|---|
+| Gap-aware windowing splits by time gaps | LLM reads observation descriptions, groups semantically |
+| `SESSION_GAP_THRESHOLD` (20 min) for splits | Gap windowing removed (`splitByGap()` deleted as redundant) |
+| Activity = statistical mode of observations | Activity = LLM-assigned label from semantic analysis |
+| No model loading, <1ms per TB | Uses `text_infer` via Python bridge (reuses loaded VLM) |
+| Pure aggregation from VLM outputs | Semantic understanding of observation descriptions |
+
+### Why the Change
+
+Pure gap-aware windowing produced correct time boundaries but poor semantic labels. The VLM descriptions alone (activity type as statistical mode) couldn't distinguish meaningful work sessions — e.g., "coding in VS Code" appearing across multiple unrelated tasks would merge into one block. LLM grouping reads the actual descriptions and produces contextually meaningful TopicBlock labels like "API authentication implementation" vs "CI pipeline debugging."
+
+### Architecture Impact
+
+- **WorkQueue actor** serializes bridge access: `FrameAnalyzer` submits at `.realtime` priority, `SessionAggregator` at `.normal`. Configurable via `ESCRIBANO_QUEUE_REALTIME_STREAK` (default 10).
+- **Sub-batching**: Large observation sets are split into batches of `ESCRIBANO_TB_LLM_BATCH_SIZE` (default 100) per LLM call.
+- **Fallback**: On LLM parse failure, creates a single catch-all TopicBlock for the batch.
+- **`ESCRIBANO_SESSION_GAP_THRESHOLD` deprecated** — no longer used. Grouping is purely semantic.
+
+### New Environment Variables (from PR #53)
+
+| Variable | Default | Description |
+|---|---|---|
+| `ESCRIBANO_TB_POLL_INTERVAL` | `120` | Seconds between aggregation polls |
+| `ESCRIBANO_TB_MIN_OBSERVATIONS` | `3` | Min observations to trigger aggregation (was 5 in ADR) |
+| `ESCRIBANO_TB_MAX_OBS_PER_CYCLE` | `300` | Max observations processed per cycle |
+| `ESCRIBANO_TB_LLM_BATCH_SIZE` | `100` | Observations per LLM sub-batch |
+| `ESCRIBANO_QUEUE_REALTIME_STREAK` | `10` | Max consecutive realtime tasks before yielding to normal priority |

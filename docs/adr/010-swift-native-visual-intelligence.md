@@ -6,6 +6,7 @@
 |------------------------|------------|--------------------------------------------------------------------------------------------------|
 | Proposed               | 2026-03-16 | MLX-Swift POC validates native inference. Replaces TDD-002 (Node Batch Analyzer) with in-process VLM task. |
 | Superseded (partial)   | 2026-03-16 | mlx-swift-lm VLM performance bug discovered during implementation. Pivoted to Swift→Python bridge. See Addendum below. |
+| Accepted               | 2026-03-19 | Phase 2 complete. Python bridge pivot (see Addendum) is the shipping architecture. Swift port/adapter pattern retained. |
 
 ## Context
 

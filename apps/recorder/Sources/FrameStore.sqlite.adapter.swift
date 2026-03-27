@@ -17,6 +17,11 @@ private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.sel
 // Architecture note: This is the "Adapter" in the Port/Adapter pattern.
 // The Port (FrameStore protocol) is defined in FrameStore.swift and knows
 // nothing about SQLite. This adapter bridges the protocol to SQLite specifics.
+//
+// Thread Safety: Marked `@unchecked Sendable` because each instance is confined
+// to a single actor/thread and never shared concurrently. The sqlite3* handle
+// is not thread-safe, so instances must not be accessed from multiple threads
+// simultaneously. This is enforced by using the adapter within an actor context.
 final class SQLiteFrameStore: FrameStore, @unchecked Sendable {
     private var handle: OpaquePointer?
 
@@ -191,8 +196,7 @@ final class SQLiteFrameStore: FrameStore, @unchecked Sendable {
         """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
-            log("[FrameStore] markFrameFailed prepare error: \(String(cString: sqlite3_errmsg(handle)))")
-            return
+            throw FrameStoreError.queryFailed(String(cString: sqlite3_errmsg(handle)))
         }
         defer { sqlite3_finalize(stmt) }
         sqlite3_bind_text(stmt, 1, id, -1, SQLITE_TRANSIENT)

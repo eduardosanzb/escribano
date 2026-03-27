@@ -83,6 +83,38 @@ actor SessionAggregator {
     /// Main aggregation loop. Runs until Task is cancelled.
     func aggregateLoop() async {
         log("[SessionAggregator] Starting. MinObs=\(minObservations) IdlePoll=\(Int(pollInterval))s MaxObs=\(maxObsPerCycle) LLMBatch=\(llmBatchSize)")
+        
+        // Wait for the Python bridge to become ready before processing any observations.
+        // The bridge is started by FrameAnalyzer and takes 30-120s to load the VLM model.
+        // Without this gate, text_infer calls fail with .notStarted and the fallback path
+        // creates poorly-grouped TopicBlocks that permanently claim observations.
+        var readyAttempts = 0
+        while !Task.isCancelled {
+            readyAttempts += 1
+            do {
+                _ = try await queue.submit(priority: .normal) { [textService] in
+                    try await textService.generateText(prompt: "ping", maxTokens: 1)
+                }
+                break // Success — bridge is ready
+            } catch {
+                if case PythonBridgeError.notStarted = error {
+                    if readyAttempts % 6 == 0 {
+                        log("[SessionAggregator] Waiting for text service... (\(readyAttempts * 5)s elapsed)")
+                    }
+                    try? await Task.sleep(for: .seconds(5))
+                } else {
+                    // Bridge IS running but returned some other error — treat as ready
+                    break
+                }
+            }
+        }
+
+        guard !Task.isCancelled else {
+            log("[SessionAggregator] Cancelled while waiting for text service.")
+            return
+        }
+
+        log("[SessionAggregator] Text service ready, beginning aggregation")
 
         while !Task.isCancelled {
             do {
@@ -146,15 +178,26 @@ actor SessionAggregator {
                     try await textService.generateText(prompt: prompt, maxTokens: 4000)
                 }
             } catch {
+                // Bridge-level errors: re-throw to retry the whole cycle.
+                // These indicate the bridge process is down — creating fallback TBs would
+                // permanently consume observations with garbage grouping.
+                if let bridgeErr = error as? PythonBridgeError {
+                    switch bridgeErr {
+                    case .notStarted, .bridgeDied, .startupTimeout:
+                        log("[SessionAggregator] Bridge unavailable: \(error.localizedDescription) — aborting cycle to retry later")
+                        throw error
+                    default:
+                        break // Fall through to fallback TB creation below
+                    }
+                }
+                // LLM inference error (timeout, parse failure, etc.) — create fallback TB
                 log("[SessionAggregator] text_infer failed for sub-batch: \(error.localizedDescription)")
-                // Fallback: treat sub-batch as a single TB with dominant activity label
                 let tb = createTopicBlock(from: subBatch, label: dominantActivity(subBatch))
-                // Claim first to avoid creating orphan TB if observations already claimed
+                try await tbStore.save(tb)
                 let claimed = try await obsStore.claimObservations(
                     ids: subBatch.map { $0.id }, tbId: tb.id
                 )
                 if claimed > 0 {
-                    try await tbStore.save(tb)
                     log("[SessionAggregator] Fallback TB \(tb.id): \(claimed)/\(subBatch.count) obs claimed")
                 } else {
                     log("[SessionAggregator] Fallback: all observations already claimed, skipping TB creation")
@@ -201,19 +244,26 @@ actor SessionAggregator {
             log("[SessionAggregator] Group '\(group.label)': \(group.observationIds.count) IDs → \(groupObs.count) matched in window")
             guard !groupObs.isEmpty else { continue }
             
-            // Claim observations first to avoid creating orphan TB
+            // Create and save TopicBlock FIRST (satisfies FK constraint), then claim observations
             let tb = createTopicBlock(from: groupObs, label: group.label)
+            do {
+                try await tbStore.save(tb)
+                log("[SessionAggregator] Saved TB \(tb.id) for group '\(group.label)'")
+            } catch {
+                log("[SessionAggregator] FAILED to save TB \(tb.id): \(error.localizedDescription)")
+                continue
+            }
+            
+            // Now claim observations (FK constraint satisfied since TB exists)
             let claimed = try await obsStore.claimObservations(
                 ids: groupObs.map { $0.id }, tbId: tb.id
             )
             
             if claimed > 0 {
-                // Only save TB if we successfully claimed observations
-                try await tbStore.save(tb)
                 created += 1
                 log("[SessionAggregator] TB \(tb.id) (\(group.label)): \(claimed)/\(groupObs.count) obs claimed")
             } else {
-                log("[SessionAggregator] Group '\(group.label)': all observations already claimed, skipping TB creation")
+                log("[SessionAggregator] Group '\(group.label)': 0 observations claimed (may have been claimed by another process)")
             }
         }
 

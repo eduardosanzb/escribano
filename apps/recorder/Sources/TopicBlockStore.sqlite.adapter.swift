@@ -32,7 +32,7 @@ actor SQLiteTopicBlockStore: TopicBlockStore {
 
         // Schema version check — the adapter cannot run migrations.
         // The Node.js CLI (escribano recorder install) is responsible for running migrations.
-        let version = getUserVersion()
+        let version = try Self.getUserVersion(handle: handle)
         guard version >= Self.expectedSchemaVersion else {
             sqlite3_close(handle)
             handle = nil
@@ -42,9 +42,11 @@ actor SQLiteTopicBlockStore: TopicBlockStore {
 
     // MARK: - Private Helpers
 
-    private func getUserVersion() -> Int32 {
+    private static func getUserVersion(handle: OpaquePointer?) throws -> Int32 {
         var stmt: OpaquePointer?
-        sqlite3_prepare_v2(handle, "PRAGMA user_version", -1, &stmt, nil)
+        guard sqlite3_prepare_v2(handle, "PRAGMA user_version", -1, &stmt, nil) == SQLITE_OK else {
+            throw TopicBlockStoreError.queryFailed("Failed to prepare PRAGMA user_version")
+        }
         defer { sqlite3_finalize(stmt) }
         sqlite3_step(stmt)
         return sqlite3_column_int(stmt, 0)

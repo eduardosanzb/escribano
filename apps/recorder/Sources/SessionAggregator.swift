@@ -1,5 +1,8 @@
 import Foundation
 
+// Debug flag for SessionAggregator verbose logging (includes LLM responses)
+private let debugSA = ProcessInfo.processInfo.environment["ESCRIBANO_DEBUG_SA"] == "1"
+
 // MARK: - SessionAggregatorError
 
 enum SessionAggregatorError: Error, LocalizedError {
@@ -158,10 +161,18 @@ actor SessionAggregator {
                 }
                 continue
             }
-            log("[SessionAggregator] text_infer complete: \(response.count) chars. Preview: \(response.prefix(120).replacingOccurrences(of: "\n", with: " "))")
+            if debugSA {
+                log("[SessionAggregator] text_infer complete: \(response.count) chars. Preview: \(response.prefix(120).replacingOccurrences(of: "\n", with: " "))")
+            } else {
+                log("[SessionAggregator] text_infer complete: \(response.count) chars")
+            }
             let parsed = parseGroupingResponse(response, observations: subBatch)
             if parsed.isEmpty {
-                log("[SessionAggregator] WARN: 0 groups parsed from text_infer response. Raw (first 500 chars): \(response.prefix(500).replacingOccurrences(of: "\n", with: "\\n"))")
+                if debugSA {
+                    log("[SessionAggregator] WARN: 0 groups parsed from text_infer response. Raw (first 500 chars): \(response.prefix(500).replacingOccurrences(of: "\n", with: "\\n"))")
+                } else {
+                    log("[SessionAggregator] WARN: 0 groups parsed from text_infer response (set ESCRIBANO_DEBUG_SA=1 to see raw response)")
+                }
             } else {
                 log("[SessionAggregator] Parsed \(parsed.count) group(s) from sub-batch \(subBatchIdx + 1)")
             }

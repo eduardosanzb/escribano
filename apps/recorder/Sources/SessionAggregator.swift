@@ -146,11 +146,16 @@ actor SessionAggregator {
                 log("[SessionAggregator] text_infer failed for sub-batch: \(error.localizedDescription)")
                 // Fallback: treat sub-batch as a single TB with dominant activity label
                 let tb = createTopicBlock(from: subBatch, label: dominantActivity(subBatch))
-                try await tbStore.save(tb)
+                // Claim first to avoid creating orphan TB if observations already claimed
                 let claimed = try await obsStore.claimObservations(
                     ids: subBatch.map { $0.id }, tbId: tb.id
                 )
-                log("[SessionAggregator] Fallback TB \(tb.id): \(claimed)/\(subBatch.count) obs claimed")
+                if claimed > 0 {
+                    try await tbStore.save(tb)
+                    log("[SessionAggregator] Fallback TB \(tb.id): \(claimed)/\(subBatch.count) obs claimed")
+                } else {
+                    log("[SessionAggregator] Fallback: all observations already claimed, skipping TB creation")
+                }
                 continue
             }
             log("[SessionAggregator] text_infer complete: \(response.count) chars. Preview: \(response.prefix(120).replacingOccurrences(of: "\n", with: " "))")

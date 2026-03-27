@@ -120,9 +120,9 @@ actor SQLiteObservationStore: ObservationStore {
             WHERE o.tb_id IS NULL
               AND o.frame_id IS NOT NULL
               AND o.vlm_description IS NOT NULL
-              // Filter out observations with timestamps before 2020-01-01 (Unix epoch 1577836800).
-              // This guards against observations with invalid/relative timestamps that could
-              // skew aggregation results. Observations before this date are considered data errors.
+              -- Filter out observations with timestamps before 2020-01-01 (Unix epoch 1577836800).
+              -- This guards against observations with invalid/relative timestamps that could
+              -- skew aggregation results. Observations before this date are considered data errors.
               AND o.timestamp >= 1577836800.0
             ORDER BY effective_ts ASC
             LIMIT ?
@@ -171,11 +171,33 @@ actor SQLiteObservationStore: ObservationStore {
     func claimObservations(ids: [String], tbId: String) async throws -> Int {
         guard !ids.isEmpty else { return 0 }
         log("[ObservationStore] claimObservations: tbId=\(tbId) ids=\(ids.count)")
+        
+        // Verify the topic block exists before attempting claim (helps debug FK issues)
+        let verifySql = "SELECT id FROM topic_blocks WHERE id = ?"
+        var verifyStmt: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, verifySql, -1, &verifyStmt, nil) == SQLITE_OK else {
+            let errMsg = String(cString: sqlite3_errmsg(handle))
+            log("[ObservationStore] claimObservations: FAILED to prepare verify query: \(errMsg)")
+            throw ObservationStoreError.queryFailed("Failed to verify topic block exists: \(errMsg)")
+        }
+        defer { sqlite3_finalize(verifyStmt) }
+        sqlite3_bind_text(verifyStmt, 1, tbId, -1, SQLITE_TRANSIENT)
+        let verifyRc = sqlite3_step(verifyStmt)
+        guard verifyRc == SQLITE_ROW else {
+            let errMsg = verifyRc == SQLITE_DONE 
+                ? "TopicBlock \(tbId) does not exist in database (FK constraint will fail)"
+                : String(cString: sqlite3_errmsg(handle))
+            log("[ObservationStore] claimObservations: VERIFICATION FAILED - \(errMsg)")
+            throw ObservationStoreError.queryFailed(errMsg)
+        }
+        
         let placeholders = ids.map { _ in "?" }.joined(separator: ", ")
         let sql = "UPDATE observations SET tb_id = ? WHERE tb_id IS NULL AND id IN (\(placeholders))"
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
+            let errMsg = String(cString: sqlite3_errmsg(handle))
+            log("[ObservationStore] claimObservations: FAILED to prepare update: \(errMsg)")
             throw ObservationStoreError.queryFailed(String(cString: sqlite3_errmsg(handle)))
         }
         defer { sqlite3_finalize(stmt) }

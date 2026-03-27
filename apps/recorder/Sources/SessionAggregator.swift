@@ -73,7 +73,7 @@ actor SessionAggregator {
             log("[SessionAggregator] WARN: ESCRIBANO_TB_MAX_OBS_PER_CYCLE clamped from \(rawMaxObs) to \(self.maxObsPerCycle)")
         }
 
-        let rawLlmBatch = Int(ProcessInfo.processInfo.environment["ESCRIBANO_TB_LLM_BATCH_SIZE"] ?? "") ?? 100
+        let rawLlmBatch = Int(ProcessInfo.processInfo.environment["ESCRIBANO_TB_LLM_BATCH_SIZE"] ?? "") ?? 50
         self.llmBatchSize = max(1, rawLlmBatch)
         if self.llmBatchSize != rawLlmBatch {
             log("[SessionAggregator] WARN: ESCRIBANO_TB_LLM_BATCH_SIZE clamped from \(rawLlmBatch) to \(self.llmBatchSize)")
@@ -178,31 +178,10 @@ actor SessionAggregator {
                     try await textService.generateText(prompt: prompt, maxTokens: 4000)
                 }
             } catch {
-                // Bridge-level errors: re-throw to retry the whole cycle.
-                // These indicate the bridge process is down — creating fallback TBs would
-                // permanently consume observations with garbage grouping.
-                if let bridgeErr = error as? PythonBridgeError {
-                    switch bridgeErr {
-                    case .notStarted, .bridgeDied, .startupTimeout:
-                        log("[SessionAggregator] Bridge unavailable: \(error.localizedDescription) — aborting cycle to retry later")
-                        throw error
-                    default:
-                        break // Fall through to fallback TB creation below
-                    }
-                }
-                // LLM inference error (timeout, parse failure, etc.) — create fallback TB
-                log("[SessionAggregator] text_infer failed for sub-batch: \(error.localizedDescription)")
-                let tb = createTopicBlock(from: subBatch, label: dominantActivity(subBatch))
-                try await tbStore.save(tb)
-                let claimed = try await obsStore.claimObservations(
-                    ids: subBatch.map { $0.id }, tbId: tb.id
-                )
-                if claimed > 0 {
-                    log("[SessionAggregator] Fallback TB \(tb.id): \(claimed)/\(subBatch.count) obs claimed")
-                } else {
-                    log("[SessionAggregator] Fallback: all observations already claimed, skipping TB creation")
-                }
-                continue
+                // Any LLM/bridge error: abort this cycle and retry later.
+                // Creating fallback TBs would permanently consume observations with garbage grouping.
+                log("[SessionAggregator] text_infer failed for sub-batch: \(error.localizedDescription) — aborting cycle to retry later")
+                throw error
             }
             if debugSA {
                 log("[SessionAggregator] text_infer complete: \(response.count) chars. Preview: \(response.prefix(120).replacingOccurrences(of: "\n", with: " "))")

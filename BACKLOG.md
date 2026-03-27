@@ -98,7 +98,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [x] `TopicBlockStore.port.swift` + `TopicBlockStore.sqlite.adapter.swift` — write topic_blocks, query by time range
 - [x] `SessionAggregator.swift` — actor with LLM-based semantic grouping via shared VLM bridge, polls every `ESCRIBANO_TB_POLL_INTERVAL` (default 120s)
 - [x] Wire `SessionAggregator` into `main.swift` as third async task alongside StreamCapture + FrameAnalyzer, shared `WorkQueue` serializes bridge access
-- [x] `ESCRIBANO_TB_MIN_OBSERVATIONS` (default 3), `ESCRIBANO_TB_MAX_OBS_PER_CYCLE` (default 300), `ESCRIBANO_TB_LLM_BATCH_SIZE` (default 100)
+- [x] `ESCRIBANO_TB_MIN_OBSERVATIONS` (default 3), `ESCRIBANO_TB_MAX_OBS_PER_CYCLE` (default 300), `ESCRIBANO_TB_LLM_BATCH_SIZE` (default 50)
 - [x] Backfill on startup: process all historical unclaimed observations via `WHERE tb_id IS NULL`
 - [x] Hot loop fix: removed `splitByGap()` gap-windowing (redundant with LLM prompt), simplified aggregateLoop to process all unclaimed obs as one batch, explicit sleep when no TBs created
 - [x] Protocol split: `FrameStore` owns frame lifecycle, `ObservationStore` owns observation lifecycle; dedicated `analyzerFrameStore` connection for thread safety

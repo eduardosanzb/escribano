@@ -154,3 +154,64 @@ Each processed observation is updated with the resulting `tb_id`.
 
 On startup, `SessionAggregator` performs a backfill pass to claim any historical unclaimed
 observations from previous runs.
+
+## Common Issues & Dev Notes
+
+### PythonBridge not started — call start() first
+
+**Symptom:** `[SessionAggregator] text_infer failed for sub-batch: PythonBridge not started`
+
+**Cause:** The SessionAggregator task starts before the VLM bridge has finished loading. The Python
+bridge takes 30-120s to load the model on first run, but `isStarted` is only set to `true` after
+`start()` completes.
+
+**Fix:** Ensure `main.swift` awaits `vlmService.start()` before creating the `SessionAggregator`
+task. The bridge must be fully ready before any component tries to use it.
+
+```swift
+// In main.swift: wait for bridge to be ready
+self.analyzerTask = Task {
+    try await analyzer.start()  // This blocks until bridge ready
+    await analyzer.analyzeLoop()
+}
+// Wait here before starting aggregator
+try await vlmService.start()
+```
+
+### FOREIGN KEY constraint failed (SQLITE_CONSTRAINT=19)
+
+**Symptom:** `[ObservationStore] claimObservations FAILED rc=19: FOREIGN KEY constraint failed`
+
+**Cause:** The `observations.tb_id` column has a foreign key constraint referencing
+`topic_blocks(id)`. When creating TopicBlocks, the parent row must exist in `topic_blocks` before
+children can reference it in `observations`.
+
+**Fix:** Always save the TopicBlock to the database **before** claiming observations for it:
+
+```swift
+// CORRECT order:
+let tb = createTopicBlock(...)
+try await tbStore.save(tb)  // Insert parent first
+try await obsStore.claimObservations(ids: obsIds, tbId: tb.id)  // Then link children
+```
+
+The fallback path in SessionAggregator previously had these reversed, causing FK violations when
+the LLM grouping failed and fallback TopicBlocks were created.
+
+### Race conditions with shared bridge
+
+Both `FrameAnalyzer` and `SessionAggregator` use the same `PythonBridgeVLMAdapter` instance. The
+bridge is an actor that serializes calls, but if `isStarted` is false, calls fail immediately.
+
+**Solution:** The `WorkQueue` actor wraps all bridge calls and ensures proper ordering. Make sure
+the bridge is started before any tasks begin submitting work to the queue.
+
+### Schema version mismatches
+
+If you see errors like "Database schema out of date (version X, expected Y)", run:
+
+```bash
+npx escribano recorder install
+```
+
+This applies pending migrations and regenerates the LaunchAgent plist.

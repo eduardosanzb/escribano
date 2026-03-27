@@ -309,17 +309,26 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
         }
         line += "\n"
         fh.write(line.data(using: .utf8)!)
+
+        // Capture actor-isolated properties BEFORE entering withCheckedThrowingContinuation.
+        // The GCD callbacks (timer + readabilityHandler) run on non-actor threads.
+        // Accessing self.inferenceTimeout or self.modelId from those closures would
+        // violate Swift 6 actor isolation and crash with:
+        //   "Incorrect actor executor assumption; expected 'PythonBridgeVLMAdapter' executor"
+        let timeout = self.inferenceTimeout
+        let model = self.modelId
+
         return try await withCheckedThrowingContinuation { continuation in
             let buffer = LineBuffer()
             let resumed = ResumeFlag()
             let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
-            timer.schedule(deadline: .now() + inferenceTimeout)
+            timer.schedule(deadline: .now() + timeout)
             timer.setEventHandler { [weak fh] in
                 guard let handle = fh, resumed.trySet() else { return }
                 handle.readabilityHandler = nil
-                log("[PythonBridge] Inference timed out after \(Int(self.inferenceTimeout))s")
+                log("[PythonBridge] Inference timed out after \(Int(timeout))s")
                 timer.cancel()
-                continuation.resume(throwing: PythonBridgeError.inferenceTimeout(self.inferenceTimeout))
+                continuation.resume(throwing: PythonBridgeError.inferenceTimeout(timeout))
             }
             timer.resume()
             fh.readabilityHandler = { handle in
@@ -350,7 +359,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
                         var stats: VLMStats? = nil
                         if let s = json["stats"] as? [String: Any] {
                             stats = VLMStats(
-                                model:            self.modelId,
+                                model:            model,
                                 promptTokens:     s["prompt_tokens"]     as? Int    ?? 0,
                                 generationTokens: s["generation_tokens"] as? Int    ?? 0,
                                 promptTps:        s["prompt_tps"]        as? Double ?? 0,

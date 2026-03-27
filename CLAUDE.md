@@ -106,6 +106,8 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
 | `ESCRIBANO_MLX_TIMEOUT` | MLX bridge startup & generation timeout (ms) | `120000` |
 | `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-setup (`~/.escribano/venv`) |
+| `ESCRIBANO_BRIDGE_PATH` | Path to `mlx_bridge.py` script (recorder uses deployed copy by default) | `~/.escribano/scripts/mlx_bridge.py` |
+| `ESCRIBANO_MLX_LOG_FILE` | File path for MLX bridge logs (uses stderr if unset) | — |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
@@ -129,7 +131,7 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_TB_POLL_INTERVAL` | Seconds between SessionAggregator polls | `120` |
 | `ESCRIBANO_TB_MIN_OBSERVATIONS` | Minimum observations to trigger aggregation | `3` |
 | `ESCRIBANO_TB_MAX_OBS_PER_CYCLE` | Max observations per aggregation cycle | `300` |
-| `ESCRIBANO_TB_LLM_BATCH_SIZE` | Observations per LLM sub-batch (keeps prompts small) | `100` |
+| `ESCRIBANO_TB_LLM_BATCH_SIZE` | Observations per LLM sub-batch (keeps prompts small) | `50` |
 | `ESCRIBANO_QUEUE_REALTIME_STREAK` | Max consecutive realtime tasks before normal task runs (WorkQueue fairness) | `10` |
 
 **Note:** Recorder variables are injected into the LaunchAgent plist at install time. If you change these values in `~/.escribano/.env`, you must re-run `npx escribano recorder install` for the changes to take effect in the background agent.

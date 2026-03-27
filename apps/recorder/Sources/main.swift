@@ -6,6 +6,12 @@ import Foundation
 // For a headless CLI application, NSApplication.shared behaves like a daemon.
 let app = NSApplication.shared
 
+// Ignore SIGPIPE globally. This prevents the process from being killed when
+// writing to a Unix domain socket (FileHandle) whose remote end has disconnected.
+// Without this, a VLM inference timeout that closes the readability handler can
+// leave the pipe broken — the next write triggers SIGPIPE and crashes the process.
+signal(SIGPIPE, SIG_IGN)
+
 /// EscribanoRecorderDelegate: Entry point for the escribano recorder daemon.
 ///
 /// Implements NSApplicationDelegate to handle startup and shutdown.
@@ -171,6 +177,8 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         // 4. Create TopicBlockStore and SessionAggregator for Phase 3a.
         //    The aggregator polls unclaimed observations every TB_POLL_INTERVAL
         //    and groups them into TopicBlocks using the VLM bridge for semantic grouping.
+        //    Note: The bridge is started by FrameAnalyzer.analyzer.start() above.
+        //    SessionAggregator will wait for textService.isStarted before processing.
         let tbStore: any TopicBlockStore
         do {
             tbStore = try SQLiteTopicBlockStore(path: dbPath)

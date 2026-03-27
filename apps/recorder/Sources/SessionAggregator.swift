@@ -177,12 +177,19 @@ actor SessionAggregator {
             log("[SessionAggregator] Group '\(group.label)': \(group.observationIds.count) IDs → \(groupObs.count) matched in window")
             guard !groupObs.isEmpty else { continue }
             let tb = createTopicBlock(from: groupObs, label: group.label)
+            // Save first, then claim. If claim returns 0 (observations already claimed by
+            // a concurrent cycle or duplicate LLM group IDs), log the orphan but do not
+            // count it — the empty TopicBlock is a minor artefact and harmless.
             try await tbStore.save(tb)
             let claimed = try await obsStore.claimObservations(
                 ids: groupObs.map { $0.id }, tbId: tb.id
             )
             log("[SessionAggregator] TB \(tb.id) (\(group.label)): \(claimed)/\(groupObs.count) obs claimed")
-            created += 1
+            if claimed > 0 {
+                created += 1
+            } else {
+                log("[SessionAggregator] WARN: TB \(tb.id) claimed 0 observations — orphan TopicBlock (may be a duplicate group)")
+            }
         }
 
         // Claim any observations the LLM did not assign to any group (previously lost).
@@ -386,10 +393,14 @@ actor SessionAggregator {
         return counts.max(by: { $0.value < $1.value })?.key ?? "Work Session"
     }
 
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
     private func formatTime(_ unixTimestamp: Double) -> String {
         let date = Date(timeIntervalSince1970: unixTimestamp)
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: date)
+        return Self.timeFormatter.string(from: date)
     }
 }

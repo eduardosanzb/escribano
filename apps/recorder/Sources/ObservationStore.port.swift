@@ -58,7 +58,7 @@ struct DbFrame: Sendable {
 
 // MARK: - UnclaimedObservation
 // An observation row enriched with its frame's captured_at timestamp.
-// Used by SessionAggregator for gap-aware windowing.
+// Used by SessionAggregator for LLM-based semantic grouping into TopicBlocks.
 struct UnclaimedObservation: Sendable {
     let id: String
     let frameId: String?

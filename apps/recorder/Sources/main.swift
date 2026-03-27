@@ -179,6 +179,9 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         let tbStore: any TopicBlockStore
         do {
             tbStore = try SQLiteTopicBlockStore(path: dbPath)
+        } catch TopicBlockStoreError.schemaMismatch(let current, let expected) {
+            log("[escribano-recorder] ERROR: Database schema out of date (version \(current), expected \(expected)). Run 'escribano recorder install' from Node.js.")
+            exit(1)
         } catch {
             log("[escribano-recorder] ERROR: Cannot open topic block store: \(error.localizedDescription)")
             exit(1)
@@ -213,17 +216,27 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         log("[escribano-recorder] applicationWillTerminate — cleaning up")
-        // Cancel the analyzer task synchronously so the cancellation flag is set immediately.
+        // Cancel the analyzer and aggregator tasks so their loops exit cleanly.
         analyzerTask?.cancel()
-        // Cancel the aggregator task
         aggregatorTask?.cancel()
-        // Kill the Python bridge via its stored PID. Child processes are NOT automatically
-        // killed when the parent exits on macOS — they become orphaned.
-        // terminateSync() uses kill(pid, SIGTERM) directly, which is reliable regardless
-        // of how the bridge was launched or what env vars it has.
+        // Kill the Python bridge. Child processes are NOT automatically killed when the
+        // parent exits on macOS — they become orphaned without this explicit call.
         vlmAdapter?.terminateSync()
+        // Close synchronous (class-based) frame store handles.
         store?.close()
         analyzerFrameStore?.close()
+        // Close async (actor-based) store handles. We capture references locally so the
+        // Task.detached closure can access them without crossing @MainActor isolation.
+        // Block up to 2 seconds to allow sqlite3_close to complete before the process exits.
+        let localObs = obsStore
+        let localTb  = tbStore
+        let sema = DispatchSemaphore(value: 0)
+        Task.detached {
+            await localObs?.close()
+            await localTb?.close()
+            sema.signal()
+        }
+        _ = sema.wait(timeout: .now() + 2)
     }
 }
 

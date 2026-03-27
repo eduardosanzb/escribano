@@ -52,11 +52,17 @@ actor WorkQueue {
 
     /// Submit work to the queue. Suspends the caller until the work completes.
     /// Returns the result of the work closure.
+    ///
+    /// Cancellation: if the calling Task is already cancelled when submit() is called,
+    /// CancellationError is thrown immediately before enqueuing. Cancellation that occurs
+    /// after enqueuing will be surfaced when the work actually runs (the operation itself
+    /// should propagate CancellationError via its own checks, e.g. Task.checkCancellation).
     func submit<T: Sendable>(
         priority: Priority,
         _ operation: @Sendable @escaping () async throws -> T
     ) async throws -> T {
-        try await withCheckedThrowingContinuation { cont in
+        try Task.checkCancellation()
+        return try await withCheckedThrowingContinuation { cont in
             nextSequence += 1
             let entry = Entry(
                 priority: priority,

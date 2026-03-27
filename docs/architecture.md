@@ -361,9 +361,9 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 | `IntelligenceService` | `intelligence.mlx.adapter.ts` | **Unified MLX adapter**: VLM (frame analysis via Python bridge) + LLM (text generation) |
 | `IntelligenceService` | `intelligence.ollama.adapter.ts` | **Alternative**: LLM inference for summary generation (configurable backend) |
 | **Always-On Recorder (Swift)** | | |
-| `FrameStore` | `SQLiteFrameStore.swift` | Swift-native frame lifecycle (insert, claim, mark analyzed/failed) |
-| `ObservationStore` | `SQLiteObservationStore.swift` | Swift-native observation persistence (save, fetch unclaimed, claim) |
-| `TopicBlockStore` | `SQLiteTopicBlockStore.swift` | TopicBlock persistence (save, count) |
+| `FrameStore` | `FrameStore.sqlite.adapter.swift` | Swift-native frame lifecycle (insert, claim, mark analyzed/failed) |
+| `ObservationStore` | `ObservationStore.sqlite.adapter.swift` | Swift-native observation persistence (save, fetch unclaimed, claim) |
+| `TopicBlockStore` | `TopicBlockStore.sqlite.adapter.swift` | TopicBlock persistence (save, count) |
 | `VLMInferenceService` | `PythonBridge.vlm.adapter.swift` | Swift → Python bridge adapter (Unix socket, `mlx_bridge.py`) |
 | `TextGenerationService` | `PythonBridge.vlm.adapter.swift` | Text-only generation via VLM bridge (same socket, `text_infer`) |
 | `ResponseParser` | `ResponseParser.swift` | Decoupled VLM output parsing |

@@ -14,12 +14,14 @@ enum TopicBlockStoreError: Error, LocalizedError {
     case connectionFailed(String)
     case queryFailed(String)
     case insertFailed(String)
+    case schemaMismatch(current: Int32, expected: Int32)
 
     var errorDescription: String? {
         switch self {
         case .connectionFailed(let m): return "TopicBlockStore connection failed: \(m)"
         case .queryFailed(let m):      return "TopicBlockStore query failed: \(m)"
         case .insertFailed(let m):     return "TopicBlockStore insert failed: \(m)"
+        case .schemaMismatch(let c, let e): return "TopicBlockStore schema mismatch: DB is v\(c), expected v\(e). Run 'escribano recorder install'."
         }
     }
 }

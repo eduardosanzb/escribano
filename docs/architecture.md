@@ -709,7 +709,8 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService { ... }
 
 // Actor: priority queue serializing bridge calls
 actor WorkQueue {
-  func submit<T>(priority: TaskPriority, operation: () async throws -> T) async throws -> T
+  enum Priority { case realtime, normal, low }
+  func submit<T>(_ priority: Priority, _ operation: () async throws -> T) async throws -> T
 }
 
 // Actor: LLM-based observation grouping

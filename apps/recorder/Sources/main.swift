@@ -20,10 +20,6 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var analyzerTask: Task<Void, Never>?
     private var vlmAdapter: PythonBridgeVLMAdapter?
 
-    /// Called by NSApplication when the app has finished launching.
-    private var sigtermSource: DispatchSourceSignal?
-    private var sigintSource: DispatchSourceSignal?
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGTERM) { _ in
             DispatchQueue.main.async {
@@ -37,7 +33,6 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
                 NSApp.terminate(nil)
             }
         }
-        sigintSource?.resume()
 
         let buildCommit = ProcessInfo.processInfo.environment["ESCRIBANO_BUILD_COMMIT"] ?? "unknown"
         log("[escribano-recorder] Build commit: \(buildCommit)")

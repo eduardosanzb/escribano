@@ -52,21 +52,29 @@ actor SessionAggregator {
         self.textService = textService
         self.queue = queue
 
-        self.minObservations = Int(
-            ProcessInfo.processInfo.environment["ESCRIBANO_TB_MIN_OBSERVATIONS"] ?? ""
-        ) ?? 3
+        let rawMinObs = Int(ProcessInfo.processInfo.environment["ESCRIBANO_TB_MIN_OBSERVATIONS"] ?? "") ?? 3
+        self.minObservations = max(1, rawMinObs)
+        if self.minObservations != rawMinObs {
+            log("[SessionAggregator] WARN: ESCRIBANO_TB_MIN_OBSERVATIONS clamped from \(rawMinObs) to \(self.minObservations)")
+        }
 
-        self.pollInterval = Double(
-            ProcessInfo.processInfo.environment["ESCRIBANO_TB_POLL_INTERVAL"] ?? ""
-        ) ?? 120.0  // 2 min default
+        let rawPollInterval = Double(ProcessInfo.processInfo.environment["ESCRIBANO_TB_POLL_INTERVAL"] ?? "") ?? 120.0
+        self.pollInterval = max(1.0, rawPollInterval)
+        if self.pollInterval != rawPollInterval {
+            log("[SessionAggregator] WARN: ESCRIBANO_TB_POLL_INTERVAL clamped from \(rawPollInterval) to \(self.pollInterval)")
+        }
 
-        self.maxObsPerCycle = Int(
-            ProcessInfo.processInfo.environment["ESCRIBANO_TB_MAX_OBS_PER_CYCLE"] ?? ""
-        ) ?? 300
+        let rawMaxObs = Int(ProcessInfo.processInfo.environment["ESCRIBANO_TB_MAX_OBS_PER_CYCLE"] ?? "") ?? 300
+        self.maxObsPerCycle = max(1, rawMaxObs)
+        if self.maxObsPerCycle != rawMaxObs {
+            log("[SessionAggregator] WARN: ESCRIBANO_TB_MAX_OBS_PER_CYCLE clamped from \(rawMaxObs) to \(self.maxObsPerCycle)")
+        }
 
-        self.llmBatchSize = Int(
-            ProcessInfo.processInfo.environment["ESCRIBANO_TB_LLM_BATCH_SIZE"] ?? ""
-        ) ?? 100
+        let rawLlmBatch = Int(ProcessInfo.processInfo.environment["ESCRIBANO_TB_LLM_BATCH_SIZE"] ?? "") ?? 100
+        self.llmBatchSize = max(1, rawLlmBatch)
+        if self.llmBatchSize != rawLlmBatch {
+            log("[SessionAggregator] WARN: ESCRIBANO_TB_LLM_BATCH_SIZE clamped from \(rawLlmBatch) to \(self.llmBatchSize)")
+        }
     }
 
     /// Main aggregation loop. Runs until Task is cancelled.

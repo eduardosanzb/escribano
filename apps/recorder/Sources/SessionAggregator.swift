@@ -189,19 +189,20 @@ actor SessionAggregator {
             }
             log("[SessionAggregator] Group '\(group.label)': \(group.observationIds.count) IDs → \(groupObs.count) matched in window")
             guard !groupObs.isEmpty else { continue }
+            
+            // Claim observations first to avoid creating orphan TB
             let tb = createTopicBlock(from: groupObs, label: group.label)
-            // Save first, then claim. If claim returns 0 (observations already claimed by
-            // a concurrent cycle or duplicate LLM group IDs), log the orphan but do not
-            // count it — the empty TopicBlock is a minor artefact and harmless.
-            try await tbStore.save(tb)
             let claimed = try await obsStore.claimObservations(
                 ids: groupObs.map { $0.id }, tbId: tb.id
             )
-            log("[SessionAggregator] TB \(tb.id) (\(group.label)): \(claimed)/\(groupObs.count) obs claimed")
+            
             if claimed > 0 {
+                // Only save TB if we successfully claimed observations
+                try await tbStore.save(tb)
                 created += 1
+                log("[SessionAggregator] TB \(tb.id) (\(group.label)): \(claimed)/\(groupObs.count) obs claimed")
             } else {
-                log("[SessionAggregator] WARN: TB \(tb.id) claimed 0 observations — orphan TopicBlock (may be a duplicate group)")
+                log("[SessionAggregator] Group '\(group.label)': all observations already claimed, skipping TB creation")
             }
         }
 

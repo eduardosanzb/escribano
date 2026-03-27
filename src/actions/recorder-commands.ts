@@ -245,7 +245,9 @@ export async function recorderStatus(follow = false): Promise<void> {
       // topic_blocks or tb_id column may not exist yet (pre-migration-017)
       const msg = err instanceof Error ? err.message : String(err);
       if (/no such table|no such column/i.test(msg)) {
-        console.log('Topic blocks      : (not available — run: escribano recorder install)');
+        console.log(
+          'Topic blocks      : (not available — run: escribano recorder install)'
+        );
       } else {
         console.log('Topic blocks      : (DB unavailable)');
       }

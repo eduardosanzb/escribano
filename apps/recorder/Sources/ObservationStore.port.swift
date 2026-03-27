@@ -109,6 +109,7 @@ protocol ObservationStore: AnyObject, Sendable {
     /// Fetch observations not yet claimed by any TopicBlock.
     /// Returns observations ordered by timestamp ASC (oldest first).
     /// Uses frame.captured_at when available for accurate timestamps.
+    /// These observations are grouped via LLM-based semantic analysis in SessionAggregator.
     /// - Parameter limit: Maximum number of observations to return (default 300)
     func fetchUnclaimed(limit: Int) async throws -> [UnclaimedObservation]
     /// Atomically claim observations for a TopicBlock.

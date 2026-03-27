@@ -1,3 +1,11 @@
+> **SUPERSEDED (2026-03-27)**: This TDD has been superseded by the actual Phase 3a implementation (PR #53). Key differences:
+> - **No `segments` table** — TopicBlocks serve as the primary work unit (ADR-011: "Separate `segments` entity rejected — TopicBlocks already serve this role")
+> - **No `escribano cut` command** — Replaced by `escribano generate --today` / `escribano generate --from X --to Y` (Phase 3b)
+> - **No synthetic recordings** — TopicBlocks are decoupled from `recording_id` (nullable FK via migration 017)
+> - **LLM-based grouping** — Instead of activity-continuity segmentation, the SessionAggregator uses LLM semantic grouping via `text_infer`
+>
+> The document below is preserved for historical context. See ADR-011 Addendum and PR #53 for the actual implementation.
+
 # TDD-003: Segmentation & CLI
 
 ## 1. Overview

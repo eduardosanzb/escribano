@@ -55,37 +55,53 @@ actor WorkQueue {
     ///
     /// Cancellation: if the calling Task is already cancelled when submit() is called,
     /// CancellationError is thrown immediately before enqueuing. Cancellation that occurs
-    /// after enqueuing will be surfaced when the work actually runs (the operation itself
-    /// should propagate CancellationError via its own checks, e.g. Task.checkCancellation).
+    /// after enqueuing will remove the pending entry from the queue (if not yet started)
+    /// and throw CancellationError when the caller resumes.
     func submit<T: Sendable>(
         priority: Priority,
         _ operation: @Sendable @escaping () async throws -> T
     ) async throws -> T {
         try Task.checkCancellation()
-        return try await withCheckedThrowingContinuation { cont in
-            nextSequence += 1
-            let entry = Entry(
-                priority: priority,
-                sequence: nextSequence,
-                work: {
-                    do {
-                        let result = try await operation()
-                        cont.resume(returning: result)
-                    } catch {
-                        cont.resume(throwing: error)
+        
+        let entryId = nextSequence + 1  // Capture before increment
+        
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { cont in
+                nextSequence += 1
+                let entry = Entry(
+                    priority: priority,
+                    sequence: nextSequence,
+                    work: {
+                        do {
+                            let result = try await operation()
+                            cont.resume(returning: result)
+                        } catch {
+                            cont.resume(throwing: error)
+                        }
                     }
+                )
+                queue.append(entry)
+                logQueueIfNeeded()
+                if !isProcessing {
+                    isProcessing = true
+                    Task { await self.processLoop() }
                 }
-            )
-            queue.append(entry)
-            logQueueIfNeeded()
-            if !isProcessing {
-                isProcessing = true
-                Task { await self.processLoop() }
             }
+        } onCancel: {
+            // Remove the entry from queue if still pending
+            Task { await self.removeEntry(id: entryId) }
         }
     }
 
     // MARK: - Processing Loop
+
+    /// Remove an entry from the queue by its sequence ID if still pending.
+    private func removeEntry(id: UInt64) {
+        if let idx = queue.firstIndex(where: { $0.sequence == id }) {
+            queue.remove(at: idx)
+            logQueueIfNeeded()
+        }
+    }
 
     /// Runs inside the actor. Picks the next item, executes it (the `await` releases
     /// the actor lock so new submits can enqueue), then repeats until the queue is empty.

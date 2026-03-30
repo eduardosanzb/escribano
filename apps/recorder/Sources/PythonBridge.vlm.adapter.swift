@@ -33,7 +33,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     private let socketPath: String // e.g. /tmp/escribano-recorder-vlm.sock
     private let bridgePath: String // absolute path to mlx_bridge.py
     private let pythonPath: String // python3 executable to use
-    private let modelId: String // e.g. mlx-community/Qwen3-VL-2B-Instruct-4bit
+    private let modelId: String // e.g. mlx-community/Qwen3.5-2B-6bit (RAM-aware default)
     private let maxTokens: Int // token budget per batch
     private let inferenceTimeout: TimeInterval
 
@@ -50,6 +50,16 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     private nonisolated(unsafe) var storedPID: Int32 = 0
 
     // MARK: - Init
+
+    /// Select the default VLM model based on system RAM.
+    /// Qwen3.5 is multimodal — handles both frame analysis and text generation.
+    private static func defaultVLMModel() -> String {
+        let ramGB = ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024)
+        if ramGB >= 32 {
+            return "mlx-community/Qwen3.5-2B-6bit"
+        }
+        return "mlx-community/Qwen3.5-0.8B-8bit"
+    }
 
     init() {
         socketPath = ProcessInfo.processInfo.environment["ESCRIBANO_MLX_RECORDER_SOCKET"]
@@ -77,7 +87,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
             } ?? "/usr/bin/python3"
         }
         modelId = ProcessInfo.processInfo.environment["ESCRIBANO_VLM_MODEL"]
-            ?? "mlx-community/Qwen3-VL-2B-Instruct-4bit"
+            ?? Self.defaultVLMModel()
         maxTokens = Int(ProcessInfo.processInfo.environment["ESCRIBANO_VLM_MAX_TOKENS"] ?? "") ?? 2000
         if let timeoutString = ProcessInfo.processInfo.environment["ESCRIBANO_VLM_TIMEOUT"],
            let parsed = Double(timeoutString)

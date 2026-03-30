@@ -625,9 +625,7 @@ function collectRunMetadata(
   }
 
   const metadata: Record<string, unknown> = {
-    vlm_model:
-      process.env.ESCRIBANO_VLM_MODEL ??
-      'mlx-community/Qwen3-VL-2B-Instruct-bf16',
+    vlm_model: config?.vlmModel ?? 'unknown',
     llm_model: process.env.ESCRIBANO_LLM_MODEL ?? 'auto-detected',
     llm_backend: config?.llmBackend ?? 'ollama',
     commit_hash: commitHash,

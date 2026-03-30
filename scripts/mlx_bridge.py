@@ -10,7 +10,7 @@ Usage:
     python3 scripts/mlx_bridge.py --mode llm   # LLM-only (text generation)
 
 Environment Variables:
-    ESCRIBANO_VLM_MODEL       - MLX VLM model name (default: mlx-community/Qwen3-VL-2B-Instruct-4bit)
+    ESCRIBANO_VLM_MODEL       - MLX VLM model name (default: auto-detected by caller, safety net: Qwen3.5-0.8B-8bit)
     ESCRIBANO_VLM_BATCH_SIZE  - Frames per batch (default: 2)
     ESCRIBANO_VLM_MAX_TOKENS  - Token budget per batch (default: 4000)
     ESCRIBANO_MLX_SOCKET_PATH - Unix socket path (default: /tmp/escribano-mlx.sock)
@@ -36,7 +36,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 # Configuration from environment (all defaults come from TypeScript config.ts)
 MODEL_NAME = os.environ.get(
-    "ESCRIBANO_VLM_MODEL", "mlx-community/Qwen3-VL-2B-Instruct-4bit"
+    "ESCRIBANO_VLM_MODEL", "mlx-community/Qwen3.5-0.8B-8bit"
 )
 BATCH_SIZE = int(os.environ.get("ESCRIBANO_VLM_BATCH_SIZE", "2"))
 MAX_TOKENS_VLM = int(os.environ.get("ESCRIBANO_VLM_MAX_TOKENS", "4000"))
@@ -450,8 +450,8 @@ def handle_request(
                 conn, model_obj, processor_obj, config_obj, params, request_id
             )
         elif method == "text_infer":
-            # text_infer reuses the VLM model for text-only generation.
-            # This works because Qwen3-VL handles text-only prompts natively.
+            # text_infer reuses the loaded model for text-only generation.
+            # Qwen3.5 is multimodal and handles text-only prompts natively.
             # We call handle_vlm_infer directly — it already handles image=None
             # when no image paths are in the messages.
             handle_vlm_infer(

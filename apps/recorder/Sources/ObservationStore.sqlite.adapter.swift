@@ -3,7 +3,6 @@ import SQLite3
 // SQLITE_TRANSIENT: instructs SQLite to copy the string immediately (same as FrameStore.sqlite.adapter.swift).
 // We redefine it here because each file is its own compilation unit.
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-private let MIN_VALID_TIMESTAMP: Double = 1577836800.0  // 2020-01-01 00:00:00 UTC
 // MARK: - SQLiteObservationStore
 //
 // "actor" keyword: this is not a class — it's an actor. See the explanation above.
@@ -120,10 +119,6 @@ actor SQLiteObservationStore: ObservationStore {
             WHERE o.tb_id IS NULL
               AND o.frame_id IS NOT NULL
               AND o.vlm_description IS NOT NULL
-              -- Filter out observations with timestamps before 2020-01-01 (Unix epoch 1577836800).
-              -- This guards against observations with invalid/relative timestamps that could
-              -- skew aggregation results. Observations before this date are considered data errors.
-              AND o.timestamp >= 1577836800.0
             ORDER BY effective_ts ASC
             LIMIT ?
         """

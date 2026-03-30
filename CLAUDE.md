@@ -257,7 +257,7 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
    ├─ ffmpeg extracts frames at 2s intervals (~1776 frames/hour)
    ├─ Scene detection (ffmpeg) → timestamps of visual changes
    ├─ Adaptive sampling (10s base + scene changes + gap fill) → ~100-150 frames
-   ├─ VLM sequential inference (Qwen3-VL-2B-4bit, ~0.7s/frame) → activity + description per frame
+   ├─ VLM sequential inference (Qwen3-VL-2B-4bit, ~0.7s/frame; legacy reference, not the current default) → activity + description per frame
    └─ Save as Observation rows (type='visual', vlm_description)
 
 4. Activity Segmentation

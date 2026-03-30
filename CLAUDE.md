@@ -14,16 +14,16 @@
 - **Linting/Formatting**: Biome
 - **Database**: SQLite (better-sqlite3)
 - **Transcription**: whisper.cpp (whisper-cli)
-- **VLM**: MLX-VLM (local, Qwen3-VL-2B) - frame analysis (~0.7s/frame with 4bit)
-- **LLM**: MLX-LM (local, Qwen3.5) or Ollama (local, auto-detected based on RAM) - summary generation
+- **VLM/LLM**: MLX-VLM (local) — **Qwen3.5 is multimodal** (handles both frame analysis AND text generation in a single model). The recorder uses one Qwen3.5 model for everything: VLM frame analysis + `text_infer` for session aggregation. No separate LLM model needed.
+- **LLM (batch fallback)**: MLX-LM or Ollama (local, auto-detected based on RAM) — only used by the batch pipeline when a separate text-only LLM is needed
 - **Package Manager**: `uv` for Python dependencies (fast, reliable lockfiles)
 
 ## Development Environment
 
 - **Machine**: MacBook Pro M4 Max
 - **Unified Memory**: 128GB (Optimized for VLM inference)
-- **VLM Model**: `Qwen3-VL-2B-Instruct-4bit` (~2GB, ~0.7s per frame) via MLX-VLM
-- **LLM Model**: Auto-detected based on RAM (`Qwen3.5-27B` recommended) via MLX-LM or Ollama
+- **VLM/LLM Model**: `Qwen3.5-2B-6bit` (multimodal — handles both frame analysis and text generation) via MLX-VLM. On 16GB machines: `Qwen3.5-0.8B-8bit` also works well.
+- **LLM Model (batch only)**: Auto-detected based on RAM (`Qwen3.5-27B` recommended) via MLX-LM or Ollama — only needed for the batch pipeline's separate `generateText` path
 
 ### MLX-VLM Setup
 
@@ -94,7 +94,7 @@ The config file is auto-created on first run with sensible defaults and inline c
 
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
-| `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis. Batch pipeline default: `mlx-community/Qwen3-VL-2B-Instruct-bf16`. Always-on recorder default: `mlx-community/Qwen3-VL-4B-Instruct-4bit`. | see description |
+| `ESCRIBANO_VLM_MODEL` | MLX model (Qwen3.5 is multimodal — one model for frame analysis + text generation). RAM-aware default: `Qwen3.5-2B-6bit` (>=32GB) or `Qwen3.5-0.8B-8bit` (16GB). | auto-detected |
 | `ESCRIBANO_ANALYZE_BATCH_SIZE` | Batch size (frames) claimed by the recorder VLM analyzer each cycle. | `5` |
 | `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `2` |
 | `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |

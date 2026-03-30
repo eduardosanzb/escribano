@@ -97,9 +97,8 @@ final class StreamCapture: NSObject {
         let hamming = prevPHash.map { (hash ^ $0).nonzeroBitCount } ?? 99
         let isDuplicate = hamming <= pHashThreshold
         
-        if debugPHash {
-            let status = isDuplicate ? "SKIP" : "KEEP"
-            print("[pHash] frame=\(framesSeen) hamming=\(hamming) status=\(status) threshold=\(pHashThreshold)")
+        if debugPHash && !isDuplicate {
+            print("[pHash] KEEP frame=\(framesSeen) hamming=\(hamming) threshold=\(pHashThreshold)")
         }
         
         // Rolling stats every 100 frames seen

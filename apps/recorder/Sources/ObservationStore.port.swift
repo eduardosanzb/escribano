@@ -55,6 +55,20 @@ struct DbFrame: Sendable {
     let height: Int
     let retryCount: Int
 }
+
+// MARK: - UnclaimedObservation
+// An observation row enriched with its frame's captured_at timestamp.
+// Used by SessionAggregator for LLM-based semantic grouping into TopicBlocks.
+struct UnclaimedObservation: Sendable {
+    let id: String
+    let frameId: String?
+    let timestamp: Double         // observation.timestamp (Unix epoch seconds)
+    let capturedAt: Double        // frame.captured_at as Unix epoch, or observation.timestamp as fallback
+    let vlmDescription: String
+    let activityType: String
+    let apps: [String]            // parsed from JSON
+    let topics: [String]          // parsed from JSON
+}
 // ============================================================================
 // Port interface
 // ============================================================================
@@ -89,17 +103,19 @@ enum ObservationStoreError: Error, LocalizedError {
 //   always requires "await" in Swift 6. Using "async" in the protocol makes this explicit.
 //   "throws" allows DB errors to propagate up cleanly.
 protocol ObservationStore: AnyObject, Sendable {
-    /// Fetch up to `batchSize` frames pending analysis (analyzed = 0, retryCount < 3).
-    /// Returns oldest frames first (ORDER BY timestamp ASC).
-    func claimFrames(batchSize: Int) async throws -> [DbFrame]
     /// Insert one observations row per (frame, description) pair.
     /// `frame_id` links back to the frames table.
     func saveObservations(from frames: [DbFrame], descriptions: [FrameDescription]) async throws
-    /// Set `analyzed = 1` for all frame IDs in the list (batch UPDATE).
-    func markFramesAnalyzed(ids: [String]) async throws
-    /// Increment `retry_count` for a frame. If retry_count reaches 3, set `analyzed = 2`
-    /// (permanently skipped — won't appear in future claimFrames calls).
-    func markFrameFailed(id: String) async throws
+    /// Fetch observations not yet claimed by any TopicBlock.
+    /// Returns observations ordered by timestamp ASC (oldest first).
+    /// Uses frame.captured_at when available for accurate timestamps.
+    /// These observations are grouped via LLM-based semantic analysis in SessionAggregator.
+    /// - Parameter limit: Maximum number of observations to return (default 300)
+    func fetchUnclaimed(limit: Int) async throws -> [UnclaimedObservation]
+    /// Atomically claim observations for a TopicBlock.
+    /// Sets tb_id on all observation IDs. Uses WHERE tb_id IS NULL guard
+    /// to prevent double-claiming. Returns the count of rows actually updated.
+    func claimObservations(ids: [String], tbId: String) async throws -> Int
     /// NEW — releases the sqlite3 handle on shutdown
     func close() async
 }

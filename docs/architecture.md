@@ -361,9 +361,11 @@ This enables storage backend swaps (e.g., SQLite → Turso) without changing dom
 | `IntelligenceService` | `intelligence.mlx.adapter.ts` | **Unified MLX adapter**: VLM (frame analysis via Python bridge) + LLM (text generation) |
 | `IntelligenceService` | `intelligence.ollama.adapter.ts` | **Alternative**: LLM inference for summary generation (configurable backend) |
 | **Always-On Recorder (Swift)** | | |
-| `FrameStore` | `SQLiteFrameStore.swift` | Swift-native frame storage + batch claiming |
-| `ObservationStore` | `SQLiteObservationStore.swift` | Swift-native observation persistence |
+| `FrameStore` | `FrameStore.sqlite.adapter.swift` | Swift-native frame lifecycle (insert, claim, mark analyzed/failed) |
+| `ObservationStore` | `ObservationStore.sqlite.adapter.swift` | Swift-native observation persistence (save, fetch unclaimed, claim) |
+| `TopicBlockStore` | `TopicBlockStore.sqlite.adapter.swift` | TopicBlock persistence (save, count) |
 | `VLMInferenceService` | `PythonBridge.vlm.adapter.swift` | Swift → Python bridge adapter (Unix socket, `mlx_bridge.py`) |
+| `TextGenerationService` | `PythonBridge.vlm.adapter.swift` | Text-only generation via VLM bridge (same socket, `text_infer`) |
 | `ResponseParser` | `ResponseParser.swift` | Decoupled VLM output parsing |
 | **Publishing** | | |
 | `PublishingService` | `publishing.outline.adapter.ts` | Outline wiki publishing |
@@ -489,53 +491,69 @@ When `summary-v3.md` was used with only 3 of 6 variables replaced, the LLM:
 
 Alongside the batch video pipeline, Escribano has a second operating mode: **continuous screen capture** via a Swift LaunchAgent with **VLM analysis via Python bridge**, sharing the same SQLite database. The Swift agent drives `mlx_bridge.py` over a Unix socket for inference — mlx-swift-lm was dropped due to a 15× performance regression (see ADR-010 addendum).
 
-### Single-Process Design (Phase 2)
+### Single-Process Design (Phase 2+3)
 
 ```text
-┌──────────────────────────────────────────────────────────────────────┐
-│                    Swift Capture Agent (LaunchAgent)                 │
-│                                                                      │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │            Two Concurrent Async Tasks                        │  │
-│  │                                                               │  │
-│  │  ┌────────────────────┐      ┌──────────────────────────┐    │  │
-│  │  │  Capture Task      │      │  VLM Analyzer Task       │    │  │
-│  │  │  (StreamCapture)   │      │  (FrameAnalyzer)         │    │  │
-│  │  │ • SCStream 1s      │      │ • Poll frames (analyzed)  │    │  │
-│  │  │ • pHash dedup      │      │ • Claim batch            │    │  │
-│  │  │ • Write JPEG       │      │ • Call Python bridge     │    │  │
-│  │  │ • Insert frames DB │◄────►│   (Unix socket, VLM)    │    │  │
-│  │  │                    │      │ • Parse response         │    │  │
-│  │  │ (Backpressure)     │      │ • Write observations     │    │  │
-│  │  │                    │      │ • Mark analyzed = 1      │    │  │
-│  │  └────────────────────┘      └──────────────────────────┘    │  │
-│  │                                                               │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│           │                                                         │
-└───────────┼─────────────────────────────────────────────────────────┘
-            │
-    ┌───────┴────────────────────────────────────────┐
-    │                                                │
-    ▼                                                ▼
-┌──────────────────────────────────────┐   ┌─────────────────────────┐
-│      SQLite (WAL mode)               │   │   Node.js CLI           │
-│                                      │   │  (batch pipeline)       │
-│  ┌────────┐  ┌──────────────────┐   │   │                         │
-│  │ frames │  │  observations    │   │   │ •escribano [--file]     │
-│  │        │  │  (phase 1+2)     │   │   │ •recorder install       │
-│  ├────────┤  ├──────────────────┤   │   │ •recorder status        │
-│  │contexts│  │ topic_blocks/    │   │   │                         │
-│  │        │  │ artifacts        │   │   │ (batch processing)      │
-│  └────────┘  └──────────────────┘   │   └─────────────────────────┘
-│                                      │
-└──────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    Swift Capture Agent (LaunchAgent)                         │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐ │
+│  │            Three Concurrent Async Tasks + Shared WorkQueue              │ │
+│  │                                                                         │ │
+│  │  ┌────────────────────┐  ┌──────────────────────────┐  ┌─────────────┐ │ │
+│  │  │  Capture Task      │  │  VLM Analyzer Task       │  │ Aggregator  │ │ │
+│  │  │  (StreamCapture)   │  │  (FrameAnalyzer)         │  │ (Session    │ │ │
+│  │  │  • SCStream 1s     │  │  • Poll frames (analyzed) │  │  Aggregator)│ │ │
+│  │  │  • pHash dedup     │  │  • Claim batch           │  │ • Poll obs  │ │ │
+│  │  │  • Write JPEG      │  │  • Call Python bridge    │  │ • LLM group │ │ │
+│  │  │  • Insert frames DB│◄─►│   (Unix socket, VLM)   │  │ • Write TBs │ │ │
+│  │  │  │                 │  │  • Parse response        │  │ • Claim obs │ │ │
+│  │  │  │ (Backpressure)  │  │  • Write observations    │  │             │ │ │
+│  │  │  │                 │  │  • Mark analyzed = 1     │  │ (priority:  │ │ │
+│  │  │  └─────────────────┘  └──────────────────────────┘  │  .normal)   │ │ │
+│  │  │                                                     └─────────────┘ │ │
+│  │  │                              │                            │         │ │
+│  │  └──────────────────────────────┼────────────────────────────┼─────────┘ │
+│  │                                 │                            │           │
+│  └─────────────────────────────────┼────────────────────────────┼───────────┘
+│                                    │                            │
+│    ┌───────────────────────────────┼────────────────────────────┼────────┐
+│    │                               ▼                            ▼        │
+│    │              ┌──────────────────────────────────────────────┐       │
+│    │              │      SQLite (WAL mode, 3 connections)        │       │
+│    │              │                                              │       │
+│    │              │  ┌────────┐  ┌──────────────────┐           │       │
+│    │              │  │ frames │  │  observations    │           │       │
+│    │              │  │        │  │  (tb_id FK)      │           │       │
+│    │              │  ├────────┤  ├──────────────────┤           │       │
+│    │              │  │contexts│  │ topic_blocks     │           │       │
+│    │              │  │        │  │  (from_ts/to_ts) │           │       │
+│    │              │  └────────┘  └──────────────────┘           │       │
+│    │              └──────────────────────────────────────────────┘       │
+│    │                                                                     │
+│    └─────────────────────────────────────────────────────────────────────┘
+│                                    │
+└────────────────────────────────────┼──────────────────────────────────────┘
+                                     │
+                                     ▼
+                          ┌─────────────────────┐
+                          │   Node.js CLI       │
+                          │  (batch pipeline)   │
+                          │                     │
+                          │ •escribano [--file]  │
+                          │ •recorder install    │
+                          │ •recorder status     │
+                          │ (batch processing)   │
+                          └─────────────────────┘
 ```
 
 **Swift Capture Agent** (`apps/recorder/`, `com.escribano.capture` LaunchAgent):
-- Single executable with two concurrent async tasks (no process spawning)
+- Single executable with three concurrent async tasks + one shared `WorkQueue` (no process spawning)
 - Capture task (`StreamCapture`): 1-second intervals via `SCStream`, pHash dedup (threshold=4), writes JPEG + `frames` row
 - Backpressure: pauses at `ESCRIBANO_CAPTURE_HIGH_WATER=500`, resumes at `ESCRIBANO_CAPTURE_LOW_WATER=100`
-- VLM Analyzer task (`FrameAnalyzer`): polls `frames WHERE analyzed=0`, claims batch, sends to Python bridge via Unix socket (`/tmp/escribano-recorder-vlm.sock`), writes `observations` with `frame_id` FK, marks `analyzed=1`
+- VLM Analyzer task (`FrameAnalyzer`): polls `frames WHERE analyzed=0`, claims batch, sends to Python bridge via Unix socket (`/tmp/escribano-recorder-vlm.sock`), writes `observations` with `frame_id` FK, marks `analyzed=1`. Priority: `.realtime`
+- Session Aggregator task (`SessionAggregator`): polls `observations WHERE tb_id IS NULL` every 120s, groups via LLM semantic prompt (`text_infer` on same Python bridge), writes `topic_blocks` with `from_ts`/`to_ts`, claims observations. Priority: `.normal`
+- `WorkQueue` serializes bridge calls between FrameAnalyzer (`.realtime`) and SessionAggregator (`.normal`) with fairness yielding (configurable via `ESCRIBANO_QUEUE_REALTIME_STREAK`)
 - VLM model runs in the Python bridge process (`mlx_bridge.py`, copied to `~/.escribano/scripts/` on `recorder install`); separate socket from batch pipeline (`-recorder-vlm.sock` vs `-vlm.sock`)
 - Decoupled parsing: `ResponseParser.swift` separates VLM output format from parsing logic
 
@@ -553,20 +571,34 @@ Swift Capture Task
      ▼
 frames table (analyzed=0, frame_id stored)
      │
-     │  Swift VLM Analyzer Task polls & claims batch
+     │  Swift FrameAnalyzer task polls & claims batch (.realtime priority)
      ▼
-VLM inference (Python bridge mlx_bridge.py, Qwen3-VL-4B-Instruct-4bit)
+VLM inference (Python bridge mlx_bridge.py, Qwen3-VL)
      │
      ├── Success → observations (frame_id FK, vlm_description, activity_type, apps, topics)
      │             frames (analyzed=1)
      │
-     └── Failure → frames (analyzed=2, retry_count++ if <3)
+     └── Failure → frames (retry_count++ if <3, analyzed=2 if >=3)
      │
      ▼
-Activity Segmentation (TS, reuses existing logic from batch pipeline)
+observations WHERE tb_id IS NULL
+     │
+     │  Swift SessionAggregator task polls (.normal priority)
+     ▼
+LLM grouping (Python bridge text_infer, shared VLM model)
+     │
+     ├── Parsed groups → topic_blocks (per group, labeled)
+     │                    observations (tb_id set per group)
+     │
+     └── Fallback → topic_blocks (single catch-all TB)
+                    observations (all claimed)
      │
      ▼
-TopicBlocks + Artifact Generation (TS, reuses existing logic)
+topic_blocks (from_ts, to_ts, classification JSON, observation_count)
+     │
+     │  On-demand: npx escribano generate --today
+     ▼
+Markdown artifact
 ```
 
 ### Architecture Rationale (ADR-010)
@@ -630,23 +662,63 @@ npx escribano recorder status    # agent state, pending frames, disk usage
 Following the same clean architecture principles as TypeScript, Swift adapters use protocol-based decoupling:
 
 ```swift
-// Port: frame storage
-protocol FrameStore {
-  func savePending(frame: CapturedFrame) throws
-  func claimBatch(limit: Int, lockId: UUID) throws -> [Frame]
-  func markAnalyzed(_ frameId: String, observations: [Observation]) throws
+// Port: frame lifecycle (synchronous, SQLiteFrameStore is a class)
+protocol FrameStore: AnyObject, Sendable {
+  func insertFrame(_ metadata: FrameMetadata) throws
+  func pendingFrameCount() throws -> Int
+  func claimFrames(batchSize: Int) throws -> [DbFrame]
+  func markFramesAnalyzed(ids: [String]) throws
+  func markFrameFailed(id: String) throws
+  func close()
 }
 
-// Adapter: SQLite implementation
+// Adapter: SQLite implementation (class, not actor — sync SQLite C API)
 class SQLiteFrameStore: FrameStore { ... }
+
+// Port: observation lifecycle (async, SQLiteObservationStore is an actor)
+protocol ObservationStore: AnyObject, Sendable {
+  func saveObservations(from frames: [DbFrame], descriptions: [FrameDescription]) async throws
+  func fetchUnclaimed(limit: Int) async throws -> [UnclaimedObservation]
+  func claimObservations(ids: [String], tbId: String) async throws -> Int
+  func close() async
+}
+
+// Adapter: SQLite implementation (actor — serializes handle access)
+actor SQLiteObservationStore: ObservationStore { ... }
+
+// Port: TopicBlock persistence
+protocol TopicBlockStore: AnyObject, Sendable {
+  func save(_ block: TopicBlockInsert) async throws
+  func count() async throws -> Int
+}
 
 // Port: VLM inference
 protocol VLMInferenceService {
-  func analyze(imagePaths: [String]) async throws -> [FrameDescription]
+  func start() async throws
+  func runBatch(frames: [DbFrame]) async throws -> [FrameDescription]
+  func stop() async
 }
 
-// Adapter: Python bridge (drives mlx_bridge.py over Unix socket)
-class PythonBridgeVLMAdapter: VLMInferenceService { ... }
+// Port: text generation (reuses VLM model via text_infer)
+protocol TextGenerationService: AnyObject, Sendable {
+  func generateText(prompt: String, maxTokens: Int) async throws -> String
+}
+
+// Adapter: Python bridge (implements both VLMInferenceService + TextGenerationService)
+actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService { ... }
+
+// Actor: priority queue serializing bridge calls
+actor WorkQueue {
+  enum Priority { case realtime, normal, low }
+  func submit<T>(_ priority: Priority, _ operation: () async throws -> T) async throws -> T
+}
+
+// Actor: LLM-based observation grouping
+actor SessionAggregator {
+  init(obsStore: ObservationStore, tbStore: TopicBlockStore,
+       textService: TextGenerationService, queue: WorkQueue)
+  func aggregateLoop() async  // runs until Task.isCancelled
+}
 ```
 
 This enables future storage backends (Turso, PostgreSQL) without changing VLM analyzer or capture task logic.

@@ -27,13 +27,13 @@ import Foundation
 ///   An actor in Swift serializes access to its mutable state — only one task
 ///   can run inside the actor at a time. This prevents two concurrent runBatch()
 ///   calls from racing on the socket write/read state.
-actor PythonBridgeVLMAdapter: VLMInferenceService {
+actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     // MARK: - Configuration
 
     private let socketPath: String // e.g. /tmp/escribano-recorder-vlm.sock
     private let bridgePath: String // absolute path to mlx_bridge.py
     private let pythonPath: String // python3 executable to use
-    private let modelId: String // e.g. mlx-community/Qwen3-VL-2B-Instruct-4bit
+    private let modelId: String // e.g. mlx-community/Qwen3.5-2B-6bit (RAM-aware default)
     private let maxTokens: Int // token budget per batch
     private let inferenceTimeout: TimeInterval
 
@@ -50,6 +50,16 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
     private nonisolated(unsafe) var storedPID: Int32 = 0
 
     // MARK: - Init
+
+    /// Select the default VLM model based on system RAM.
+    /// Qwen3.5 is multimodal — handles both frame analysis and text generation.
+    private static func defaultVLMModel() -> String {
+        let ramGB = ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024)
+        if ramGB >= 32 {
+            return "mlx-community/Qwen3.5-2B-6bit"
+        }
+        return "mlx-community/Qwen3.5-0.8B-8bit"
+    }
 
     init() {
         socketPath = ProcessInfo.processInfo.environment["ESCRIBANO_MLX_RECORDER_SOCKET"]
@@ -77,7 +87,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
             } ?? "/usr/bin/python3"
         }
         modelId = ProcessInfo.processInfo.environment["ESCRIBANO_VLM_MODEL"]
-            ?? "mlx-community/Qwen3-VL-2B-Instruct-4bit"
+            ?? Self.defaultVLMModel()
         maxTokens = Int(ProcessInfo.processInfo.environment["ESCRIBANO_VLM_MAX_TOKENS"] ?? "") ?? 2000
         if let timeoutString = ProcessInfo.processInfo.environment["ESCRIBANO_VLM_TIMEOUT"],
            let parsed = Double(timeoutString)
@@ -170,6 +180,26 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         }
         log("[PythonBridge] Parsed \(descriptions.count)/\(frames.count) frame descriptions")
         return descriptions
+    }
+
+    func generateText(prompt: String, maxTokens: Int = 2000) async throws -> String {
+        guard isStarted else {
+            throw PythonBridgeError.notStarted
+        }
+        requestId += 1
+        let id = requestId
+
+        let request: [String: Any] = [
+            "id": id,
+            "method": "text_infer",
+            "params": [
+                "messages": [["role": "user", "content": prompt]],
+                "maxTokens": maxTokens,
+            ] as [String: Any],
+        ]
+
+        let (rawText, _) = try await sendAndReceive(request: request)
+        return rawText
     }
 
     func stop() async {
@@ -289,17 +319,26 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
         }
         line += "\n"
         fh.write(line.data(using: .utf8)!)
+
+        // Capture actor-isolated properties BEFORE entering withCheckedThrowingContinuation.
+        // The GCD callbacks (timer + readabilityHandler) run on non-actor threads.
+        // Accessing self.inferenceTimeout or self.modelId from those closures would
+        // violate Swift 6 actor isolation and crash with:
+        //   "Incorrect actor executor assumption; expected 'PythonBridgeVLMAdapter' executor"
+        let timeout = self.inferenceTimeout
+        let model = self.modelId
+
         return try await withCheckedThrowingContinuation { continuation in
             let buffer = LineBuffer()
             let resumed = ResumeFlag()
             let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
-            timer.schedule(deadline: .now() + inferenceTimeout)
+            timer.schedule(deadline: .now() + timeout)
             timer.setEventHandler { [weak fh] in
                 guard let handle = fh, resumed.trySet() else { return }
                 handle.readabilityHandler = nil
-                log("[PythonBridge] Inference timed out after \(Int(self.inferenceTimeout))s")
+                log("[PythonBridge] Inference timed out after \(Int(timeout))s")
                 timer.cancel()
-                continuation.resume(throwing: PythonBridgeError.inferenceTimeout(self.inferenceTimeout))
+                continuation.resume(throwing: PythonBridgeError.inferenceTimeout(timeout))
             }
             timer.resume()
             fh.readabilityHandler = { handle in
@@ -330,7 +369,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService {
                         var stats: VLMStats? = nil
                         if let s = json["stats"] as? [String: Any] {
                             stats = VLMStats(
-                                model:            self.modelId,
+                                model:            model,
                                 promptTokens:     s["prompt_tokens"]     as? Int    ?? 0,
                                 generationTokens: s["generation_tokens"] as? Int    ?? 0,
                                 promptTps:        s["prompt_tps"]        as? Double ?? 0,

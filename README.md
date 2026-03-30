@@ -190,13 +190,13 @@ ScreenCaptureKit (Swift) → 1s interval → pHash dedup → frames DB
 Swift FrameAnalyzer → Python bridge (VLM, Unix socket) → observations DB
      │
      ▼
-Activity segmentation → TopicBlocks
+Swift SessionAggregator → Python bridge (LLM, same socket) → topic_blocks DB
      │
      ▼
-LLM summary → Markdown artifact
+LLM summary → Markdown artifact (on-demand via `escribano generate`)
 ```
 
-Never forget to hit record. The recorder runs as a background agent, capturing only when your screen changes.
+Never forget to hit record. The recorder runs as a background agent — capturing frames, analyzing them via VLM, and grouping into TopicBlocks via LLM semantic grouping. All three tasks run concurrently in a single Swift process, sharing a Python bridge over a Unix socket.
 
 Uses VLM-first visual understanding, not OCR + text clustering. OCR fails for developer work because all code screens produce similar tokens. VLMs understand the *activity*, not just the text.
 
@@ -272,10 +272,11 @@ On first run, macOS will ask for Screen Recording permission. Grant it — the a
 - Skips identical frames using perceptual hashing (pHash) — typically 80-95% of frames are skipped
 - Stores unique frames to `~/.escribano/frames/` with timestamps
 - Runs as a LaunchAgent — starts on login, restarts on crash
+- Continuously analyzes frames via VLM, groups into TopicBlocks via LLM semantic grouping
 
 ### What's next
 
-- Automatic artifact generation from live sessions (trigger `escribano` after capture to process and generate)
+- Time-range artifact generation (`npx escribano generate --today --format standup`)
 - Apple Developer ID signing (so TCC permission survives binary rebuilds for all users)
 
 ---
@@ -411,7 +412,8 @@ Full architecture: [docs/architecture.md](docs/architecture.md)
 - [x] Auto-detect best LLM model
 - [x] Always-on recorder — Phase 1 (capture + pHash dedup + LaunchAgent)
 - [x] Always-on recorder — Phase 2 (VLM analysis via Swift → Python bridge)
-- [ ] Always-on recorder — Phase 3 (auto artifact generation from live sessions)
+- [x] Always-on recorder — Phase 3a (SessionAggregator: continuous TopicBlock creation from live observations)
+- [ ] Always-on recorder — Phase 3b (time-range artifact generation: `escribano generate --today`)
 - [ ] MCP server for AI assistants
 - [ ] Auto-detect ffmpeg hardware acceleration
 - [ ] OCR on keyframes for code/URLs

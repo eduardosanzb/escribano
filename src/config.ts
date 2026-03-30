@@ -34,7 +34,7 @@ const configSchema = z.object({
   llmModel: z.string().optional(),
   llmBackend: z.enum(['mlx', 'ollama']).default('mlx'),
   llmMlxModel: z.string().optional(),
-  vlmModel: z.string().default('mlx-community/Qwen3-VL-2B-Instruct-4bit'),
+  vlmModel: z.string().default('mlx-community/Qwen3.5-0.8B-8bit'),
   subjectGroupingModel: z.string().optional(),
 
   // === DEBUGGING ===
@@ -75,14 +75,30 @@ function getSystemRamGB(): number {
   return Math.round(totalmem() / (1024 * 1024 * 1024));
 }
 
-function getRamTier(ramGB: number): { tier: string; frameWidth: number } {
+function getRamTier(ramGB: number): {
+  tier: string;
+  frameWidth: number;
+  vlmModel: string;
+} {
   if (ramGB >= 32) {
-    return { tier: 'high', frameWidth: 1024 };
+    return {
+      tier: 'high',
+      frameWidth: 1024,
+      vlmModel: 'mlx-community/Qwen3.5-2B-6bit',
+    };
   }
   if (ramGB >= 16) {
-    return { tier: 'medium', frameWidth: 1024 };
+    return {
+      tier: 'medium',
+      frameWidth: 1024,
+      vlmModel: 'mlx-community/Qwen3.5-0.8B-8bit',
+    };
   }
-  return { tier: 'low', frameWidth: 768 };
+  return {
+    tier: 'low',
+    frameWidth: 768,
+    vlmModel: 'mlx-community/Qwen3.5-0.8B-8bit',
+  };
 }
 
 // =============================================================================
@@ -96,7 +112,7 @@ const BASE_DEFAULTS = {
   sceneThreshold: 0.4,
   vlmMaxTokens: 2000,
   llmBackend: 'mlx',
-  vlmModel: 'mlx-community/Qwen3-VL-2B-Instruct-4bit',
+  vlmModel: 'mlx-community/Qwen3.5-0.8B-8bit',
   verbose: false,
   debugOllama: false,
   debugVlm: false,
@@ -133,7 +149,7 @@ ESCRIBANO_VLM_MAX_TOKENS=2000         # Token budget per batch
 # ESCRIBANO_LLM_BACKEND=mlx             # LLM backend: 'mlx' (default) or 'ollama'
 # ESCRIBANO_LLM_MODEL=qwen3.5:27b       # Ollama model (only used if llmBackend='ollama')
 # ESCRIBANO_LLM_MLX_MODEL=              # MLX model (only used if llmBackend='mlx', auto-detected if not set)
-ESCRIBANO_VLM_MODEL=mlx-community/Qwen3-VL-2B-Instruct-4bit
+# ESCRIBANO_VLM_MODEL=                  # Auto-detected based on RAM (Qwen3.5-2B-6bit for 32GB+, Qwen3.5-0.8B-8bit for 16GB+)
 
 # === DEBUGGING ===
 ESCRIBANO_VERBOSE=false               # Enable verbose logging
@@ -290,7 +306,7 @@ export function loadConfig(): Config {
     ),
     vlmModel: parseEnvStringWithSource(
       'ESCRIBANO_VLM_MODEL',
-      BASE_DEFAULTS.vlmModel,
+      ramTier.vlmModel,
       sources,
       'vlmModel'
     ) as string,
@@ -403,6 +419,14 @@ export function loadConfig(): Config {
       'outlineCollection'
     ) as string,
   };
+
+  // Mark vlmModel source as ram-aware when using auto-detected default
+  if (process.env.ESCRIBANO_VLM_MODEL === undefined) {
+    const vlmSource = sources.find((s) => s.key === 'vlmModel');
+    if (vlmSource) {
+      vlmSource.source = 'ram-aware';
+    }
+  }
 
   // 4. Validate with Zod
   const validated = configSchema.parse(config);

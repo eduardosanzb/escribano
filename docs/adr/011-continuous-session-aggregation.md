@@ -119,52 +119,42 @@ Why Swift and not a separate Node.js daemon:
 - **Same actor pattern** — follows established FrameAnalyzer design
 - **Maintainability** — one daemon owns all always-on work; Node.js stays on-demand only
 
-#### 2. Gap-Aware Windowing (no session boundary signal needed)
+#### 2. LLM-Based Semantic Grouping (via shared VLM bridge)
 
-The aggregator doesn't need sleep/wake events, explicit "stop" buttons, or any session-end detection. It operates purely on observation timestamps:
+The aggregator doesn't need sleep/wake events, explicit "stop" buttons, or any session-end detection. It operates purely on observation timestamps, using the VLM model's text backbone for semantic grouping:
 
 ```
 Timeline:     9:00  9:05  9:10  ...  12:00  ─── 90 min gap ───  1:30  1:35  1:40
 Observations: obs1  obs2  obs3       obs47                       obs48 obs49 obs50
-                                        │                          │
-                                  gap = 90 min > threshold (20 min)
-                                        │                          │
-                                        ▼                          ▼
-TopicBlocks:  [═══════ TB-1: 9:00-12:00 ═══════]  [═══ TB-2: 1:30-1:40 ═══]
+                                         │                          │
+                                   LLM groups by semantic          │
+                                   similarity, not gaps             │
+                                         │                          ▼
+TopicBlocks:  [═════ TB-1: "Debugging pipeline" ═════]  [═ TB-2: "Code review" ═]
+              [═══ TB-3: "Reading docs" ═══]            [═ TB-4: "Terminal" ════]
 ```
 
 **Algorithm:**
 ```
-1. SELECT o.*
-2.   FROM observations o
-3.   LEFT JOIN frames f ON o.frame_id = f.id
-4.  WHERE o.tb_id IS NULL
-5.  ORDER BY COALESCE(f.captured_at, f.timestamp, o."timestamp") ASC
-6. 
-7. Walk through observations:
-8.    - If gap between obs[i] and obs[i+1] > SESSION_GAP_THRESHOLD → commit window
-9.    - If window has >= TB_MIN_OBSERVATIONS → write topic_block
-10. UPDATE observations SET tb_id = ? WHERE id IN (claimed_ids)
-
-Implementation note: We use the frame’s capture timestamp when available (via `frame_id`), falling back to the observation’s own `timestamp` so the algorithm is directly implementable with the current schema.
+1. fetchUnclaimed(limit: maxObsPerCycle) — WHERE tb_id IS NULL AND frame_id IS NOT NULL
+2. if count < minObservations → sleep, continue
+3. Split into sub-batches of llmBatchSize to keep prompts under ~3K tokens
+4. For each sub-batch:
+     a. buildGroupingPrompt(observations) — includes time, activity, apps, topics, VLM description
+     b. textService.generateText(prompt, maxTokens: 4000) — via Python bridge text_infer
+     c. parseGroupingResponse(response) → groups[] (label + observation IDs)
+     d. If 0 groups parsed → fallback: single TB for entire sub-batch
+5. For each group:
+     a. Create TopicBlockInsert (id, from_ts, to_ts, label, apps, topics, observation_count)
+     b. tbStore.save(block)
+     c. obsStore.claimObservations(ids, tbId) — WHERE tb_id IS NULL guard prevents double-claim
+6. Claim any unassigned observations → catch-all TB
+7. sleep(pollInterval) if no TBs created; otherwise process next batch immediately
 ```
 
-**Why `captured_at` not `processed_at`:**
+**Implementation note**: Gap-based windowing (`splitByGap`) was removed during development — the LLM prompt naturally handles activity boundaries and time gaps. Fragmenting small batches into gap-based windows caused a hot loop bug (100% CPU spin when windows fell below `minObservations`).
 
-Backpressure can pause VLM processing for minutes. All those frames still carry the correct `captured_at` timestamp — when the screen was actually captured. The aggregator operates in historical-truth time, so backpressure pauses never create false session splits.
-
-**Edge cases:**
-
-| Scenario | Behavior |
-|---|---|
-| Continuous morning work | TBs flow every ~15 min, sized by activity continuity |
-| Lunch break (1.5 hrs) | Gap > threshold → separate TB before/after |
-| Next-day startup | 16-hour gap → separate TBs per day, auto-backfilled |
-| Backpressure pause | `captured_at` is still correct → no false split |
-| Machine sleep | Real gap in capture timestamps → correctly splits TBs |
-| pHash skipping many frames (idle screen) | VLM bridge idle → good time for aggregator to batch |
-
-**Backfill on startup**: When the aggregator starts, `WHERE tb_id IS NULL` naturally finds all historical unclaimed observations. Combined with gap-aware windowing, this produces correct TBs for every past work session — no special backfill code needed.
+**Backfill on startup**: When the aggregator starts, `WHERE tb_id IS NULL` naturally finds all historical unclaimed observations. The LLM groups them semantically, producing correct TBs for every past work session — no special backfill code needed.
 
 #### 3. Dual-Site Aggregation (background + on-demand flush)
 
@@ -191,9 +181,9 @@ Both are safe because claiming observations is done atomically: we claim rows vi
 
 **The reverse case:** If the user requests an artifact and no TBs exist yet (aggregator hasn't run, or recorder just started), the flush-aggregate step in `generate` handles it — no dependency on the background process having run first.
 
-#### 4. TopicBlock Content (no LLM, pure aggregation)
+#### 4. TopicBlock Content (LLM-backed grouping via shared VLM bridge)
 
-Each TopicBlock contains data already present in the observations from VLM analysis:
+Each TopicBlock is created by an LLM grouping pass over the observations. The VLM model's text backbone (`text_infer` on the same Python bridge) groups observations by semantic similarity:
 
 ```
 TopicBlock
@@ -201,15 +191,16 @@ TopicBlock
 │ id:                 "tb-2026-03-17-0900"                 │
 │ from_ts:            1742216400.0  (9:00 AM)              │
 │ to_ts:              1742227200.0  (12:00 PM)             │
-│ activity:           "coding"  (mode of obs activities)   │
+│ label:              "MLX Pipeline Debugging"  (LLM)      │
+│ activity:           "debugging"  (mode of obs activities) │
 │ apps:               ["VS Code", "Terminal", "Chrome"]    │
 │ topics:             ["API integration", "auth middleware"]│
 │ observation_count:  47                                   │
-│ classification:     { ... aggregated VLM descriptions }  │
+│ classification:     { ... LLM-generated label + data }   │
 └──────────────────────────────────────────────────────────┘
 ```
 
-**No LLM call.** The `activity` is the statistical mode of observations in the window. `apps` and `topics` are unions. This keeps the aggregator fast (<1ms per TB) and model-free.
+**LLM-backed grouping.** The VLM model groups observations into 1-6 semantic segments via a text-only prompt. Labels are generated by the LLM (e.g., "MLX Pipeline Debugging", "Code Review & Documentation"). The `activity` is the statistical mode of observations in the group. `apps` and `topics` are unions from VLM descriptions. The `text_infer` call reuses the already-loaded VLM model — zero extra RAM, same process, same socket.
 
 Layer 3 still uses model-backed grouping, matching the current TypeScript pipeline: TopicBlocks are grouped into Subjects with a text-only prompt over the aggregated blocks. In this ADR, that grouping should use the already-loaded multimodal VLM path (Qwen3-VL / Qwen3.5), so there is no separate model swap just to build Subjects.
 
@@ -331,7 +322,7 @@ linkage from observations. Pipelines that already write `recording_id` /
 
 ```
 apps/recorder/Sources/
-├── SessionAggregator.swift                 -- actor: gap-aware windowing, periodic poll
+├── SessionAggregator.swift                 -- actor: LLM-based semantic grouping, periodic poll
 ├── TopicBlockStore.port.swift              -- port: write topic_blocks, query by time range
 └── TopicBlockStore.sqlite.adapter.swift    -- adapter: SQLite implementation
 
@@ -352,11 +343,13 @@ BACKLOG.md                                  -- Phase 3 tasks, cleanup stale item
 
 | Variable | Default | Description |
 |---|---|---|
-| `ESCRIBANO_SESSION_GAP_THRESHOLD` | `1200` (20 min) | Seconds of inactivity before starting new TopicBlock |
-| `ESCRIBANO_TB_MIN_OBSERVATIONS` | `5` | Minimum observations to commit a TopicBlock |
 | `ESCRIBANO_TB_POLL_INTERVAL` | `120` (2 min) | Seconds between aggregation polls in Swift actor |
-| `ESCRIBANO_JPEG_HIGH_WATER_GB` | `10` | Disk usage threshold that triggers JPEG cleanup |
-| `ESCRIBANO_JPEG_LOW_WATER_GB` | `5` | Disk target after JPEG cleanup |
+| `ESCRIBANO_TB_MIN_OBSERVATIONS` | `3` | Minimum observations to commit a TopicBlock |
+| `ESCRIBANO_TB_MAX_OBS_PER_CYCLE` | `300` | Max observations processed per aggregation cycle |
+| `ESCRIBANO_TB_LLM_BATCH_SIZE` | `100` | Observations per LLM sub-batch (keeps prompts small) |
+| `ESCRIBANO_QUEUE_REALTIME_STREAK` | `10` | Max consecutive realtime tasks before normal task runs |
+| `ESCRIBANO_JPEG_HIGH_WATER_GB` | `10` | Disk usage threshold that triggers JPEG cleanup (deferred) |
+| `ESCRIBANO_JPEG_LOW_WATER_GB` | `5` | Disk target after JPEG cleanup (deferred) |
 
 ## Phased Rollout
 
@@ -375,14 +368,14 @@ BACKLOG.md                                  -- Phase 3 tasks, cleanup stale item
 - **Time-range artifacts** — "give me the standup from this morning" without recording boundaries
 - **Flush-on-demand** — `generate` never misses recent observations, even if aggregator hasn't caught up
 - **Zero new process** — SessionAggregator is a Swift actor, not a separate daemon
-- **LLM-free aggregation** — no model load for TB creation, fast (<1ms per TB)
+- **LLM-backed aggregation** — groups observations semantically via the already-loaded VLM bridge text backbone; zero extra RAM, ~5s per batch of 30 observations
 - **Model-backed subject grouping** — reuses the already-loaded multimodal VLM path, matching the current TS pipeline without a separate model swap
 - **Small-machine friendly** — VLM-as-LLM POC could eliminate the two-model split entirely
 
 ### Negative
 - **TB quality depends on VLM output** — no LLM enrichment at aggregation time; if VLM descriptions are poor, TBs inherit that
 - **JPEGs stay on disk longer** — cleanup is deferred to batch disk-pressure policy so files remain available for OCR and future processing
-- **Gap threshold requires tuning** — 20 min default may not fit all workflows (configurable via env var)
+- **Sub-batch LLM prompts** — large observation sets split into sub-batches of `llmBatchSize` to keep prompts under ~3K tokens; grouping quality may vary across sub-batches
 - **Dual-site aggregation** — same logic in Swift + Node.js (~50 lines of SQL + gap detection each); must stay in sync
 
 ### Neutral
@@ -395,7 +388,7 @@ BACKLOG.md                                  -- Phase 3 tasks, cleanup stale item
 | Alternative | Rejected Because |
 |---|---|
 | **Node.js watcher daemon** | Extra always-on process; Swift actor achieves same result with zero process overhead |
-| **Session-end detection (sleep/wake via IOKit)** | Gap-aware windowing makes explicit session signals unnecessary; adds OS-level complexity |
+| **Session-end detection (sleep/wake via IOKit)** | LLM-based grouping makes explicit session signals unnecessary; adds OS-level complexity |
 | **LLM-enriched TBs** | Adds model load to aggregation path; LLM at artifact time is sufficient |
 | **Reactive aggregation (trigger on VLM completion)** | Over-eager; periodic batching is simpler, allows pHash-idle windows to naturally batch |
 | **Separate `segments` entity** | TopicBlocks already serve this role; extra entity adds schema complexity with no value |

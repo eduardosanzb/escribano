@@ -22,13 +22,17 @@ enum FrameAnalyzerError: Error, LocalizedError {
 //
 // Everything else (poll loop, error handling, DB writes) is identical.
 actor FrameAnalyzer {
+    private let frameStore: any FrameStore
     private let obsStore:   any ObservationStore
     private let vlmService: any VLMInferenceService
+    private let queue:      WorkQueue
     private let batchSize:    Int
     private let pollInterval: Double
-    init(obsStore: any ObservationStore, vlmService: any VLMInferenceService) {
+    init(frameStore: any FrameStore, obsStore: any ObservationStore, vlmService: any VLMInferenceService, queue: WorkQueue) {
+        self.frameStore  = frameStore
         self.obsStore    = obsStore
         self.vlmService  = vlmService
+        self.queue       = queue
         self.batchSize   = Int(ProcessInfo.processInfo.environment["ESCRIBANO_ANALYZE_BATCH_SIZE"] ?? "") ?? 5
         self.pollInterval = 10.0
     }
@@ -48,7 +52,7 @@ actor FrameAnalyzer {
         print("[FrameAnalyzer] Starting analysis loop. Poll interval: \(pollInterval)s")
         while !Task.isCancelled {
             do {
-                let frames = try await obsStore.claimFrames(batchSize: batchSize)
+                let frames = try frameStore.claimFrames(batchSize: batchSize)
                 if frames.isEmpty {
                     try await Task.sleep(for: .seconds(pollInterval))
                     continue
@@ -57,11 +61,13 @@ actor FrameAnalyzer {
                 let t0 = Date()
                 let descriptions: [FrameDescription]
                 do {
-                    descriptions = try await vlmService.runBatch(frames: frames)
+                    descriptions = try await queue.submit(priority: .realtime) { [vlmService] in
+                        try await vlmService.runBatch(frames: frames)
+                    }
                 } catch {
                     print("[FrameAnalyzer] VLM inference error: \(error.localizedDescription)")
                     for frame in frames {
-                        try? await obsStore.markFrameFailed(id: frame.id)
+                        try? frameStore.markFrameFailed(id: frame.id)
                     }
                     continue
                 }
@@ -73,7 +79,7 @@ actor FrameAnalyzer {
                 guard descriptions.count == frames.count else {
                     print("[FrameAnalyzer] Partial parse (\(descriptions.count)/\(frames.count)) — marking all for retry")
                     for frame in frames {
-                        try? await obsStore.markFrameFailed(id: frame.id)
+                        try? frameStore.markFrameFailed(id: frame.id)
                     }
                     continue
                 }
@@ -84,7 +90,7 @@ actor FrameAnalyzer {
                     continue
                 }
                 do {
-                    try await obsStore.markFramesAnalyzed(ids: frames.map { $0.id })
+                    try frameStore.markFramesAnalyzed(ids: frames.map { $0.id })
                 } catch {
                     print("[FrameAnalyzer] Failed to mark frames analyzed: \(error.localizedDescription)")
                 }

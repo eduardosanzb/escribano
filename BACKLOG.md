@@ -93,15 +93,16 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 **POC complete (2026-03-19)** — The bridge/Swift architecture is validated. The recorder can reuse the same long-lived Python socket for frame analysis and text generation; the remaining implementation detail is to route `text_infer` to the loaded model's text backbone instead of the VLM image path.
 
-##### Phase 3a: SessionAggregator (Swift actor in recorder)
+##### Phase 3a: SessionAggregator (Swift actor in recorder) ✅ complete
 - [x] Schema migration `017_session_aggregation.sql` — add `tb_id` to observations, `from_ts`/`to_ts`/`observation_count` to topic_blocks
 - [x] `TopicBlockStore.port.swift` + `TopicBlockStore.sqlite.adapter.swift` — write topic_blocks, query by time range
-- [x] `SessionAggregator.swift` — LLM-based semantic grouping via `text_infer` (replaced gap-aware windowing from ADR-011)
-- [x] `WorkQueue.swift` — priority work queue serializing bridge access (FrameAnalyzer=realtime, SessionAggregator=normal)
-- [x] Wire `SessionAggregator` into `main.swift` as third async task alongside StreamCapture + FrameAnalyzer
-- [x] Protocol split: moved frame-claiming methods from `ObservationStore` to `FrameStore`
-- [x] `ESCRIBANO_TB_MIN_OBSERVATIONS` (default 3), `ESCRIBANO_TB_POLL_INTERVAL` (default 120s), `ESCRIBANO_TB_LLM_BATCH_SIZE` (default 100)
+- [x] `SessionAggregator.swift` — actor with LLM-based semantic grouping via shared VLM bridge, polls every `ESCRIBANO_TB_POLL_INTERVAL` (default 120s)
+- [x] Wire `SessionAggregator` into `main.swift` as third async task alongside StreamCapture + FrameAnalyzer, shared `WorkQueue` serializes bridge access
+- [x] `ESCRIBANO_TB_MIN_OBSERVATIONS` (default 3), `ESCRIBANO_TB_MAX_OBS_PER_CYCLE` (default 300), `ESCRIBANO_TB_LLM_BATCH_SIZE` (default 50)
 - [x] Backfill on startup: process all historical unclaimed observations via `WHERE tb_id IS NULL`
+- [x] Hot loop fix: removed `splitByGap()` gap-windowing (redundant with LLM prompt), simplified aggregateLoop to process all unclaimed obs as one batch, explicit sleep when no TBs created
+- [x] Protocol split: `FrameStore` owns frame lifecycle, `ObservationStore` owns observation lifecycle; dedicated `analyzerFrameStore` connection for thread safety
+- [x] `apps/recorder/README.md` created — architecture, dataflow, config reference
 - **Phase 3a complete (2026-03-27)** — See PR #53. Design amended: LLM semantic grouping replaces pure gap-aware windowing. See ADR-011 Addendum.
 
 ##### Phase 3b: Time-Range Artifact Generation (Node.js, on-demand)
@@ -177,7 +178,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ### 2026-03
 
-- **Phase 3a complete** — SessionAggregator with LLM-based semantic grouping, WorkQueue priority serialization, protocol split (FrameStore/ObservationStore), migration 017. PR #53.
+- **Phase 3a complete (2026-03-27)** — SessionAggregator with LLM-based semantic grouping, WorkQueue priority serialization, protocol split (FrameStore/ObservationStore), migration 017. PR #53.
 - **VLM-as-LLM POC complete** — Validated single-model approach for frame analysis + text generation via shared Python bridge socket
 - **PR #55 merged** — Fixed deprecated `launchctl load/unload` → modern `bootstrap/bootout`, monitor false positives
 - **Phase 2 complete** — Python bridge NDJSON parser, prompts, and observation storage are in place; recorder frame analysis is wired through the port/adapters

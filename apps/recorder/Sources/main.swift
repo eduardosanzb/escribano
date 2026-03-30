@@ -6,6 +6,12 @@ import Foundation
 // For a headless CLI application, NSApplication.shared behaves like a daemon.
 let app = NSApplication.shared
 
+// Ignore SIGPIPE globally. This prevents the process from being killed when
+// writing to a Unix domain socket (FileHandle) whose remote end has disconnected.
+// Without this, a VLM inference timeout that closes the readability handler can
+// leave the pipe broken — the next write triggers SIGPIPE and crashes the process.
+signal(SIGPIPE, SIG_IGN)
+
 /// EscribanoRecorderDelegate: Entry point for the escribano recorder daemon.
 ///
 /// Implements NSApplicationDelegate to handle startup and shutdown.
@@ -19,6 +25,11 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var analyzer: FrameAnalyzer?
     private var analyzerTask: Task<Void, Never>?
     private var vlmAdapter: PythonBridgeVLMAdapter?
+    private var workQueue: WorkQueue?
+    private var analyzerFrameStore: (any FrameStore)?
+    private var tbStore: (any TopicBlockStore)?
+    private var aggregator: SessionAggregator?
+    private var aggregatorTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGTERM) { _ in
@@ -125,12 +136,30 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             exit(1)
         }
         self.obsStore = obsStore
+        // Open a dedicated SQLiteFrameStore connection for FrameAnalyzer.
+        // FrameAnalyzer runs on its own actor executor (background thread) while
+        // StreamCapture/Backpressure use the original `store` on @MainActor.
+        // WAL mode supports multiple concurrent connections — this avoids data races
+        // on a single sqlite3* handle.
+        let analyzerFrameStore: any FrameStore
+        do {
+            analyzerFrameStore = try SQLiteFrameStore(path: dbPath)
+        } catch {
+            log("[escribano-recorder] ERROR: Cannot open analyzer frame store: \(error.localizedDescription)")
+            exit(1)
+        }
+        self.analyzerFrameStore = analyzerFrameStore
         // 2. Create the VLM adapter (Python bridge) and inject it into FrameAnalyzer.
         //    Also store a direct reference so applicationWillTerminate can call
         //    terminateSync() without needing an async context.
         let vlmService = PythonBridgeVLMAdapter()
         self.vlmAdapter = vlmService
-        let analyzer = FrameAnalyzer(obsStore: obsStore, vlmService: vlmService)
+        let realtimeStreak = Int(
+            ProcessInfo.processInfo.environment["ESCRIBANO_QUEUE_REALTIME_STREAK"] ?? ""
+        ) ?? 10
+        let workQueue = WorkQueue(maxRealtimeStreak: realtimeStreak)
+        self.workQueue = workQueue
+        let analyzer = FrameAnalyzer(frameStore: analyzerFrameStore, obsStore: obsStore, vlmService: vlmService, queue: workQueue)
         self.analyzer = analyzer
         // 3. Start the analyzer in a background Task. start() blocks until the Python
         //    process is ready, then analyzeLoop() runs forever without blocking capture.
@@ -145,6 +174,38 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         }
         log("[escribano-recorder] VLM analyzer task started.")
 
+        // 4. Create TopicBlockStore and SessionAggregator for Phase 3a.
+        //    The aggregator polls unclaimed observations every TB_POLL_INTERVAL
+        //    and groups them into TopicBlocks using the VLM bridge for semantic grouping.
+        //    Note: The bridge is started by FrameAnalyzer.analyzer.start() above.
+        //    SessionAggregator will wait for textService.isStarted before processing.
+        let tbStore: any TopicBlockStore
+        do {
+            tbStore = try SQLiteTopicBlockStore(path: dbPath)
+        } catch TopicBlockStoreError.schemaMismatch(let current, let expected) {
+            log("[escribano-recorder] ERROR: Database schema out of date (version \(current), expected \(expected)). Run 'escribano recorder install' from Node.js.")
+            exit(1)
+        } catch {
+            log("[escribano-recorder] ERROR: Cannot open topic block store: \(error.localizedDescription)")
+            exit(1)
+        }
+        self.tbStore = tbStore
+
+        // vlmService conforms to both VLMInferenceService and TextGenerationService
+        let aggregator = SessionAggregator(
+            obsStore: obsStore,
+            tbStore: tbStore,
+            textService: vlmService,
+            queue: workQueue
+        )
+        self.aggregator = aggregator
+        self.aggregatorTask = Task {
+            // Bridge is already up (analyzer.start() awaited above).
+            // WorkQueue serialises bridge calls — SA starts immediately.
+            await aggregator.aggregateLoop()
+        }
+        log("[escribano-recorder] SessionAggregator task started.")
+
         bp.onPause = { [weak self] in
             self?.captures.forEach { $0.pause() }
         }
@@ -153,19 +214,32 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         }
 
         let threshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "4") ?? 4
-        log("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold)")
+        log("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold) QueueStreak=\(realtimeStreak)")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         log("[escribano-recorder] applicationWillTerminate — cleaning up")
-        // Cancel the analyzer task synchronously so the cancellation flag is set immediately.
+        // Cancel the analyzer and aggregator tasks so their loops exit cleanly.
         analyzerTask?.cancel()
-        // Kill the Python bridge via its stored PID. Child processes are NOT automatically
-        // killed when the parent exits on macOS — they become orphaned.
-        // terminateSync() uses kill(pid, SIGTERM) directly, which is reliable regardless
-        // of how the bridge was launched or what env vars it has.
+        aggregatorTask?.cancel()
+        // Kill the Python bridge. Child processes are NOT automatically killed when the
+        // parent exits on macOS — they become orphaned without this explicit call.
         vlmAdapter?.terminateSync()
+        // Close synchronous (class-based) frame store handles.
         store?.close()
+        analyzerFrameStore?.close()
+        // Close async (actor-based) store handles. We capture references locally so the
+        // Task.detached closure can access them without crossing @MainActor isolation.
+        // Block up to 2 seconds to allow sqlite3_close to complete before the process exits.
+        let localObs = obsStore
+        let localTb  = tbStore
+        let sema = DispatchSemaphore(value: 0)
+        Task.detached {
+            await localObs?.close()
+            await localTb?.close()
+            sema.signal()
+        }
+        _ = sema.wait(timeout: .now() + 2)
     }
 }
 

@@ -14,16 +14,16 @@
 - **Linting/Formatting**: Biome
 - **Database**: SQLite (better-sqlite3)
 - **Transcription**: whisper.cpp (whisper-cli)
-- **VLM**: MLX-VLM (local, Qwen3-VL-2B) - frame analysis (~0.7s/frame with 4bit)
-- **LLM**: MLX-LM (local, Qwen3.5) or Ollama (local, auto-detected based on RAM) - summary generation
+- **VLM/LLM**: MLX-VLM (local) — **Qwen3.5 is multimodal** (handles both frame analysis AND text generation in a single model). The recorder uses one Qwen3.5 model for everything: VLM frame analysis + `text_infer` for session aggregation. No separate LLM model needed.
+- **LLM (batch fallback)**: MLX-LM or Ollama (local, auto-detected based on RAM) — only used by the batch pipeline when a separate text-only LLM is needed
 - **Package Manager**: `uv` for Python dependencies (fast, reliable lockfiles)
 
 ## Development Environment
 
 - **Machine**: MacBook Pro M4 Max
 - **Unified Memory**: 128GB (Optimized for VLM inference)
-- **VLM Model**: `Qwen3-VL-2B-Instruct-4bit` (~2GB, ~0.7s per frame) via MLX-VLM
-- **LLM Model**: Auto-detected based on RAM (`Qwen3.5-27B` recommended) via MLX-LM or Ollama
+- **VLM/LLM Model**: `Qwen3.5-2B-6bit` (multimodal — handles both frame analysis and text generation) via MLX-VLM. On 16GB machines: `Qwen3.5-0.8B-8bit` also works well.
+- **LLM Model (batch only)**: Auto-detected based on RAM (`Qwen3.5-27B` recommended) via MLX-LM or Ollama — only needed for the batch pipeline's separate `generateText` path
 
 ### MLX-VLM Setup
 
@@ -94,7 +94,7 @@ The config file is auto-created on first run with sensible defaults and inline c
 
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
-| `ESCRIBANO_VLM_MODEL` | MLX model for VLM frame analysis. Batch pipeline default: `mlx-community/Qwen3-VL-2B-Instruct-bf16`. Always-on recorder default: `mlx-community/Qwen3-VL-4B-Instruct-4bit`. | see description |
+| `ESCRIBANO_VLM_MODEL` | MLX model (Qwen3.5 is multimodal — one model for frame analysis + text generation). RAM-aware default: `Qwen3.5-2B-6bit` (>=32GB) or `Qwen3.5-0.8B-8bit` (16GB). | auto-detected |
 | `ESCRIBANO_ANALYZE_BATCH_SIZE` | Batch size (frames) claimed by the recorder VLM analyzer each cycle. | `5` |
 | `ESCRIBANO_VLM_BATCH_SIZE` | Frames per interleaved batch | `2` |
 | `ESCRIBANO_VLM_MAX_TOKENS` | Token budget per batch | `2000` |
@@ -106,6 +106,8 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_MLX_SOCKET_PATH` | Unix socket path for MLX bridge | `/tmp/escribano-mlx.sock` |
 | `ESCRIBANO_MLX_TIMEOUT` | MLX bridge startup & generation timeout (ms) | `120000` |
 | `ESCRIBANO_PYTHON_PATH` | Python executable path (for MLX bridge) | Auto-setup (`~/.escribano/venv`) |
+| `ESCRIBANO_BRIDGE_PATH` | Path to `mlx_bridge.py` script (recorder uses deployed copy by default) | `~/.escribano/scripts/mlx_bridge.py` |
+| `ESCRIBANO_MLX_LOG_FILE` | File path for MLX bridge logs (uses stderr if unset) | — |
 | `ESCRIBANO_SAMPLE_INTERVAL` | Base frame sampling interval (seconds) | `10` |
 | `ESCRIBANO_SAMPLE_GAP_THRESHOLD` | Gap detection threshold (seconds) | `15` |
 | `ESCRIBANO_SAMPLE_GAP_FILL` | Gap fill interval (seconds) | `3` |
@@ -126,6 +128,11 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_CAPTURE_HIGH_WATER` | Pause capture when this many frames are pending analysis | `500` |
 | `ESCRIBANO_CAPTURE_LOW_WATER` | Resume capture when pending frames drop below this | `100` |
 | `ESCRIBANO_MLX_RECORDER_SOCKET` | Unix socket path for recorder's Python VLM bridge | `/tmp/escribano-recorder-vlm.sock` |
+| `ESCRIBANO_TB_POLL_INTERVAL` | Seconds between SessionAggregator polls | `120` |
+| `ESCRIBANO_TB_MIN_OBSERVATIONS` | Minimum observations to trigger aggregation | `3` |
+| `ESCRIBANO_TB_MAX_OBS_PER_CYCLE` | Max observations per aggregation cycle | `300` |
+| `ESCRIBANO_TB_LLM_BATCH_SIZE` | Observations per LLM sub-batch (keeps prompts small) | `50` |
+| `ESCRIBANO_QUEUE_REALTIME_STREAK` | Max consecutive realtime tasks before normal task runs (WorkQueue fairness) | `10` |
 
 **Note:** Recorder variables are injected into the LaunchAgent plist at install time. If you change these values in `~/.escribano/.env`, you must re-run `npx escribano recorder install` for the changes to take effect in the background agent.
 
@@ -135,6 +142,7 @@ The config file is auto-created on first run with sensible defaults and inline c
 - **Total Pipeline**: Combined optimizations achieve 4x speedup (102 min → 25.7 min for 3-hour videos)
 
 ### Deprecated
+- `ESCRIBANO_SESSION_GAP_THRESHOLD` — Removed (gap-based windowing no longer used; LLM prompt handles activity boundaries)
 - `ESCRIBANO_VLM_NUM_PREDICT` — Ollama VLM no longer used
 - `ESCRIBANO_EMBED_MODEL` — Embeddings disabled in V3
 - `ESCRIBANO_EMBED_BATCH_SIZE` — Embeddings disabled in V3
@@ -249,7 +257,7 @@ External systems are accessed through **port interfaces** defined in `0_types.ts
    ├─ ffmpeg extracts frames at 2s intervals (~1776 frames/hour)
    ├─ Scene detection (ffmpeg) → timestamps of visual changes
    ├─ Adaptive sampling (10s base + scene changes + gap fill) → ~100-150 frames
-   ├─ VLM sequential inference (Qwen3-VL-2B-4bit, ~0.7s/frame) → activity + description per frame
+   ├─ VLM sequential inference (Qwen3-VL-2B-4bit, ~0.7s/frame; legacy reference, not the current default) → activity + description per frame
    └─ Save as Observation rows (type='visual', vlm_description)
 
 4. Activity Segmentation

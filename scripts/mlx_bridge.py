@@ -10,7 +10,7 @@ Usage:
     python3 scripts/mlx_bridge.py --mode llm   # LLM-only (text generation)
 
 Environment Variables:
-    ESCRIBANO_VLM_MODEL       - MLX VLM model name (default: mlx-community/Qwen3-VL-2B-Instruct-4bit)
+    ESCRIBANO_VLM_MODEL       - MLX VLM model name (default: auto-detected by caller, safety net: Qwen3.5-0.8B-8bit)
     ESCRIBANO_VLM_BATCH_SIZE  - Frames per batch (default: 2)
     ESCRIBANO_VLM_MAX_TOKENS  - Token budget per batch (default: 4000)
     ESCRIBANO_MLX_SOCKET_PATH - Unix socket path (default: /tmp/escribano-mlx.sock)
@@ -25,8 +25,9 @@ import signal
 import socket
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TextIO
 
 try:
     import setproctitle  # type: ignore
@@ -35,7 +36,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 # Configuration from environment (all defaults come from TypeScript config.ts)
 MODEL_NAME = os.environ.get(
-    "ESCRIBANO_VLM_MODEL", "mlx-community/Qwen3-VL-2B-Instruct-4bit"
+    "ESCRIBANO_VLM_MODEL", "mlx-community/Qwen3.5-0.8B-8bit"
 )
 BATCH_SIZE = int(os.environ.get("ESCRIBANO_VLM_BATCH_SIZE", "2"))
 MAX_TOKENS_VLM = int(os.environ.get("ESCRIBANO_VLM_MAX_TOKENS", "4000"))
@@ -72,17 +73,53 @@ config = None
 llm_model = None
 llm_tokenizer = None
 llm_loaded_model_name = None
-server_socket = None
+server_socket: socket.socket | None = None
+LOG_DEST: TextIO | None = None
+
+
+def rotate_log(path: Path) -> None:
+    """Rotate log file when it exceeds max size (default 10MB)."""
+    max_bytes = int(os.environ.get("ESCRIBANO_LOG_MAX_BYTES", "10485760"))
+    if not path.exists():
+        return
+    if path.stat().st_size < max_bytes:
+        return
+
+    rotated = path.with_suffix(path.suffix + ".1") if path.suffix else Path(f"{path}.1")
+    if rotated.exists():
+        rotated.unlink()
+    path.rename(rotated)
+
+
+def ensure_log_destination() -> None:
+    """Set up log destination: file (if ESCRIBANO_MLX_LOG_FILE set) or stderr."""
+    global LOG_DEST
+    log_path = os.environ.get("ESCRIBANO_MLX_LOG_FILE")
+    if not log_path:
+        LOG_DEST = sys.stderr
+        return
+
+    log_file = Path(log_path)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    rotate_log(log_file)
+    if not log_file.exists():
+        log_file.touch()
+    LOG_DEST = log_file.open("a", encoding="utf-8")
+
+
+ensure_log_destination()
 
 
 def log(message: str, level: str = "info") -> None:
-    """Log message with [MLX] prefix."""
+    """Log message with [MLX] prefix and timestamp."""
     if level == "debug" and not VERBOSE:
         return
     prefix = {"info": "[MLX]", "error": "[MLX] ERROR:", "debug": "[MLX] DEBUG:"}.get(
         level, "[MLX]"
     )
-    print(f"{prefix} {message}", file=sys.stderr, flush=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    dest = LOG_DEST or sys.stderr
+    print(f"{timestamp} {prefix} {message}", file=dest, flush=True)
 
 
 
@@ -170,7 +207,7 @@ def unload_llm() -> None:
 def cleanup() -> None:
     """Clean up socket file on exit."""
     global server_socket
-    if server_socket:
+    if server_socket is not None:
         try:
             server_socket.close()
         except Exception:
@@ -386,12 +423,12 @@ def handle_request(
         log(f"Received request: id={request_id} method={method}", "debug")
 
         # Validate method compatibility with bridge mode
-        if BRIDGE_MODE == "llm" and method == "vlm_infer":
+        if BRIDGE_MODE == "llm" and method in ("vlm_infer", "text_infer"):
             send_response(
                 conn,
                 {
                     "id": request_id,
-                    "error": "vlm_infer not available in LLM-only mode",
+                    "error": f"{method} not available in LLM-only mode",
                     "done": True,
                 },
             )
@@ -409,6 +446,14 @@ def handle_request(
             return
 
         if method == "vlm_infer":
+            handle_vlm_infer(
+                conn, model_obj, processor_obj, config_obj, params, request_id
+            )
+        elif method == "text_infer":
+            # text_infer reuses the loaded model for text-only generation.
+            # Qwen3.5 is multimodal and handles text-only prompts natively.
+            # We call handle_vlm_infer directly — it already handles image=None
+            # when no image paths are in the messages.
             handle_vlm_infer(
                 conn, model_obj, processor_obj, config_obj, params, request_id
             )

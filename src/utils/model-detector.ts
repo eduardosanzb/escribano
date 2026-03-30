@@ -4,10 +4,11 @@
  * Detects the best available LLM model from installed Ollama models
  * based on system RAM and model quality tiers.
  *
- * MLX Models Note:
- * Uses lmstudio-community Instruct-2507 models for reliable inference.
- * These models respect think=False and produce clean output without
- * thinking leakage, unlike older Qwen3.5 models.
+ * MLX LLM Models Note:
+ * Uses lmstudio-community Instruct-2507 models for the batch pipeline's
+ * dedicated text-only LLM path. The recorder uses Qwen3.5 (multimodal)
+ * for both VLM and text generation via a single model — see config.ts
+ * for VLM model selection.
  */
 
 import { totalmem } from 'node:os';

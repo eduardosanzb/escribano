@@ -223,6 +223,41 @@ export async function recorderStatus(follow = false): Promise<void> {
     console.log(`Pending frames    : (DB not found at ${DB_PATH})`);
   }
 
+  // Topic blocks from DB (Phase 3a)
+  if (existsSync(DB_PATH)) {
+    let db: any;
+    try {
+      db = new Database(DB_PATH, { readonly: true });
+      const tbRow = db
+        .prepare(
+          "SELECT COUNT(*) as cnt FROM topic_blocks WHERE recording_id = '__recorder__'"
+        )
+        .get() as { cnt: number };
+      const unclaimedRow = db
+        .prepare(
+          'SELECT COUNT(*) as cnt FROM observations WHERE tb_id IS NULL AND vlm_description IS NOT NULL AND frame_id IS NOT NULL'
+        )
+        .get() as { cnt: number };
+      console.log(
+        `Topic blocks      : ${tbRow.cnt} (${unclaimedRow.cnt} unclaimed observations)`
+      );
+    } catch (err: unknown) {
+      // topic_blocks or tb_id column may not exist yet (pre-migration-017)
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/no such table|no such column/i.test(msg)) {
+        console.log(
+          'Topic blocks      : (not available — run: escribano recorder install)'
+        );
+      } else {
+        console.log('Topic blocks      : (DB unavailable)');
+      }
+    } finally {
+      if (db) {
+        db.close();
+      }
+    }
+  }
+
   // Bridge socket & logs
   if (existsSync(RECORDER_SOCKET_PATH)) {
     console.log(`VLM bridge socket : alive (${RECORDER_SOCKET_PATH})`);

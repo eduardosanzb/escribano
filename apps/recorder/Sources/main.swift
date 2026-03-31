@@ -312,12 +312,11 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // bridgePID placeholder — WU-7 replaces { Int32(0) } with { worker.bridgePID }
         menuBar.startStatsTimer(
             frameStore: store,
             tbStore: tbStore,
             displayCount: captures.count,
-            bridgePID: { Int32(0) }
+            bridgePID: { worker.bridgePID }
         )
 
         // Sleep/wake hooks — pause capture during sleep, reset backoff on wake.

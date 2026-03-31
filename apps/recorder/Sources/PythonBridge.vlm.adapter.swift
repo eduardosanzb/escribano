@@ -51,6 +51,10 @@ actor PythonBridgeVLMAdapter: InferenceWorker {
         _isReady
     }
 
+    /// PID of the underlying Python process, readable from any thread without actor context.
+    /// Returns 0 if the bridge has not been started or has been stopped.
+    nonisolated var bridgePID: Int32 { pidLock.withLock { $0 } }
+
     // MARK: - Init
 
     /// Select the default VLM model based on system RAM.

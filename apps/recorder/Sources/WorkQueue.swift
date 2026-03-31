@@ -1,17 +1,18 @@
 import Foundation
 
-/// Generic priority work queue.
+/// Inference queue that owns worker lifecycle and serializes all inference calls.
 ///
-/// Serialises access to a shared resource (e.g. a Python bridge) while ensuring
-/// higher-priority work runs first and lower-priority work is never starved.
+/// Replaces WorkQueue by adding:
+///   - Worker health checking (ping before each job)
+///   - Automatic restart with exponential backoff on worker death
+///   - Circuit breaker (stops after maxRestartAttempts consecutive failures)
 ///
-/// Design:
+/// Scheduling/fairness is preserved from the original WorkQueue:
 ///   - One job runs at a time (matches physical constraint: one bridge process)
 ///   - Priority ordering: .realtime > .normal > .low
-///   - Fairness: after `maxRealtimeStreak` consecutive realtime jobs, one non-realtime
+///   - Fairness: after maxRealtimeStreak consecutive realtime jobs, one non-realtime
 ///     job is allowed through before realtime resumes
-///   - Future: replace single processLoop with a pool of workers for multiple backends
-actor WorkQueue {
+actor InferenceQueue {
 
     // MARK: - Priority
 
@@ -31,7 +32,7 @@ actor WorkQueue {
         let priority: Priority
         let sequence: UInt64
         let work: @Sendable () async -> Void
-        let cancel: @Sendable () -> Void  // Resume continuation with CancellationError
+        let cancel: @Sendable () -> Void
     }
 
     // MARK: - State
@@ -43,29 +44,63 @@ actor WorkQueue {
     private var lastLoggedBucket: Int = -1
     private let maxRealtimeStreak: Int
 
+    // MARK: - Worker Management
+
+    private let workers: [any InferenceWorker]
+    private var workerFailureCount: Int = 0
+    private let maxRestartAttempts: Int
+    private var circuitOpen: Bool = false
+    private let restartDelays: [Double] = [5, 10, 20, 40, 60]
+
     // MARK: - Init
 
-    init(maxRealtimeStreak: Int = 10) {
+    init(workers: [any InferenceWorker], maxRealtimeStreak: Int = 10, maxRestartAttempts: Int = 5) {
+        self.workers = workers
         self.maxRealtimeStreak = maxRealtimeStreak
+        self.maxRestartAttempts = maxRestartAttempts
+    }
+
+    // MARK: - Worker Lifecycle
+
+    /// Start all workers. Called once at startup from main.swift.
+    func startWorkers() async throws {
+        for worker in workers {
+            try await worker.start()
+        }
+        log("[InferenceQueue] All workers started (\(workers.count))")
+    }
+
+    /// Stop all workers gracefully. Called during shutdown.
+    func stopWorkers() async {
+        for worker in workers {
+            await worker.stop()
+        }
+        log("[InferenceQueue] All workers stopped")
+    }
+
+    /// Synchronously terminate all worker processes.
+    /// For use in applicationWillTerminate where async context is unavailable.
+    nonisolated func terminateWorkersSync() {
+        for worker in workers {
+            worker.terminateSync()
+        }
     }
 
     // MARK: - Public API
 
     /// Submit work to the queue. Suspends the caller until the work completes.
-    /// Returns the result of the work closure.
-    ///
-    /// Cancellation: if the calling Task is already cancelled when submit() is called,
-    /// CancellationError is thrown immediately before enqueuing. Cancellation that occurs
-    /// after enqueuing will remove the pending entry from the queue (if not yet started)
-    /// and throw CancellationError when the caller resumes.
     func submit<T: Sendable>(
         priority: Priority,
         _ operation: @Sendable @escaping () async throws -> T
     ) async throws -> T {
         try Task.checkCancellation()
-        
-        let entryId = nextSequence + 1  // Capture before increment
-        
+
+        if circuitOpen {
+            throw PythonBridgeError.bridgeDied
+        }
+
+        let entryId = nextSequence + 1
+
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { cont in
                 nextSequence += 1
@@ -92,15 +127,12 @@ actor WorkQueue {
                 }
             }
         } onCancel: {
-            // Remove the entry from queue if still pending.
-            // Note: If work already started, it will complete (bridge calls are non-cancellable).
             Task { await self.removeEntry(id: entryId) }
         }
     }
 
     // MARK: - Processing Loop
 
-    /// Remove an entry from the queue by its sequence ID if still pending.
     private func removeEntry(id: UInt64) {
         if let idx = queue.firstIndex(where: { $0.sequence == id }) {
             let entry = queue.remove(at: idx)
@@ -109,8 +141,6 @@ actor WorkQueue {
         }
     }
 
-    /// Cancel all pending (not yet started) entries. Resumes their continuations
-    /// with CancellationError. Called during applicationWillTerminate for clean shutdown.
     func cancelAll() {
         let pending = queue
         queue.removeAll()
@@ -118,26 +148,70 @@ actor WorkQueue {
             entry.cancel()
         }
         if !pending.isEmpty {
-            log("[WorkQueue] Cancelled \(pending.count) pending entries during shutdown")
+            log("[InferenceQueue] Cancelled \(pending.count) pending entries during shutdown")
         }
     }
 
-    /// Runs inside the actor. Picks the next item, executes it (the `await` releases
-    /// the actor lock so new submits can enqueue), then repeats until the queue is empty.
     private func processLoop() async {
         while let entry = pickNext() {
+            // Health check: verify worker is alive before running the job
+            await ensureWorkerHealthy()
+            if circuitOpen {
+                // Worker is dead and unrecoverable — cancel this and remaining entries
+                entry.cancel()
+                cancelAll()
+                break
+            }
             await entry.work()
         }
         isProcessing = false
     }
 
-    /// Select the next entry to run based on priority and fairness.
-    ///
-    /// Rules:
-    ///   1. If realtimeStreak >= maxRealtimeStreak AND non-realtime items exist
-    ///      → pick highest-priority non-realtime (fairness yield)
-    ///   2. Else if realtime items exist → pick realtime (FIFO within tier)
-    ///   3. Else → pick highest-priority available (FIFO within tier)
+    /// Check worker health and attempt restart if needed.
+    private func ensureWorkerHealthy() async {
+        guard let worker = workers.first else { return }
+
+        // Fast path: worker reports ready
+        let ready = await worker.isReady
+        if ready {
+            // Verify with a ping to catch zombie processes
+            do {
+                _ = try await worker.ping()
+                workerFailureCount = 0
+                return
+            } catch {
+                log("[InferenceQueue] Ping failed despite isReady=true: \(error.localizedDescription)")
+            }
+        }
+
+        // Worker is down — attempt restart with backoff
+        log("[InferenceQueue] Worker not healthy — attempting restart...")
+        for (attempt, delay) in restartDelays.enumerated() {
+            workerFailureCount += 1
+            if workerFailureCount >= maxRestartAttempts {
+                log("[InferenceQueue] FATAL: Worker failed \(workerFailureCount) times — circuit open, stopping all inference")
+                circuitOpen = true
+                return
+            }
+            await worker.stop()
+            do {
+                try await worker.start()
+                log("[InferenceQueue] Worker restarted on attempt \(attempt + 1)")
+                workerFailureCount = 0
+                return
+            } catch {
+                log("[InferenceQueue] Restart attempt \(attempt + 1)/\(restartDelays.count) failed: \(error.localizedDescription)")
+                if attempt < restartDelays.count - 1 {
+                    try? await Task.sleep(for: .seconds(delay))
+                }
+            }
+        }
+        log("[InferenceQueue] FATAL: All restart attempts exhausted — circuit open")
+        circuitOpen = true
+    }
+
+    // MARK: - Scheduling (preserved from WorkQueue)
+
     private func pickNext() -> Entry? {
         guard !queue.isEmpty else { return nil }
 
@@ -147,19 +221,16 @@ actor WorkQueue {
         let idx: Int
 
         if realtimeStreak >= maxRealtimeStreak && hasNonRealtime {
-            // Fairness yield: pick best non-realtime
             realtimeStreak = 0
             idx = queue.enumerated()
                 .filter { $0.element.priority != .realtime }
                 .min(by: Self.entryOrder)!.offset
         } else if hasRealtime {
-            // Normal path: pick realtime
             realtimeStreak += 1
             idx = queue.enumerated()
                 .filter { $0.element.priority == .realtime }
                 .min(by: Self.entryOrder)!.offset
         } else {
-            // No realtime: pick whatever is available
             realtimeStreak = 0
             idx = queue.enumerated()
                 .min(by: Self.entryOrder)!.offset
@@ -170,7 +241,6 @@ actor WorkQueue {
         return entry
     }
 
-    /// Ordering: priority first (lower rawValue = higher priority), then FIFO by sequence.
     private static func entryOrder(
         _ a: (offset: Int, element: Entry),
         _ b: (offset: Int, element: Entry)
@@ -181,8 +251,6 @@ actor WorkQueue {
         return a.element.sequence < b.element.sequence
     }
 
-    /// Log queue depth only when it crosses a new 25%-bucket of maxRealtimeStreak.
-    /// Bucket 0=empty, 1=≤25%, 2=≤50%, 3=≤75%, 4=≤100%, 5=>100%.
     private func logQueueIfNeeded() {
         let size = queue.count
         let bucket: Int
@@ -203,6 +271,6 @@ actor WorkQueue {
         let realtimeCount = queue.filter { $0.priority == .realtime }.count
         let normalCount   = queue.filter { $0.priority == .normal }.count
         let pct = maxRealtimeStreak > 0 ? (size * 100) / maxRealtimeStreak : 0
-        log("[WorkQueue] size=\(size)/\(maxRealtimeStreak) (\(pct)%) realtime=\(realtimeCount) normal=\(normalCount) streak=\(realtimeStreak)")
+        log("[InferenceQueue] size=\(size)/\(maxRealtimeStreak) (\(pct)%) realtime=\(realtimeCount) normal=\(normalCount) streak=\(realtimeStreak)")
     }
 }

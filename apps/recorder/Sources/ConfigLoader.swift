@@ -3,6 +3,12 @@ import Foundation
 /// Loads environment variables from ~/.escribano/.env into the process environment.
 /// Called early in app startup before any components read ProcessInfo.processInfo.environment.
 /// Existing environment variables are NOT overwritten (shell env takes precedence).
+///
+/// Inline comments are supported (must be preceded by whitespace):
+///   KEY=value                    # This is a comment
+///   KEY=value # comment          # This is also a comment
+///   KEY=value#not-a-comment      # # is part of the value (no whitespace before it)
+///   KEY="value # not comment"    # Inside quotes, # is literal
 func loadEnvFile(path: String = "~/.escribano/.env") {
     let expandedPath = (path as NSString).expandingTildeInPath
     
@@ -18,7 +24,7 @@ func loadEnvFile(path: String = "~/.escribano/.env") {
     for line in contents.components(separatedBy: .newlines) {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         
-        // Skip empty lines and comments
+        // Skip empty lines and line comments (starts with #)
         guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
         
         // Parse KEY=VALUE format
@@ -27,8 +33,12 @@ func loadEnvFile(path: String = "~/.escribano/.env") {
         let key = String(trimmed[..<equalsIndex])
             .trimmingCharacters(in: .whitespaces)
         
+        // Extract raw value (everything after =)
         var value = String(trimmed[trimmed.index(after: equalsIndex)...])
             .trimmingCharacters(in: .whitespaces)
+        
+        // Strip inline comments (preceded by whitespace), respecting quotes
+        value = stripInlineComments(from: value)
         
         // Remove surrounding quotes if present
         if (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
@@ -51,4 +61,76 @@ func loadEnvFile(path: String = "~/.escribano/.env") {
     } else {
         log("[ConfigLoader] .env file parsed but no new variables set (all already in environment)")
     }
+}
+
+/// Strips inline comments from a value string.
+/// Comments must be preceded by whitespace (space or tab) to be recognized.
+/// Inside quoted values, # is treated as literal until the closing quote.
+private func stripInlineComments(from value: String) -> String {
+    var result = value
+    
+    // Check if value is quoted
+    let isDoubleQuoted = result.hasPrefix("\"")
+    let isSingleQuoted = result.hasPrefix("'")
+    
+    if isDoubleQuoted || isSingleQuoted {
+        // Find the closing quote (not escaped)
+        let quoteChar = isDoubleQuoted ? "\"" : "'"
+        var index = result.index(after: result.startIndex)
+        var foundClosingQuote = false
+        
+        while index < result.endIndex {
+            let char = result[index]
+            if String(char) == quoteChar {
+                // Check if it's escaped (preceded by backslash)
+                let prevIndex = result.index(before: index)
+                if result[prevIndex] != "\\" {
+                    foundClosingQuote = true
+                    // Move past the closing quote
+                    index = result.index(after: index)
+                    break
+                }
+            }
+            index = result.index(after: index)
+        }
+        
+        // If we found a closing quote, strip comments only after it
+        if foundClosingQuote && index < result.endIndex {
+            let afterQuote = String(result[index...])
+            if let commentStart = findCommentStart(in: afterQuote) {
+                // Keep everything up to the comment start
+                let endIndex = result.index(result.startIndex, offsetBy: result.distance(from: result.startIndex, to: index) + commentStart)
+                result = String(result[..<endIndex])
+            }
+        }
+        // If no closing quote found, treat entire value as literal (don't strip)
+    } else {
+        // Unquoted value: strip inline comments
+        if let commentStart = findCommentStart(in: result) {
+            result = String(result[..<result.index(result.startIndex, offsetBy: commentStart)])
+                .trimmingCharacters(in: .whitespaces)
+        }
+    }
+    
+    return result
+}
+
+/// Finds the start index of an inline comment (preceded by whitespace).
+/// Returns the index of the whitespace before the #, or nil if no comment found.
+private func findCommentStart(in string: String) -> Int? {
+    var index = 0
+    let chars = Array(string)
+    
+    while index < chars.count {
+        if chars[index] == "#" && index > 0 {
+            // Check if preceded by whitespace
+            let prevChar = chars[index - 1]
+            if prevChar == " " || prevChar == "\t" {
+                return index - 1 // Return index of the whitespace
+            }
+        }
+        index += 1
+    }
+    
+    return nil
 }

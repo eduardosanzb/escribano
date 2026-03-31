@@ -129,6 +129,28 @@ final class SQLiteFrameStore: FrameStore, @unchecked Sendable {
         return Int(sqlite3_column_int(stmt, 0))
     }
 
+    /// Returns the total number of all frames (regardless of analyzed state).
+    /// - Throws: FrameStoreError.queryFailed on SQLite errors.
+    /// - Returns: Total frame count.
+    func totalFrameCount() throws -> Int {
+        var stmt: OpaquePointer?
+        let sql = "SELECT COUNT(*) FROM frames"
+
+        guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
+            let errMsg = String(cString: sqlite3_errmsg(handle))
+            throw FrameStoreError.queryFailed(errMsg)
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        let stepRc = sqlite3_step(stmt)
+        guard stepRc == SQLITE_ROW else {
+            throw FrameStoreError.queryFailed("COUNT(*) returned no rows (rc=\(stepRc))")
+        }
+
+        // Column 0 contains the COUNT(*) result
+        return Int(sqlite3_column_int(stmt, 0))
+    }
+
     /// Closes the database connection and releases resources.
     func close() {
         sqlite3_close(handle)

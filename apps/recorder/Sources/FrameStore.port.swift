@@ -62,6 +62,10 @@ protocol FrameStore: AnyObject, Sendable {
     // Throws FrameStoreError.queryFailed on failure.
     func pendingFrameCount() throws -> Int
 
+    // Returns the total count of all frames (regardless of analyzed state).
+    // Throws FrameStoreError.queryFailed on failure.
+    func totalFrameCount() throws -> Int
+
     /// Fetch up to `batchSize` frames pending analysis (analyzed = 0, retry_count < 3).
     /// Returns oldest frames first (ORDER BY timestamp ASC).
     func claimFrames(batchSize: Int) throws -> [DbFrame]

@@ -43,32 +43,61 @@ export async function syncSessionToOutline(
 
   // 3. Sync each artifact as child document
   const syncedArtifacts: OutlineSyncState['artifacts'] = [];
+  const errors: Array<{ artifactType: string; error: Error }> = [];
+  const artifacts = session.artifacts ?? [];
+  const total = artifacts.length;
 
-  for (const artifact of session.artifacts) {
-    const artifactTitle = formatArtifactType(artifact.type);
-    const existingArtifact = await findChildDocumentByTitle(
-      publishing,
-      collection.id,
-      sessionDoc.id,
-      artifactTitle
+  if (artifacts.length === 0) {
+    console.warn('[sync] Session has no artifacts to publish.');
+    return { url: sessionDoc.url };
+  }
+
+  for (const artifact of artifacts) {
+    try {
+      const artifactTitle = formatArtifactType(artifact.type);
+      const existingArtifact = await findChildDocumentByTitle(
+        publishing,
+        collection.id,
+        sessionDoc.id,
+        artifactTitle
+      );
+
+      const artifactDoc = await upsertDocument(
+        publishing,
+        collection.id,
+        artifactTitle,
+        artifact.content,
+        existingArtifact?.id,
+        sessionDoc.id
+      );
+
+      syncedArtifacts.push({
+        type: artifact.type,
+        documentId: artifactDoc.id,
+        documentUrl: artifactDoc.url,
+        syncedAt: new Date(),
+        contentHash: hashContent(artifact.content),
+      });
+    } catch (err) {
+      errors.push({
+        artifactType: artifact.type,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error(
+      `Failed to publish ${errors.length} artifact(s):`,
+      errors.map((e) => `${e.artifactType}: ${e.error.message}`).join(', ')
     );
+  }
 
-    const artifactDoc = await upsertDocument(
-      publishing,
-      collection.id,
-      artifactTitle,
-      artifact.content,
-      existingArtifact?.id,
-      sessionDoc.id
+  if (total > 0 && errors.length === total) {
+    throw new Error(
+      `All ${total} artifact(s) failed to publish: ` +
+        errors.map((e) => `${e.artifactType}: ${e.error.message}`).join(', ')
     );
-
-    syncedArtifacts.push({
-      type: artifact.type,
-      documentId: artifactDoc.id,
-      documentUrl: artifactDoc.url,
-      syncedAt: new Date(),
-      contentHash: hashContent(artifact.content),
-    });
   }
 
   // 4. Update sync state

@@ -112,10 +112,6 @@ export async function generateArtifactV3(
     subject.apps = normalizeAppNames(subject.apps);
   }
 
-  const _filteredSubjects = options.includePersonal
-    ? subjects
-    : subjects.filter((s) => !s.isPersonal);
-
   log('info', `[Artifact V3.1] Generating ${format} with LLM...`);
   const content = await step('artifact generation', () =>
     generateLlmArtifact(

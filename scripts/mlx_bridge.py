@@ -34,6 +34,15 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     setproctitle = None
 
+
+class InferenceTimeout(Exception):
+    pass
+
+
+def timeout_handler(signum, frame):
+    raise InferenceTimeout("Inference timed out")
+
+
 # Configuration from environment (all defaults come from TypeScript config.ts)
 MODEL_NAME = os.environ.get(
     "ESCRIBANO_VLM_MODEL", "mlx-community/Qwen3.5-0.8B-8bit"
@@ -348,15 +357,26 @@ def handle_vlm_infer(
                     if item.get("type") == "image" and "imagePath" in item:
                         image_paths.append(item["imagePath"])
 
-        output = generate(
-            model_obj,
-            processor_obj,
-            prompt,
-            image=image_paths if image_paths else None,
-            temperature=TEMPERATURE,
-            max_tokens=max_tokens,
-            verbose=VERBOSE,
-        )
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(300)  # 5 minutes
+        try:
+            output = generate(
+                model_obj,
+                processor_obj,
+                prompt,
+                image=image_paths if image_paths else None,
+                temperature=TEMPERATURE,
+                max_tokens=max_tokens,
+                verbose=VERBOSE,
+            )
+        except InferenceTimeout:
+            log("VLM inference timed out after 300s", "error")
+            send_response(
+                conn, {"id": request_id, "error": "VLM inference timed out after 300s", "done": True}
+            )
+            return
+        finally:
+            signal.alarm(0)
 
         t_end = time.time()
         generate_time = t_end - t_start
@@ -558,14 +578,25 @@ def handle_request(
                     # Create sampler with temperature (mlx_lm 0.30.7+ API)
                     sampler = make_sampler(temp=temperature)
 
-                    output = generate(
-                        llm_model,
-                        llm_tokenizer,
-                        prompt=prompt,
-                        max_tokens=max_tokens,
-                        sampler=sampler,
-                        verbose=VERBOSE,
-                    )
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(300)  # 5 minutes
+                    try:
+                        output = generate(
+                            llm_model,
+                            llm_tokenizer,
+                            prompt=prompt,
+                            max_tokens=max_tokens,
+                            sampler=sampler,
+                            verbose=VERBOSE,
+                        )
+                    except InferenceTimeout:
+                        log("LLM inference timed out after 300s", "error")
+                        send_response(
+                            conn, {"id": request_id, "error": "LLM inference timed out after 300s", "done": True}
+                        )
+                        return
+                    finally:
+                        signal.alarm(0)
 
                     if hasattr(output, "text"):
                         response_text = output.text
@@ -613,15 +644,15 @@ def handle_request(
             sys.exit(0)
         else:
             send_response(
-                conn, {"id": request_id, "error": f"Unknown method: {method}"}
+                conn, {"id": request_id, "error": f"Unknown method: {method}", "done": True}
             )
 
     except json.JSONDecodeError as e:
         log(f"Invalid JSON: {e}", "error")
-        send_response(conn, {"error": f"Invalid JSON: {e}"})
+        send_response(conn, {"error": f"Invalid JSON: {e}", "done": True})
     except Exception as e:
         log(f"Request handling error: {e}", "error")
-        send_response(conn, {"error": str(e)})
+        send_response(conn, {"error": str(e), "done": True})
 
 
 def main() -> None:

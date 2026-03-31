@@ -6,6 +6,7 @@
  */
 
 import type { IntelligenceService } from '../0_types.js';
+import { loadConfig } from '../config.js';
 import type { InputFrame } from './frame-sampling.js';
 
 export interface VLMConfig {
@@ -43,7 +44,7 @@ export interface FrameDescription {
 }
 
 const DEFAULT_CONFIG: VLMConfig = {
-  model: process.env.ESCRIBANO_VLM_MODEL || 'qwen3-vl:4b',
+  model: loadConfig().vlmModel,
 };
 
 /**

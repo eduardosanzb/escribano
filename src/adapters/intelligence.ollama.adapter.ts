@@ -23,18 +23,12 @@ import {
   transcriptMetadataSchema,
   type VisualLog,
 } from '../0_types.js';
+import { loadConfig } from '../config.js';
+import { createLogger } from '../utils/logger.js';
 
-// Debug logging controlled by environment variable
-const DEBUG_OLLAMA = process.env.ESCRIBANO_DEBUG_OLLAMA === 'true';
+const log = createLogger('Ollama');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// TODO: put in an util
-export function debugLog(...args: unknown[]): void {
-  if (DEBUG_OLLAMA) {
-    console.log('[Ollama]', ...args);
-  }
-}
 
 // Zod schema for VLM batch response validation
 const vlmBatchItemSchema = z.object({
@@ -76,60 +70,11 @@ export function createOllamaIntelligenceService(
       generateArtifact(artifactType, context, parsedConfig),
     describeImages: (images, options) =>
       describeImagesWithOllama(images, parsedConfig, options),
-    embedText: (texts, options) =>
-      embedTextWithOllama(texts, parsedConfig, options),
     extractTopics: (observations) =>
       extractTopicsWithOllama(observations, parsedConfig),
     generateText: (prompt, options) =>
       generateTextWithOllama(prompt, parsedConfig, options),
   };
-}
-
-async function embedTextWithOllama(
-  texts: string[],
-  config: IntelligenceConfig,
-  options: { batchSize?: number } = {}
-): Promise<number[][]> {
-  const batchSize = options.batchSize ?? 10;
-  const model = process.env.ESCRIBANO_EMBED_MODEL || 'nomic-embed-text';
-  const endpoint = `${config.endpoint.replace('/chat', '').replace('/generate', '')}/embeddings`;
-
-  const embeddings: number[][] = [];
-
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
-
-    for (const text of batch) {
-      if (!text || text.trim().length === 0) {
-        embeddings.push([]); // Empty embedding for empty text
-        continue;
-      }
-
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, prompt: text }),
-        });
-
-        if (!response.ok) {
-          console.warn(
-            `Embedding failed for text: ${text.substring(0, 50)}...`
-          );
-          embeddings.push([]);
-          continue;
-        }
-
-        const data = await response.json();
-        embeddings.push(data.embedding || []);
-      } catch (error) {
-        console.warn(`Embedding request failed: ${(error as Error).message}`);
-        embeddings.push([]);
-      }
-    }
-  }
-
-  return embeddings;
 }
 
 async function ensureModelWarmed(
@@ -138,14 +83,14 @@ async function ensureModelWarmed(
 ): Promise<void> {
   // Already warmed - fast path
   if (warmedModels.has(modelName)) {
-    debugLog(`Model ${modelName} already warm`);
+    log.debug(`Model ${modelName} already warm`);
     return;
   }
 
   // Warmup already in progress - wait for it (prevents race condition)
   const existingWarmup = warmupInProgress.get(modelName);
   if (existingWarmup) {
-    debugLog(`Waiting for existing warmup of ${modelName}...`);
+    log.debug(`Waiting for existing warmup of ${modelName}...`);
     return existingWarmup;
   }
 
@@ -202,7 +147,7 @@ export async function unloadOllamaModel(
   config: IntelligenceConfig
 ): Promise<void> {
   try {
-    debugLog(`Unloading model: ${modelName}...`);
+    log.debug(`Unloading model: ${modelName}...`);
     const response = await fetch(
       `${config.endpoint.replace('/chat', '').replace('/generate', '')}/generate`,
       {
@@ -218,7 +163,7 @@ export async function unloadOllamaModel(
 
     if (response.ok) {
       warmedModels.delete(modelName);
-      debugLog(`Model ${modelName} unloaded.`);
+      log.debug(`Model ${modelName} unloaded.`);
     } else {
       let bodyText = '';
       try {
@@ -226,14 +171,14 @@ export async function unloadOllamaModel(
       } catch {
         // Ignore errors while reading response body for logging
       }
-      debugLog(
+      log.debug(
         `Failed to unload model ${modelName}: HTTP ${response.status} ${response.statusText}` +
           (bodyText ? ` - Response body: ${bodyText}` : '')
       );
     }
   } catch (error) {
     // Unload is best-effort - don't throw
-    debugLog(
+    log.debug(
       `Failed to unload model ${modelName}: ${(error as Error).message}`
     );
   }
@@ -463,8 +408,8 @@ function parseVLMResponse(content: string): ParsedVLM {
     };
   }
 
-  debugLog('[parseVLMResponse] No match, using content as description');
-  debugLog('[parseVLMResponse] Raw content:', content.substring(0, 500));
+  log.debug('[parseVLMResponse] No match, using content as description');
+  log.debug('[parseVLMResponse] Raw content:', content.substring(0, 500));
   return {
     description: content.trim(),
     activity: 'unknown',
@@ -507,11 +452,9 @@ async function describeImagesWithOllama(
     topics: string[];
   }>
 > {
-  const model =
-    options.model ?? process.env.ESCRIBANO_VLM_MODEL ?? 'qwen3-vl:4b';
+  const model = options.model ?? loadConfig().vlmModel ?? 'qwen3-vl:4b';
   const endpoint = `${config.endpoint.replace('/generate', '').replace('/chat', '')}/chat`;
   const { timeout, keepAlive } = config;
-  const numPredict = Number(process.env.ESCRIBANO_VLM_NUM_PREDICT) || 30000;
 
   const allResults: Array<{
     index: number;
@@ -525,7 +468,7 @@ async function describeImagesWithOllama(
 
   const total = images.length;
   console.log(`[VLM] Processing ${total} images sequentially...`);
-  console.log(`[VLM] Model: ${model}, num_predict: ${numPredict}`);
+  console.log(`[VLM] Model: ${model}`);
   const startTime = Date.now();
 
   for (let i = 0; i < images.length; i++) {
@@ -575,7 +518,6 @@ async function describeImagesWithOllama(
             stream: false,
             keep_alive: keepAlive,
             options: {
-              num_predict: numPredict,
               temperature: 0.3,
             },
           }),
@@ -594,14 +536,14 @@ async function describeImagesWithOllama(
           message?: { content: string };
           response?: string;
         };
-        debugLog('[VLM] Response data keys:', Object.keys(data).join(', '));
+        log.debug('[VLM] Response data keys:', Object.keys(data).join(', '));
         const content = data.message?.content || data.response || '';
-        debugLog('[VLM] Raw content length:', content.length);
-        debugLog('[VLM] Raw content preview:', content.substring(0, 500));
+        log.debug('[VLM] Raw content length:', content.length);
+        log.debug('[VLM] Raw content preview:', content.substring(0, 500));
         const parsed = parseVLMResponse(content);
 
         if (parsed.activity === 'unknown' && parsed.description.length === 0) {
-          debugLog('[VLM] Parsed as empty/unknown, full response:', content);
+          log.debug('[VLM] Parsed as empty/unknown, full response:', content);
           throw new Error('VLM returned empty/unparseable response');
         }
 
@@ -634,7 +576,7 @@ async function describeImagesWithOllama(
       } catch (error) {
         lastError = error as Error;
         if (attempt < 3) {
-          debugLog(
+          log.debug(
             `[VLM] [${current}/${total}] Attempt ${attempt}/3 failed: ${lastError.message}, retrying...`
           );
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
@@ -727,7 +669,7 @@ async function generateTextWithOllama(
 ): Promise<string> {
   const model =
     options?.model ||
-    process.env.ESCRIBANO_LLM_MODEL ||
+    loadConfig().llmModel ||
     config.generationModel ||
     config.model;
   const expectJson = options?.expectJson ?? false;
@@ -810,15 +752,15 @@ async function callOllama(
   // Calculate optimal context size for this prompt
   const contextSize = calculateContextSize(prompt.length, maxContextSize);
 
-  debugLog(`[${requestId}] Request started`);
-  debugLog(`  Model: ${options.model}`);
-  debugLog(
+  log.debug(`[${requestId}] Request started`);
+  log.debug(`  Model: ${options.model}`);
+  log.debug(
     `  Prompt: ${prompt.length} chars (~${Math.ceil(prompt.length / 4)} tokens)`
   );
-  debugLog(`  Context: ${contextSize}, Timeout: ${timeout}ms`);
-  debugLog(`  Thinking: ${options.think ? 'enabled' : 'disabled'}`);
-  debugLog(`  Expect JSON: ${options.expectJson}`);
-  debugLog(`  Prompt:\n${prompt}`);
+  log.debug(`  Context: ${contextSize}, Timeout: ${timeout}ms`);
+  log.debug(`  Thinking: ${options.think ? 'enabled' : 'disabled'}`);
+  log.debug(`  Expect JSON: ${options.expectJson}`);
+  log.debug(`  Prompt:\n${prompt}`);
 
   let lastError: Error | null = null;
 
@@ -828,7 +770,7 @@ async function callOllama(
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-      debugLog(`[${requestId}] Attempt ${attempt}/${maxRetries}...`);
+      log.debug(`[${requestId}] Attempt ${attempt}/${maxRetries}...`);
 
       // Custom agent with extended headers timeout to prevent UND_ERR_HEADERS_TIMEOUT
       // when models take a long time to generate the first token (thinking mode)
@@ -875,7 +817,7 @@ async function callOllama(
 
       clearTimeout(timeoutId);
 
-      debugLog(`[${requestId}] response`, response);
+      log.debug(`[${requestId}] response`, response);
 
       if (!response.ok) {
         throw new Error(
@@ -894,16 +836,16 @@ async function callOllama(
         };
       };
 
-      debugLog(
+      log.debug(
         `[${requestId}] Response received in ${Date.now() - attemptStart}ms`,
         data
       );
       if (data.eval_count) {
-        debugLog(
+        log.debug(
           `  Tokens: ${data.eval_count} eval, ${data.prompt_eval_count || 0} prompt`
         );
       }
-      debugLog(`  Total request time: ${Date.now() - requestStart}ms`);
+      log.debug(`  Total request time: ${Date.now() - requestStart}ms`);
 
       if (!data.done || data.done_reason !== 'stop') {
         // Warn about truncation but don't throw - let caller decide
@@ -928,7 +870,7 @@ async function callOllama(
           if (thinking) {
             const extracted = extractJsonFromThinking(thinking);
             if (extracted) {
-              debugLog(`[${requestId}] Extracted JSON from thinking block`);
+              log.debug(`[${requestId}] Extracted JSON from thinking block`);
               return extracted;
             }
           }
@@ -943,7 +885,7 @@ async function callOllama(
 
       if (!content || content.length < 20) {
         if (thinking && thinking.length > content.length) {
-          debugLog(
+          log.debug(
             `[${requestId}] Using thinking content as fallback (${thinking.length} chars)`
           );
           return thinking;
@@ -958,13 +900,15 @@ async function callOllama(
         console.error(
           `[Ollama] [${requestId}] Attempt ${attempt}/${maxRetries}: Request timed out after ${Date.now() - attemptStart}ms, retrying...`
         );
-        debugLog(`[${requestId}] Timeout after ${Date.now() - attemptStart}ms`);
+        log.debug(
+          `[${requestId}] Timeout after ${Date.now() - attemptStart}ms`
+        );
       } else {
         const errorMsg = lastError?.message || String(lastError);
         console.error(
           `[Ollama] [${requestId}] Attempt ${attempt}/${maxRetries}: Request failed: ${errorMsg} (retrying...)`
         );
-        debugLog(`[${requestId}] Error:`, lastError);
+        log.debug(`[${requestId}] Error:`, lastError);
       }
 
       if (attempt < maxRetries) {
@@ -973,7 +917,7 @@ async function callOllama(
     }
   }
 
-  debugLog(`[${requestId}] Failed after ${maxRetries} retries`);
+  log.debug(`[${requestId}] Failed after ${maxRetries} retries`);
   console.error(
     `[Ollama] [${requestId}] All ${maxRetries} attempts failed: ${lastError?.message}`
   );

@@ -43,6 +43,15 @@ const RECORDER_SOCKET_PATH =
   process.env.ESCRIBANO_MLX_RECORDER_SOCKET ?? DEFAULT_RECORDER_SOCKET_PATH;
 const RECORDER_MLX_LOG = path.join(LOGS_DIR, 'mlx-bridge-recorder-vlm.log');
 
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 function rotateRecorderLogs(): void {
   rotateIfNeeded(path.join(LOGS_DIR, 'escribano-recorder.log'));
   rotateIfNeeded(path.join(LOGS_DIR, 'escribano-recorder.error.log'));
@@ -127,7 +136,7 @@ function generatePlist(binaryPath: string): string {
   const envVars = Object.entries(envMap)
     .map(
       ([key, value]) =>
-        `        <key>${key}</key>\n        <string>${value}</string>`
+        `        <key>${escapeXml(key)}</key>\n        <string>${escapeXml(value)}</string>`
     )
     .join('\n');
 
@@ -136,10 +145,10 @@ function generatePlist(binaryPath: string): string {
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>${PLIST_LABEL}</string>
+    <string>${escapeXml(PLIST_LABEL)}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${binaryPath}</string>
+        <string>${escapeXml(binaryPath)}</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
@@ -152,9 +161,9 @@ ${envVars}
     <key>ThrottleInterval</key>
     <integer>30</integer>
     <key>StandardOutPath</key>
-    <string>${stdout}</string>
+    <string>${escapeXml(stdout)}</string>
     <key>StandardErrorPath</key>
-    <string>${stderr}</string>
+    <string>${escapeXml(stderr)}</string>
 </dict>
 </plist>
 `;

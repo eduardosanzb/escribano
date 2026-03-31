@@ -32,10 +32,6 @@ import {
 } from './prerequisites.js';
 import { logEnvironmentVariables } from './utils/env-logger.js';
 
-const MODELS_DIR = path.join(homedir(), '.escribano', 'models');
-const MODEL_FILE = 'ggml-large-v3.bin';
-const _MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
-
 const VIDEO_EXTENSIONS = ['.mov', '.mp4', '.mkv', '.avi', '.webm'];
 
 function expandPath(inputPath: string): string {

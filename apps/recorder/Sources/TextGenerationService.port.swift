@@ -24,4 +24,6 @@ protocol TextGenerationService: AnyObject, Sendable {
     ///   - maxTokens: Maximum tokens to generate (default: 2000)
     /// - Returns: The generated text response
     func generateText(prompt: String, maxTokens: Int) async throws -> String
+    /// Attempt to restart the text generation backend after a crash.
+    func restart() async throws
 }

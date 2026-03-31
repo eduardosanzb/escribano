@@ -1,0 +1,14 @@
+{
+  "$schema": "https://registry.kdco.dev/schemas/worktree.json",
+
+  "sync": {
+    "copyFiles": [".env", ".env.local"],
+    "symlinkDirs": ["node_modules"],
+    "exclude": []
+  },
+
+  "hooks": {
+    "postCreate": ["pnpm install"],
+    "preDelete": []
+  }
+}

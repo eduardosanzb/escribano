@@ -34,7 +34,7 @@ import Cocoa
             name: NSNotification.Name("com.apple.screenIsUnlocked"),
             object: nil
         )
-        print("[ScreenLock] Observer registered")
+        log("[ScreenLock] Observer registered")
     }
 
     deinit {
@@ -42,14 +42,14 @@ import Cocoa
     }
 
     @objc nonisolated private func handleLock(_ notification: Notification) {
-        print("[ScreenLock] Screen locked — pausing capture")
+        log("[ScreenLock] Screen locked — pausing capture")
         Task { @MainActor [weak self] in
             self?.onLock?()
         }
     }
 
     @objc nonisolated private func handleUnlock(_ notification: Notification) {
-        print("[ScreenLock] Screen unlocked — resuming capture")
+        log("[ScreenLock] Screen unlocked — resuming capture")
         Task { @MainActor [weak self] in
             self?.onUnlock?()
         }

@@ -41,31 +41,25 @@ function getCurrentVersion(db: Database.Database): number {
  * Load all migration files from /migrations directory
  */
 function loadMigrations(): MigrationFile[] {
-  try {
-    const files = readdirSync(MIGRATIONS_DIR)
-      .filter((f) => f.endsWith('.sql'))
-      .sort();
-
-    return files.map((filename) => {
-      const match = filename.match(/^(\d+)_.+\.sql$/);
-      if (!match) {
-        throw new Error(
-          `Invalid migration filename: ${filename}. Expected format: NNN_description.sql`
-        );
-      }
-
-      const version = parseInt(match[1], 10);
-      const sql = readFileSync(join(MIGRATIONS_DIR, filename), 'utf-8');
-
-      return { version, filename, sql };
+  const files = readdirSync(MIGRATIONS_DIR) // let ENOENT propagate — missing dir is fatal
+    .filter((f) => f.endsWith('.sql'))
+    .sort((a, b) => {
+      const numA = parseInt(a.match(/^(\d+)/)?.[1] ?? '0', 10);
+      const numB = parseInt(b.match(/^(\d+)/)?.[1] ?? '0', 10);
+      return numA - numB;
     });
-  } catch (error) {
-    console.error(
-      `[db] Failed to load migrations from ${MIGRATIONS_DIR}:`,
-      error
-    );
-    return [];
-  }
+
+  return files.map((filename) => {
+    const match = filename.match(/^(\d+)_.+\.sql$/);
+    if (!match) {
+      throw new Error(
+        `Invalid migration filename: "${filename}". Expected format: NNN_description.sql`
+      );
+    }
+    const version = parseInt(match[1], 10);
+    const sql = readFileSync(join(MIGRATIONS_DIR, filename), 'utf-8');
+    return { version, filename, sql };
+  });
 }
 
 /**
@@ -92,18 +86,19 @@ export function runMigrations(db: Database.Database): {
   for (const migration of pending) {
     console.log(`[db] Applying migration: ${migration.filename}`);
 
-    // Split migration into individual statements (simple split by ;)
-    // NOTE: This might fail if ; is inside a string, but for simple schemas it's fine.
-    // better-sqlite3 exec() can handle multiple statements.
-    db.exec(migration.sql);
+    // Wrap migration in a transaction so partial failures don't leave DB inconsistent
+    const runMigration = db.transaction(() => {
+      db.exec(migration.sql);
 
-    // Update schema version
-    db.prepare('INSERT INTO _schema_version (version) VALUES (?)').run(
-      migration.version
-    );
+      // Update schema version
+      db.prepare('INSERT INTO _schema_version (version) VALUES (?)').run(
+        migration.version
+      );
 
-    // Also update PRAGMA user_version — read by the Swift capture agent on startup
-    db.pragma(`user_version = ${migration.version}`);
+      // Also update PRAGMA user_version — read by the Swift capture agent on startup
+      db.pragma(`user_version = ${migration.version}`);
+    });
+    runMigration();
 
     applied.push(migration.filename);
   }

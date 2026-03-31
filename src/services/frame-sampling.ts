@@ -5,6 +5,8 @@
  * Strategy: Base sampling (10s) + gap filling for large time jumps.
  */
 
+import { loadConfig } from '../config.js';
+
 export interface SamplingConfig {
   /** Base sampling interval in seconds (default: 10) */
   baseIntervalSeconds: number;
@@ -25,11 +27,14 @@ export interface InputFrame {
   timestamp: number;
 }
 
-const DEFAULT_CONFIG: SamplingConfig = {
-  baseIntervalSeconds: Number(process.env.ESCRIBANO_SAMPLE_INTERVAL) || 10,
-  gapThresholdSeconds: Number(process.env.ESCRIBANO_SAMPLE_GAP_THRESHOLD) || 15,
-  gapFillIntervalSeconds: Number(process.env.ESCRIBANO_SAMPLE_GAP_FILL) || 3,
-};
+function getDefaultConfig(): SamplingConfig {
+  const cfg = loadConfig();
+  return {
+    baseIntervalSeconds: cfg.sampleInterval,
+    gapThresholdSeconds: cfg.sampleGapThreshold,
+    gapFillIntervalSeconds: cfg.sampleGapFill,
+  };
+}
 
 /**
  * Find the frame closest to a target timestamp.
@@ -70,7 +75,7 @@ export function adaptiveSample(
   allFrames: InputFrame[],
   config: Partial<SamplingConfig> = {}
 ): SampledFrame[] {
-  const cfg: SamplingConfig = { ...DEFAULT_CONFIG, ...config };
+  const cfg: SamplingConfig = { ...getDefaultConfig(), ...config };
 
   if (allFrames.length === 0) return [];
 
@@ -172,7 +177,7 @@ export function adaptiveSampleWithScenes(
   sceneChanges: number[],
   config: Partial<SamplingConfig> = {}
 ): SampledFrame[] {
-  const cfg: SamplingConfig = { ...DEFAULT_CONFIG, ...config };
+  const cfg: SamplingConfig = { ...getDefaultConfig(), ...config };
 
   if (allFrames.length === 0) return [];
 
@@ -369,7 +374,7 @@ export function calculateRequiredTimestamps(
   sceneChanges: number[] = [],
   config: Partial<SamplingConfig> = {}
 ): number[] {
-  const cfg: SamplingConfig = { ...DEFAULT_CONFIG, ...config };
+  const cfg: SamplingConfig = { ...getDefaultConfig(), ...config };
 
   if (durationSeconds <= 0) return [];
 

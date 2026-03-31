@@ -52,66 +52,93 @@ export async function analyzeFrames(
   }));
 
   let processed = 0;
-  let failed = 0;
+  let vlmFailed = 0;
+  let saveFailed = 0;
+  const totalCount = vlmImages.length;
 
-  try {
-    // 4. Run VLM analysis
-    const results = await intelligence.describeImages(vlmImages, {
-      onImageProcessed: (result, progress) => {
-        console.log(
-          `[analyzer] Processed image ${result.index + 1}/${vlmImages.length} (Frame ID: ${frames[result.index].id})`
-        );
-        options.onProgress?.(progress.current, progress.total);
-      },
-    });
+  // 4. Run VLM analysis per frame so a single failure doesn't abort the batch
+  for (let i = 0; i < vlmImages.length; i++) {
+    const image = vlmImages[i];
+    const frame = frames[i];
 
-    // 5. Save observations and update frames
-    for (const result of results) {
-      const frame = frames[result.index];
-      if (!frame) continue;
-
-      try {
-        // Create observation
-        repositories.observations.save({
-          id: randomUUID(),
-          recording_id: null,
-          frame_id: frame.id,
-          type: 'visual',
-          timestamp: frame.timestamp,
-          end_timestamp: null,
-          image_path: frame.image_path,
-          ocr_text: null,
-          vlm_description: result.description,
-          vlm_raw_response: result.raw_response ?? null,
-          activity_type: result.activity,
-          apps: result.apps.join(', '),
-          topics: result.topics.join(', '),
-          text: null,
-          audio_source: null,
-          audio_type: null,
-          embedding: null,
-        });
-
-        // Mark frame as complete
-        repositories.frames.markAnalyzed(frame.id);
-        processed++;
-      } catch (err) {
-        console.error(
-          `[analyzer] Failed to save observation for frame ${frame.id}:`,
-          err
-        );
-        repositories.frames.markFailed(frame.id, String(err));
-        failed++;
-      }
-    }
-  } catch (err) {
-    console.error(`[analyzer] Batch analysis failed:`, err);
-    // Mark all frames in this batch as failed
-    for (const frame of frames) {
+    let results: Awaited<ReturnType<typeof intelligence.describeImages>>;
+    try {
+      results = await intelligence.describeImages([image]);
+    } catch (err) {
+      console.error(
+        `[analyzer] VLM inference failed for frame ${i} (timestamp: ${image.timestamp}, path: ${image.imagePath}):`,
+        err
+      );
       repositories.frames.markFailed(frame.id, String(err));
-      failed++;
+      vlmFailed++;
+      continue;
+    }
+
+    // After successful inference, report actual progress
+    options.onProgress?.(i + 1, totalCount);
+
+    // 5. Save observation and update frame
+    const result = results[0];
+    if (!result) {
+      console.error(
+        `[analyzer] No result returned for frame ${i} (timestamp: ${image.timestamp}, path: ${image.imagePath})`
+      );
+      repositories.frames.markFailed(frame.id, 'No VLM result returned');
+      vlmFailed++;
+      continue;
+    }
+
+    try {
+      // Create observation
+      repositories.observations.save({
+        id: randomUUID(),
+        recording_id: null,
+        frame_id: frame.id,
+        type: 'visual',
+        timestamp: frame.timestamp,
+        end_timestamp: null,
+        image_path: frame.image_path,
+        ocr_text: null,
+        vlm_description: result.description,
+        vlm_raw_response: result.raw_response ?? null,
+        activity_type: result.activity,
+        apps: result.apps.join(', '),
+        topics: result.topics.join(', '),
+        text: null,
+        audio_source: null,
+        audio_type: null,
+        embedding: null,
+      });
+
+      // Mark frame as complete
+      repositories.frames.markAnalyzed(frame.id);
+      processed++;
+    } catch (err) {
+      console.error(
+        `[analyzer] Failed to save observation for frame ${frame.id}:`,
+        err
+      );
+      repositories.frames.markFailed(frame.id, String(err));
+      saveFailed++;
     }
   }
 
-  return { processed, failed };
+  if (vlmFailed > 0) {
+    console.warn(
+      `[analyzer] ${vlmFailed} of ${totalCount} frames failed VLM inference`
+    );
+  }
+  if (saveFailed > 0) {
+    console.warn(
+      `[analyzer] ${saveFailed} of ${totalCount} frames failed DB save`
+    );
+  }
+
+  if (vlmFailed + saveFailed === totalCount && totalCount > 0) {
+    throw new Error(
+      `[analyzer] All ${totalCount} frames failed VLM inference — aborting batch`
+    );
+  }
+
+  return { processed, failed: vlmFailed + saveFailed };
 }

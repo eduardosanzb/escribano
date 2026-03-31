@@ -67,7 +67,11 @@ actor FrameAnalyzer {
                 } catch {
                     print("[FrameAnalyzer] VLM inference error: \(error.localizedDescription)")
                     for frame in frames {
-                        try? frameStore.markFrameFailed(id: frame.id)
+                        do {
+                            try frameStore.markFrameFailed(id: frame.id)
+                        } catch {
+                            print("[FrameAnalyzer] Failed to mark frame \(frame.id) as failed: \(error.localizedDescription)")
+                        }
                     }
                     continue
                 }
@@ -79,7 +83,11 @@ actor FrameAnalyzer {
                 guard descriptions.count == frames.count else {
                     print("[FrameAnalyzer] Partial parse (\(descriptions.count)/\(frames.count)) — marking all for retry")
                     for frame in frames {
-                        try? frameStore.markFrameFailed(id: frame.id)
+                        do {
+                            try frameStore.markFrameFailed(id: frame.id)
+                        } catch {
+                            print("[FrameAnalyzer] Failed to mark frame \(frame.id) as failed: \(error.localizedDescription)")
+                        }
                     }
                     continue
                 }

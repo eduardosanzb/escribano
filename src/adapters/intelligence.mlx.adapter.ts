@@ -39,18 +39,14 @@ import { getDbPath } from '../db/index.js';
 import { ensureEscribanoVenv as ensurePythonVenv } from '../python-deps.js';
 import { getPythonPath } from '../python-utils.js';
 import type { ResourceTrackable } from '../stats/types.js';
+import { createLogger } from '../utils/logger.js';
 import { selectBestMLXModel } from '../utils/model-detector.js';
 
 // ============================================================================
 // Utility Functions - Parsing, Prompts, Debug Logging
 // ============================================================================
 
-function debugLog(...args: unknown[]): void {
-  const config = loadConfig();
-  if (config.verbose) {
-    console.log('[MLX]', ...args);
-  }
-}
+const log = createLogger('MLX');
 
 /**
  * Strip <think>...</think> tags from LLM output.
@@ -198,9 +194,9 @@ function logLlmCallToDb(
       JSON.stringify(metadata)
     );
     db.close();
-    debugLog(`Logged LLM call to debug table: ${id}`);
+    log.debug(`Logged LLM call to debug table: ${id}`);
   } catch (err) {
-    debugLog(`Failed to log LLM call (non-fatal): ${(err as Error).message}`);
+    log.debug(`Failed to log LLM call (non-fatal): ${(err as Error).message}`);
   }
 }
 
@@ -242,7 +238,7 @@ let globalCleanup: (() => void) | null = null;
 
 export function cleanupMlxBridge(): void {
   if (globalCleanup) {
-    debugLog('Explicit cleanup called');
+    log.debug('Explicit cleanup called');
     globalCleanup();
     globalCleanup = null;
   }
@@ -283,54 +279,69 @@ export function createMlxIntelligenceService(
   const getLlmSocketPath = (): string =>
     mlxConfig.socketPath.replace('.sock', '-llm.sock');
 
+  let cleanupDone = false;
   const cleanup = (): void => {
+    if (cleanupDone) return;
+    cleanupDone = true;
+
     if (vlmBridge.socket) {
       try {
         vlmBridge.socket.destroy();
-      } catch {}
+      } catch (e) {
+        log.debug('cleanup failed:', e);
+      }
       vlmBridge.socket = null;
     }
     if (vlmBridge.process) {
       try {
         vlmBridge.process.kill('SIGTERM');
-      } catch {}
+      } catch (e) {
+        log.debug('cleanup failed:', e);
+      }
       vlmBridge.process = null;
     }
     const vlmSock = getVlmSocketPath();
     if (existsSync(vlmSock)) {
       try {
         unlinkSync(vlmSock);
-      } catch {}
+      } catch (e) {
+        log.debug('cleanup failed:', e);
+      }
     }
     vlmBridge.ready = false;
 
     if (llmBridge.socket) {
       try {
         llmBridge.socket.destroy();
-      } catch {}
+      } catch (e) {
+        log.debug('cleanup failed:', e);
+      }
       llmBridge.socket = null;
     }
     if (llmBridge.process) {
       try {
         llmBridge.process.kill('SIGTERM');
-      } catch {}
+      } catch (e) {
+        log.debug('cleanup failed:', e);
+      }
       llmBridge.process = null;
     }
     const llmSock = getLlmSocketPath();
     if (existsSync(llmSock)) {
       try {
         unlinkSync(llmSock);
-      } catch {}
+      } catch (e) {
+        log.debug('cleanup failed:', e);
+      }
     }
     llmBridge.ready = false;
     llmBridge.loadedModel = null;
   };
 
   globalCleanup = cleanup;
-  process.on('SIGTERM', cleanup);
-  process.on('SIGINT', cleanup);
-  process.on('beforeExit', cleanup);
-  process.on('exit', cleanup);
+  process.once('SIGTERM', cleanup);
+  process.once('SIGINT', cleanup);
+  process.once('exit', cleanup);
 
   const startBridge = async (
     bridgeState: BridgeState,
@@ -339,11 +350,11 @@ export function createMlxIntelligenceService(
   ): Promise<void> => {
     if (bridgeState.process && bridgeState.ready) return;
 
-    debugLog(`Starting ${mode.toUpperCase()} bridge...`);
+    log.debug(`Starting ${mode.toUpperCase()} bridge...`);
     const staleSocket =
       mode === 'vlm' ? getVlmSocketPath() : getLlmSocketPath();
     if (existsSync(staleSocket)) {
-      debugLog(`Cleanup: removing stale socket ${staleSocket}`);
+      log.debug(`Cleanup: removing stale socket ${staleSocket}`);
       const stalePid = bridgeState.process?.pid;
       if (stalePid) {
         try {
@@ -359,7 +370,7 @@ export function createMlxIntelligenceService(
       }
     }
     const pythonPath = await resolvePythonPath();
-    debugLog(`Using Python: ${pythonPath}`);
+    log.debug(`Using Python: ${pythonPath}`);
 
     return new Promise((resolvePromise, rejectPromise) => {
       const env: Record<string, string> = {
@@ -407,7 +418,7 @@ export function createMlxIntelligenceService(
                 readyReceived = true;
                 clearStartupTimer();
                 bridgeState.ready = true;
-                debugLog(
+                log.debug(
                   `${mode.toUpperCase()} bridge ready: ${msg.model || msg.mode}`
                 );
                 resolvePromise();
@@ -423,7 +434,7 @@ export function createMlxIntelligenceService(
       });
 
       bridgeState.process.on('exit', (code, signal) => {
-        debugLog(
+        log.debug(
           `${mode.toUpperCase()} bridge exited: code=${code} signal=${signal}`
         );
         bridgeState.process = null;
@@ -439,7 +450,7 @@ export function createMlxIntelligenceService(
       });
 
       bridgeState.process.on('error', (err) => {
-        debugLog(`${mode.toUpperCase()} bridge error: ${err.message}`);
+        log.debug(`${mode.toUpperCase()} bridge error: ${err.message}`);
         if (!readyReceived) {
           clearStartupTimer();
           rejectPromise(
@@ -482,25 +493,25 @@ export function createMlxIntelligenceService(
         }
       };
 
-      debugLog(`Connecting to socket: ${socketPath}`);
+      log.debug(`Connecting to socket: ${socketPath}`);
       const client = createConnection(socketPath);
 
       client.on('connect', () => {
         clearConnectionTimer();
-        debugLog('Socket connected');
+        log.debug('Socket connected');
         bridgeState.socket = client;
         resolvePromise(client);
       });
 
       client.on('error', (err) => {
         clearConnectionTimer();
-        debugLog(`Socket error: ${err.message}`);
+        log.debug(`Socket error: ${err.message}`);
         bridgeState.socket = null;
         rejectPromise(new Error(`Socket connection failed: ${err.message}`));
       });
 
       client.on('close', () => {
-        debugLog('Socket closed');
+        log.debug('Socket closed');
         bridgeState.socket = null;
       });
 
@@ -570,7 +581,7 @@ export function createMlxIntelligenceService(
               onBatch(response, resp.progress);
             }
           } catch {
-            debugLog(`Failed to parse response: ${line}`);
+            log.debug(`Failed to parse response: ${line}`);
           }
         }
       };
@@ -582,7 +593,7 @@ export function createMlxIntelligenceService(
       });
 
       const requestJson = `${JSON.stringify(request)}\n`;
-      debugLog(`Sending request: id=${request.id} method=${request.method}`);
+      log.debug(`Sending request: id=${request.id} method=${request.method}`);
       socket.write(requestJson);
     });
   };
@@ -644,7 +655,7 @@ export function createMlxIntelligenceService(
     ): Promise<FrameDescription[]> {
       const total = images.length;
       if (total === 0) {
-        debugLog('No images to process');
+        log.debug('No images to process');
         return [];
       }
 
@@ -675,7 +686,7 @@ export function createMlxIntelligenceService(
         );
         const batch = imageList.slice(batchStart, batchEnd);
 
-        debugLog(`Processing batch: ${batchStart + 1}-${batchEnd}/${total}`);
+        log.debug(`Processing batch: ${batchStart + 1}-${batchEnd}/${total}`);
 
         try {
           // Load VLM prompt for this batch
@@ -753,7 +764,7 @@ export function createMlxIntelligenceService(
           }
 
           const rawText = response.text || '';
-          debugLog(`VLM returned ${rawText.length} chars`);
+          log.debug(`VLM returned ${rawText.length} chars`);
 
           const vlm_stats = response.stats
             ? {
@@ -815,15 +826,6 @@ export function createMlxIntelligenceService(
       return allResults;
     },
 
-    async embedText(
-      _texts: string[],
-      _options?: { batchSize?: number }
-    ): Promise<number[][]> {
-      throw new Error(
-        'MLX adapter does not support embedText(). Use Ollama backend.'
-      );
-    },
-
     async extractTopics(_observations: DbObservation[]): Promise<string[]> {
       throw new Error(
         'MLX adapter does not support extractTopics(). Use Ollama backend.'
@@ -844,7 +846,6 @@ export function createMlxIntelligenceService(
         };
       }
     ): Promise<string> {
-      const config = loadConfig();
       const modelSelection = await selectBestMLXModel();
       const resolvedModel = options?.model || modelSelection.model;
       const requestId = Date.now();
@@ -853,7 +854,7 @@ export function createMlxIntelligenceService(
       try {
         if (llmBridge.loadedModel !== resolvedModel) {
           if (llmBridge.loadedModel) {
-            debugLog(`Unloading previous LLM model: ${llmBridge.loadedModel}`);
+            log.debug(`Unloading previous LLM model: ${llmBridge.loadedModel}`);
             await sendRequest(llmBridge, llmSocketPath, 'llm', {
               id: requestId,
               method: 'unload_llm',
@@ -861,7 +862,7 @@ export function createMlxIntelligenceService(
             });
           }
 
-          debugLog(`Loading LLM model: ${resolvedModel}`);
+          log.debug(`Loading LLM model: ${resolvedModel}`);
           console.log(`[LLM] Loading model: ${resolvedModel}`);
           try {
             await sendRequest(llmBridge, llmSocketPath, 'llm', {
@@ -877,7 +878,7 @@ export function createMlxIntelligenceService(
           }
         }
 
-        debugLog(`Generating text (${prompt.length} chars)...`);
+        log.debug(`Generating text (${prompt.length} chars)...`);
         const responses = await sendRequest(llmBridge, llmSocketPath, 'llm', {
           id: requestId + 2,
           method: 'llm_infer',
@@ -899,15 +900,15 @@ export function createMlxIntelligenceService(
         }
 
         const rawText = response.text || '';
-        debugLog(`Generated ${rawText.length} chars`);
+        log.debug(`Generated ${rawText.length} chars`);
 
         // Only strip thinking tags when think is false (or not set)
         const thinkEnabled = options?.think === true;
         const outputText = thinkEnabled ? rawText : stripThinkingTags(rawText);
-        const strippedText = stripThinkingTags(rawText);
 
         // Log to debug DB if enabled
         if (config.debugLlm && options?.debugContext) {
+          const strippedText = stripThinkingTags(rawText);
           logLlmCallToDb(
             options.debugContext.recordingId,
             options.debugContext.artifactId,

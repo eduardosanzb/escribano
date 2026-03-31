@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { performance } from 'node:perf_hooks';
+import { loadConfig } from '../config.js';
 import { generateId } from '../db/helpers.js';
 import type { ResourceTracker } from '../stats/resource-tracker.js';
 import { pipelineEvents } from './events.js';
@@ -37,7 +38,7 @@ export function withPipeline<T>(
   metadata: Record<string, unknown> | undefined,
   fn: () => Promise<T>
 ): Promise<T> {
-  const verbose = process.env.ESCRIBANO_VERBOSE === 'true';
+  const verbose = loadConfig().verbose;
   const runId = generateId();
   const startTime = performance.now();
 

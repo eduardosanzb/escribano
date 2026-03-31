@@ -13,27 +13,21 @@ import path, { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import type { VideoService } from '../0_types.js';
+import { loadConfig } from '../config.js';
 import type { ResourceTrackable } from '../stats/types.js';
-import { debugLog } from './intelligence.ollama.adapter.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('FFmpeg');
 
 const execAsync = promisify(exec);
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Scene detection configuration (with env var overrides)
-// Lower threshold = more sensitive = more scene changes detected
-// Examples: 0.3 (sensitive), 0.4 (default), 0.5 (conservative)
-const SCENE_THRESHOLD = Number(process.env.ESCRIBANO_SCENE_THRESHOLD) || 0.4;
-
-// Minimum seconds between detected scene changes
-// Prevents rapid-fire scene changes from generating too many frames
-const SCENE_MIN_INTERVAL =
-  Number(process.env.ESCRIBANO_SCENE_MIN_INTERVAL) || 2;
 
 /**
  * Creates a VideoService that uses FFmpeg CLI
  */
 export function createFfmpegVideoService(): VideoService & ResourceTrackable {
   let currentProcess: ChildProcess | null = null;
+  const config = loadConfig();
   return {
     /**
      * Extract frames at specific timestamps.
@@ -80,7 +74,7 @@ export function createFfmpegVideoService(): VideoService & ResourceTrackable {
       await mkdir(outputDir, { recursive: true });
 
       const frameInterval = Number(process.env.ESCRIBANO_FRAME_INTERVAL) || 2;
-      const frameWidth = Number(process.env.ESCRIBANO_FRAME_WIDTH) || 1920;
+      const frameWidth = config.frameWidth;
 
       // Get expected frame count for progress calculation
       let expectedFrames = 0;
@@ -113,7 +107,7 @@ export function createFfmpegVideoService(): VideoService & ResourceTrackable {
         '-y', // Overwrite
       ];
       const command = ffmpegParts.join(' ');
-      debugLog(`Running frame extraction: ${command}`);
+      log.debug(`Running frame extraction: ${command}`);
 
       try {
         currentProcess = spawn('sh', ['-c', command]);
@@ -229,7 +223,7 @@ export function createFfmpegVideoService(): VideoService & ResourceTrackable {
       await rm(outputDir, { recursive: true, force: true });
       await mkdir(outputDir, { recursive: true });
 
-      const frameWidth = Number(process.env.ESCRIBANO_FRAME_WIDTH) || 1920;
+      const frameWidth = config.frameWidth;
       const total = timestamps.length;
       const results: Array<{ imagePath: string; timestamp: number }> = [];
 
@@ -369,14 +363,14 @@ export function createFfmpegVideoService(): VideoService & ResourceTrackable {
      * Detect scene changes in video using ffmpeg scene filter.
      * Returns timestamps of significant visual changes.
      *
-     * Configuration via environment variables:
-     * - ESCRIBANO_SCENE_THRESHOLD: Sensitivity (0.0-1.0, lower=more sensitive)
-     * - ESCRIBANO_SCENE_MIN_INTERVAL: Min seconds between scene changes
+     * Configuration via config module (with optional override via parameter):
+     * - config.sceneThreshold: Sensitivity (0.0-1.0, lower=more sensitive)
+     * - config.sceneMinInterval: Min seconds between scene changes
      */
-    detectSceneChanges: async (videoPath, config = {}) => {
-      // Use env vars as defaults, allow override via config parameter
-      const threshold = config.threshold ?? SCENE_THRESHOLD;
-      const minInterval = config.minInterval ?? SCENE_MIN_INTERVAL;
+    detectSceneChanges: async (videoPath, sceneConfig = {}) => {
+      // Use config values as defaults, allow override via sceneConfig parameter
+      const threshold = sceneConfig.threshold ?? config.sceneThreshold;
+      const minInterval = sceneConfig.minInterval ?? config.sceneMinInterval;
 
       // Get video duration for progress calculation
       let duration = 0;
@@ -407,7 +401,7 @@ export function createFfmpegVideoService(): VideoService & ResourceTrackable {
         '-', // Output to null
       ];
       const command = ffmpegParts.join(' ');
-      debugLog(`Running scene detection: ${command}`);
+      log.debug(`Running scene detection: ${command}`);
 
       try {
         currentProcess = spawn('sh', ['-c', command]);

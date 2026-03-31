@@ -208,20 +208,20 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         log("[escribano-recorder] SessionAggregator task started.")
 
         bp.onPause = { [weak self] in
-            self?.captures.forEach { $0.pause() }
+            self?.captures.forEach { $0.pauseForBackpressure() }
         }
         bp.onResume = { [weak self] in
-            self?.captures.forEach { $0.resume() }
+            self?.captures.forEach { $0.resumeFromBackpressure() }
         }
 
         // Screen lock detection — pause capture when screen is locked
         let lockObserver = ScreenLockObserver()
         lockObserver.onLock = { [weak self] in
-            self?.captures.forEach { $0.pause() }
+            self?.captures.forEach { $0.pauseForScreenLock() }
             log("[escribano-recorder] Screen locked — all captures paused")
         }
         lockObserver.onUnlock = { [weak self] in
-            self?.captures.forEach { $0.resume() }
+            self?.captures.forEach { $0.resumeFromScreenLock() }
             log("[escribano-recorder] Screen unlocked — all captures resumed")
         }
         self.screenLockObserver = lockObserver

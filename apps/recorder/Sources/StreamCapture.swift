@@ -20,7 +20,9 @@ final class StreamCapture: NSObject {
 
     private var prevPHash:    UInt64? = nil
     private var frameCounter: Int     = 0
-    private var isPaused: Bool        = false
+    private var isPausedByBackpressure: Bool = false
+    private var isPausedByScreenLock:   Bool = false
+    private var isPaused: Bool { isPausedByBackpressure || isPausedByScreenLock }
     
     // Rolling stats
     private var framesSeen:    Int = 0
@@ -80,18 +82,32 @@ final class StreamCapture: NSObject {
         print("[StreamCapture] Stopped.")
     }
 
-    func pause() {
-        guard !isPaused else { return }
-        isPaused = true
-        Task { try? await stream?.stopCapture() }
-        print("[StreamCapture] Paused.")
+    func pauseForBackpressure() {
+        guard !isPausedByBackpressure else { return }
+        isPausedByBackpressure = true
+        if !isPausedByScreenLock { Task { try? await self.stream?.stopCapture() } }
+        print("[StreamCapture] Paused (backpressure).")
     }
 
-    func resume() {
-        guard isPaused else { return }
-        isPaused = false
-        Task { try? await stream?.startCapture() }
-        print("[StreamCapture] Resumed.")
+    func resumeFromBackpressure() {
+        guard isPausedByBackpressure else { return }
+        isPausedByBackpressure = false
+        if !isPausedByScreenLock { Task { try? await self.stream?.startCapture() } }
+        print("[StreamCapture] Resumed from backpressure.")
+    }
+
+    func pauseForScreenLock() {
+        guard !isPausedByScreenLock else { return }
+        isPausedByScreenLock = true
+        if !isPausedByBackpressure { Task { try? await self.stream?.stopCapture() } }
+        print("[StreamCapture] Paused (screen lock).")
+    }
+
+    func resumeFromScreenLock() {
+        guard isPausedByScreenLock else { return }
+        isPausedByScreenLock = false
+        if !isPausedByBackpressure { Task { try? await self.stream?.startCapture() } }
+        print("[StreamCapture] Resumed from screen lock.")
     }
 
     // MARK: — Frame processing

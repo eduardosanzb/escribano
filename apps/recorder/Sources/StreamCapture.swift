@@ -69,7 +69,7 @@ final class StreamCapture: NSObject {
         try await stream?.startCapture()
         captureStartTime = Date()
 
-        print("[StreamCapture] Started — display \(displayID), \(display.width/2)x\(display.height/2)")
+        log("[StreamCapture] Started — display \(displayID), \(display.width/2)x\(display.height/2)")
         if debugPHash {
             print("[pHash] Verbose logging ENABLED")
         }
@@ -77,21 +77,21 @@ final class StreamCapture: NSObject {
 
     func stop() async {
         try? await stream?.stopCapture()
-        print("[StreamCapture] Stopped.")
+        log("[StreamCapture] Stopped.")
     }
 
     func pause() {
         guard !isPaused else { return }
         isPaused = true
         Task { try? await stream?.stopCapture() }
-        print("[StreamCapture] Paused.")
+        log("[StreamCapture] Paused.")
     }
 
     func resume() {
         guard isPaused else { return }
         isPaused = false
         Task { try? await stream?.startCapture() }
-        print("[StreamCapture] Resumed.")
+        log("[StreamCapture] Resumed.")
     }
 
     // MARK: — Frame processing
@@ -147,7 +147,7 @@ final class StreamCapture: NSObject {
             try FileManager.default.createDirectory(at: dayDir, withIntermediateDirectories: true)
             saveJPEG(cgImage, to: fileURL)
         } catch {
-            print("[StreamCapture] Filesystem error: \(error.localizedDescription)")
+            log("[StreamCapture] Filesystem error: \(error.localizedDescription)")
             return
         }
 
@@ -167,7 +167,7 @@ final class StreamCapture: NSObject {
         do {
             try store.insertFrame(metadata)
         } catch {
-            print("[StreamCapture] Store insert failed: \(error.localizedDescription)")
+            log("[StreamCapture] Store insert failed: \(error.localizedDescription)")
             try? FileManager.default.removeItem(at: fileURL)  
             return
         }
@@ -181,7 +181,7 @@ final class StreamCapture: NSObject {
     }
 
     fileprivate func handleStreamError(_ error: any Error) {
-        print("[StreamCapture] Stream error: \(error.localizedDescription)")
+        log("[StreamCapture] Stream error: \(error.localizedDescription)")
     }
 
     private func saveJPEG(_ image: CGImage, to url: URL) {

@@ -55,14 +55,14 @@ final class Backpressure {
         // High-water trigger: stop capturing to avoid disk/memory buildup.
         if !isPaused && pending >= highWater {
             isPaused = true
-            print("[Backpressure] High-water reached (\(pending) pending). Pausing capture.")
+            log("[Backpressure] High-water reached (\(pending) pending). Pausing capture.")
             onPause?()
             startResumeTimer()
         } 
         // Low-water trigger: resume only after unanalyzed frames are cleared.
         else if isPaused && pending <= lowWater {
             isPaused = false
-            print("[Backpressure] Low-water reached (\(pending) pending). Resuming capture.")
+            log("[Backpressure] Low-water reached (\(pending) pending). Resuming capture.")
             onResume?()
             stopResumeTimer()
         }

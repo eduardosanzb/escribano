@@ -1,21 +1,11 @@
 import Dispatch
 import Foundation
-
-// MARK: - BridgeState
-
-/// State machine for the Python bridge lifecycle.
-enum BridgeState: Sendable {
-    case idle       // Not started yet
-    case starting   // start() is in progress
-    case ready      // Bridge is running and accepting requests
-    case dead       // Bridge process died unexpectedly
-    case restarting // restart() is in progress
-}
+import os
 
 // MARK: - PythonBridgeVLMAdapter
 
 ///
-/// Adapter that implements VLMInferenceService by spawning mlx_bridge.py as a
+/// Adapter that implements InferenceWorker by spawning mlx_bridge.py as a
 /// child process and communicating over a Unix domain socket.
 ///
 /// --- Unix domain socket vs. TCP ---
@@ -31,14 +21,14 @@ enum BridgeState: Sendable {
 /// --- Process lifecycle ---
 /// 1. start() spawns Python, waits for {"status":"ready"} on stdout, then
 ///    connects the Unix socket.
-/// 2. runBatch() sends one vlm_infer request and waits for {"done":true}.
+/// 2. analyzeFrames() sends one vlm_infer request and waits for {"done":true}.
 /// 3. stop() sends SIGTERM to the Python process, disconnects the socket.
 ///
 /// Why "actor"?
 ///   An actor in Swift serializes access to its mutable state — only one task
-///   can run inside the actor at a time. This prevents two concurrent runBatch()
+///   can run inside the actor at a time. This prevents two concurrent analyzeFrames()
 ///   calls from racing on the socket write/read state.
-actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
+actor PythonBridgeVLMAdapter: InferenceWorker {
     // MARK: - Configuration
 
     private let socketPath: String // e.g. /tmp/escribano-recorder-vlm.sock
@@ -53,13 +43,13 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     private var process: Process?
     private var fileHandle: FileHandle?
     private var requestId: Int = 0
-    private var state: BridgeState = .idle
-    private var restartContinuations: [CheckedContinuation<Void, Error>] = []
-    /// PID stored nonisolated so applicationWillTerminate can kill the bridge
-    /// synchronously without an async context. nonisolated(unsafe) is safe here
-    /// because storedPID is only written once (in start()) before any concurrent
-    /// reads, and reads in terminateSync() are always after that write.
-    private nonisolated(unsafe) var storedPID: Int32 = 0
+    private var _isReady: Bool = false
+    /// PID stored behind a lock so terminateSync() can read it safely from any thread.
+    private let pidLock = OSAllocatedUnfairLock(initialState: Int32(0))
+
+    var isReady: Bool {
+        _isReady
+    }
 
     // MARK: - Init
 
@@ -111,8 +101,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     }
 
     func start() async throws {
-        guard state != .ready else { return }
-        state = .starting
+        guard !_isReady else { return }
         do {
             log("[PythonBridge] Starting mlx_bridge.py (VLM mode)...")
             log("[PythonBridge] Python: \(pythonPath)")
@@ -148,31 +137,21 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
                 stderrLogHandle?.write(data)
             }
             try proc.run()
-            proc.terminationHandler = { [weak self] _ in
-                Task { await self?.handleBridgeDeath() }
-            }
             process = proc
-            storedPID = proc.processIdentifier
+            pidLock.withLock { $0 = proc.processIdentifier }
             log("[PythonBridge] Python PID: \(proc.processIdentifier)")
             try await waitForReady(stdout: stdoutPipe, logHandle: stdoutLogHandle)
             try connectSocket()
-            state = .ready
+            _isReady = true
             log("[PythonBridge] Ready. Socket connected at \(socketPath)")
         } catch {
-            state = .dead
+            _isReady = false
             throw error
         }
     }
 
-    func runBatch(frames: [DbFrame]) async throws -> [FrameDescription] {
-        switch state {
-        case .ready: break
-        case .dead: throw PythonBridgeError.bridgeDied
-        case .restarting:
-            try await waitForRestart()
-        default:
-            throw PythonBridgeError.notStarted
-        }
+    func analyzeFrames(frames: [DbFrame]) async throws -> [FrameDescription] {
+        guard _isReady else { throw PythonBridgeError.notStarted }
         guard !frames.isEmpty else { return [] }
         requestId += 1
         let id = requestId
@@ -198,7 +177,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
         do {
             (rawText, rawStats) = try await sendAndReceive(request: request)
         } catch PythonBridgeError.bridgeDied {
-            state = .dead
+            _isReady = false
             throw PythonBridgeError.bridgeDied
         }
         let stats = rawStats.map { s in
@@ -216,14 +195,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     }
 
     func generateText(prompt: String, maxTokens: Int = 2000) async throws -> String {
-        switch state {
-        case .ready: break
-        case .dead: throw PythonBridgeError.bridgeDied
-        case .restarting:
-            try await waitForRestart()
-        default:
-            throw PythonBridgeError.notStarted
-        }
+        guard _isReady else { throw PythonBridgeError.notStarted }
         requestId += 1
         let id = requestId
 
@@ -240,7 +212,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
         do {
             (rawText, _) = try await sendAndReceive(request: request)
         } catch PythonBridgeError.bridgeDied {
-            state = .dead
+            _isReady = false
             throw PythonBridgeError.bridgeDied
         }
         return rawText
@@ -248,80 +220,36 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
 
     func stop() async {
         log("[PythonBridge] Shutting down...")
+        _isReady = false
         fileHandle?.closeFile()
         fileHandle = nil
-        process?.terminate()
+        if let proc = process {
+            proc.terminate()
+            proc.waitUntilExit()
+        }
         process = nil
-        state = .idle
+        pidLock.withLock { $0 = 0 }
         try? FileManager.default.removeItem(atPath: socketPath)
     }
 
     /// Synchronous bridge kill for use in applicationWillTerminate where async is not available.
     /// Sends SIGTERM directly to the stored PID — reliable regardless of socket path or env vars.
     nonisolated func terminateSync() {
-        let pid = storedPID
+        let pid = pidLock.withLock { $0 }
         guard pid > 0 else { return }
         kill(pid, SIGTERM)
         log("[PythonBridge] terminateSync: sent SIGTERM to PID \(pid)")
     }
 
-    /// Called (via Task bounce) when the Python process terminates unexpectedly.
-    private func handleBridgeDeath() {
-        guard state == .ready || state == .starting else { return }
-        log("[PythonBridge] Bridge process terminated unexpectedly")
-        state = .dead
-    }
-
-    /// Restart the bridge with exponential backoff.
-    /// If a restart is already in progress, waits for it to complete.
-    func restart() async throws {
-        if state == .restarting {
-            try await waitForRestart()
-            return
-        }
-        guard state == .dead || state == .ready else {
-            throw PythonBridgeError.notStarted
-        }
-        state = .restarting
-        log("[PythonBridge] Restarting bridge...")
-
-        let delays: [Double] = [5, 10, 20, 40, 60]
-        var lastError: Error?
-
-        for (attempt, delay) in delays.enumerated() {
-            await stop()
-            state = .restarting
-            do {
-                try await start()
-                state = .ready
-                log("[PythonBridge] Restart succeeded on attempt \(attempt + 1)")
-                // Resume any waiters
-                let waiters = restartContinuations
-                restartContinuations = []
-                for waiter in waiters { waiter.resume(returning: ()) }
-                return
-            } catch {
-                lastError = error
-                log("[PythonBridge] Restart attempt \(attempt + 1)/\(delays.count) failed: \(error.localizedDescription)")
-                if attempt < delays.count - 1 {
-                    try? await Task.sleep(for: .seconds(delay))
-                }
-            }
-        }
-
-        state = .dead
-        let waiters = restartContinuations
-        restartContinuations = []
-        let err = lastError ?? PythonBridgeError.bridgeDied
-        for waiter in waiters { waiter.resume(throwing: err) }
-        throw err
-    }
-
-    /// Suspend the caller until an in-progress restart completes (or fails).
-    private func waitForRestart() async throws {
-        try await withCheckedThrowingContinuation { cont in
-            restartContinuations.append(cont)
-        }
+    func ping() async throws -> Bool {
+        guard _isReady else { return false }
+        requestId += 1
+        let request: [String: Any] = [
+            "id": requestId,
+            "method": "ping",
+        ]
+        let (_, _) = try await sendAndReceive(request: request)
+        return true
     }
 
     private func buildEnv() -> [String: String] {
@@ -504,7 +432,6 @@ enum PythonBridgeError: Error, LocalizedError {
     case serializationFailed
     case inferenceError(String)
     case inferenceTimeout(TimeInterval)
-    case restartFailed(Int) // number of attempts
     var errorDescription: String? {
         switch self {
         case .notStarted: return "PythonBridge not started — call start() first"
@@ -514,7 +441,6 @@ enum PythonBridgeError: Error, LocalizedError {
         case .serializationFailed: return "Failed to serialize request to JSON"
         case let .inferenceError(m): return "VLM inference error from Python: \(m)"
         case let .inferenceTimeout(t): return "VLM inference timed out after \(Int(t))s"
-        case let .restartFailed(n): return "Bridge restart failed after \(n) attempts"
         }
     }
 }

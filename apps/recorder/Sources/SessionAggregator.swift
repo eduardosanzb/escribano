@@ -94,6 +94,9 @@ actor SessionAggregator {
             do {
                 try await queue.ping()
                 break
+            } catch PythonBridgeError.bridgeDied {
+                log("[SessionAggregator] Inference queue circuit open while waiting for readiness — stopping")
+                return
             } catch {
                 if readyAttempts % 6 == 0 {
                     log("[SessionAggregator] Waiting for inference queue... (\(readyAttempts * 5)s elapsed)")

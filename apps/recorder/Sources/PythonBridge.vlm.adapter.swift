@@ -146,6 +146,16 @@ actor PythonBridgeVLMAdapter: InferenceWorker {
             log("[PythonBridge] Ready. Socket connected at \(socketPath)")
         } catch {
             _isReady = false
+            // Clean up partially-started process to prevent orphaning
+            fileHandle?.closeFile()
+            fileHandle = nil
+            if let proc = process {
+                proc.terminate()
+                // Don't waitUntilExit here — we're already in an error path
+            }
+            process = nil
+            pidLock.withLock { $0 = 0 }
+            try? FileManager.default.removeItem(atPath: socketPath)
             throw error
         }
     }
@@ -225,7 +235,30 @@ actor PythonBridgeVLMAdapter: InferenceWorker {
         fileHandle = nil
         if let proc = process {
             proc.terminate()
-            proc.waitUntilExit()
+            let pid = proc.processIdentifier
+            // Time-bounded wait: 5s for graceful exit, then SIGKILL.
+            // Unbounded waitUntilExit() would deadlock the actor if Python ignores SIGTERM.
+            let exited = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                let flag = ResumeFlag()
+                let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
+                timer.schedule(deadline: .now() + 5)
+                timer.setEventHandler {
+                    guard flag.trySet() else { return }
+                    timer.cancel()
+                    cont.resume(returning: false)
+                }
+                timer.resume()
+                DispatchQueue.global().async {
+                    proc.waitUntilExit()
+                    guard flag.trySet() else { return }
+                    timer.cancel()
+                    cont.resume(returning: true)
+                }
+            }
+            if !exited {
+                log("[PythonBridge] Process did not exit after 5s SIGTERM — sending SIGKILL")
+                kill(pid, SIGKILL)
+            }
         }
         process = nil
         pidLock.withLock { $0 = 0 }

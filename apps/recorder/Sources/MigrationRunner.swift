@@ -1,10 +1,6 @@
 import Foundation
 import SQLite3
 
-// SQLITE_TRANSIENT: tells SQLite to make its own copy of the string.
-// Redefined here as each file is its own compilation unit.
-private let SQLITE_TRANSIENT_MR = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-
 // MARK: - MigrationError
 
 /// Typed errors for the MigrationRunner.
@@ -34,7 +30,7 @@ enum MigrationError: Error, LocalizedError {
 //   2. Reads MAX(version) as current version
 //   3. Scans migrationsDir for NNN_*.sql files, sorts ascending
 //   4. For each pending migration: BEGIN → exec SQL → INSERT _schema_version
-//      → PRAGMA user_version → COMMIT (ROLLBACK on any failure)
+//      → COMMIT (ROLLBACK on any failure) → PRAGMA user_version (post-commit)
 //   5. Closes the dedicated SQLite connection and returns results
 //
 // Both Node.js and Swift can manage the same database because they use the
@@ -240,7 +236,7 @@ enum MigrationRunner {
         if sqlRc != SQLITE_OK {
             let msg = errmsg.map { String(cString: $0) } ?? "unknown"
             sqlite3_free(errmsg)
-            _ = try? execNoThrow(handle, "ROLLBACK")
+            execNoThrow(handle, "ROLLBACK")
             throw MigrationError.migrationFailed(filename: migration.filename, error: msg)
         }
 
@@ -249,7 +245,7 @@ enum MigrationRunner {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(handle, insertSql, -1, &stmt, nil) == SQLITE_OK else {
             let msg = String(cString: sqlite3_errmsg(handle))
-            _ = try? execNoThrow(handle, "ROLLBACK")
+            execNoThrow(handle, "ROLLBACK")
             throw MigrationError.migrationFailed(filename: migration.filename, error: "Failed to prepare version insert: \(msg)")
         }
         defer { sqlite3_finalize(stmt) }
@@ -258,30 +254,33 @@ enum MigrationRunner {
         let insertRc = sqlite3_step(stmt)
         guard insertRc == SQLITE_DONE else {
             let msg = String(cString: sqlite3_errmsg(handle))
-            _ = try? execNoThrow(handle, "ROLLBACK")
+            execNoThrow(handle, "ROLLBACK")
             throw MigrationError.migrationFailed(filename: migration.filename, error: "Failed to insert version: \(msg)")
         }
 
-        // Set PRAGMA user_version so Swift stores can verify the schema on startup.
-        // PRAGMA user_version cannot use bound parameters — embed directly.
-        do {
-            try exec(handle, "PRAGMA user_version = \(migration.version)")
-        } catch {
-            _ = try? execNoThrow(handle, "ROLLBACK")
-            throw MigrationError.migrationFailed(
-                filename: migration.filename,
-                error: "Failed to set user_version: \(error.localizedDescription)"
-            )
-        }
-
-        // Commit.
+        // Commit the transaction first.
         do {
             try exec(handle, "COMMIT")
         } catch {
-            _ = try? execNoThrow(handle, "ROLLBACK")
+            execNoThrow(handle, "ROLLBACK")
             throw MigrationError.migrationFailed(
                 filename: migration.filename,
                 error: "Failed to commit: \(error.localizedDescription)"
+            )
+        }
+
+        // Set PRAGMA user_version AFTER a successful COMMIT.
+        // PRAGMA user_version is non-transactional — it writes immediately to the
+        // DB header regardless of transaction state. Moving it here ensures the
+        // _schema_version row and user_version stay in sync: if COMMIT fails we
+        // roll back without having advanced user_version. If COMMIT succeeds but
+        // the PRAGMA fails we throw, but no rollback is meaningful.
+        do {
+            try exec(handle, "PRAGMA user_version = \(migration.version)")
+        } catch {
+            throw MigrationError.migrationFailed(
+                filename: migration.filename,
+                error: "COMMIT succeeded but failed to set user_version: \(error.localizedDescription)"
             )
         }
     }
@@ -299,7 +298,7 @@ enum MigrationRunner {
 
     /// Non-throwing variant of exec used during ROLLBACK cleanup paths.
     @discardableResult
-    private static func execNoThrow(_ handle: OpaquePointer?, _ sql: String) throws -> Bool {
+    private static func execNoThrow(_ handle: OpaquePointer?, _ sql: String) -> Bool {
         var errmsg: UnsafeMutablePointer<CChar>?
         let rc = sqlite3_exec(handle, sql, nil, nil, &errmsg)
         if rc != SQLITE_OK {

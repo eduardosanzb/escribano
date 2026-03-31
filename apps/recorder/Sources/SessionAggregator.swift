@@ -41,6 +41,12 @@ actor SessionAggregator {
     private let maxObsPerCycle: Int
     private let llmBatchSize: Int
 
+    // Backoff state for idle polling
+    private var currentIdlePollInterval: Double = 120.0  // initialized from pollInterval in init
+    private let maxIdlePollInterval: Double = 480.0
+    private var bridgeFailureCount: Int = 0
+    private let maxBridgeFailures: Int = 5
+
     // Sentinel recording ID for recorder-generated TopicBlocks
     private let recorderRecordingId = "__recorder__"
 
@@ -78,6 +84,13 @@ actor SessionAggregator {
         if self.llmBatchSize != rawLlmBatch {
             log("[SessionAggregator] WARN: ESCRIBANO_TB_LLM_BATCH_SIZE clamped from \(rawLlmBatch) to \(self.llmBatchSize)")
         }
+
+        self.currentIdlePollInterval = self.pollInterval
+    }
+
+    /// Reset the idle polling backoff to base interval.
+    func resetBackoff() {
+        currentIdlePollInterval = pollInterval
     }
 
     /// Main aggregation loop. Runs until Task is cancelled.
@@ -121,11 +134,14 @@ actor SessionAggregator {
                 let observations = try await obsStore.fetchUnclaimed(limit: maxObsPerCycle)
 
                 if observations.isEmpty {
-                    try await Task.sleep(for: .seconds(pollInterval))
+                    try await Task.sleep(for: .seconds(currentIdlePollInterval))
+                    currentIdlePollInterval = min(currentIdlePollInterval * 2, maxIdlePollInterval)
                     continue
                 }
 
                 if observations.count < minObservations {
+                    // Edge case: 1-2 observations can sit unclaimed for a long time if no more arrive.
+                    // This is acceptable — Phase 3b's flush-aggregate step will handle them on demand.
                     log("[SessionAggregator] Found \(observations.count) unclaimed (< \(minObservations) min) — waiting")
                     try await Task.sleep(for: .seconds(pollInterval))
                     continue
@@ -136,9 +152,38 @@ actor SessionAggregator {
                     let created = try await processWindow(observations)
                     if created > 0 {
                         log("[SessionAggregator] Cycle complete: created \(created) TopicBlock(s)")
+                        currentIdlePollInterval = pollInterval  // Reset backoff on successful processing
                     } else {
                         log("[SessionAggregator] No TBs created — waiting for more observations")
                         try await Task.sleep(for: .seconds(pollInterval))
+                    }
+                } catch PythonBridgeError.bridgeDied {
+                    log("[SessionAggregator] Bridge died during aggregation — waiting for recovery...")
+                    bridgeFailureCount += 1
+                    if bridgeFailureCount > maxBridgeFailures {
+                        log("[SessionAggregator] FATAL: Bridge failed \(bridgeFailureCount) times — stopping aggregation loop")
+                        break
+                    }
+                    // Re-enter the bridge readiness wait loop (same as startup).
+                    // Observations were not consumed (TB save + claim happen after LLM success).
+                    var readyAttempts = 0
+                    while !Task.isCancelled {
+                        readyAttempts += 1
+                        do {
+                            _ = try await queue.submit(priority: .normal) { [textService] in
+                                try await textService.generateText(prompt: "ping", maxTokens: 1)
+                            }
+                            break
+                        } catch {
+                            if readyAttempts % 6 == 0 {
+                                log("[SessionAggregator] Waiting for bridge recovery... (\(readyAttempts * 5)s elapsed)")
+                            }
+                            try? await Task.sleep(for: .seconds(5))
+                        }
+                    }
+                    if !Task.isCancelled {
+                        bridgeFailureCount = 0
+                        log("[SessionAggregator] Bridge recovered — resuming aggregation")
                     }
                 } catch {
                     log("[SessionAggregator] Error processing observations: \(error.localizedDescription)")

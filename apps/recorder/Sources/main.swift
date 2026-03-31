@@ -236,14 +236,14 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
                 Task { @MainActor in
                     guard let self else { return }
                     log("[escribano-recorder] System will sleep — pausing capture")
-                    self.captures.forEach { $0.pauseForScreenLock() }
+                    self.captures.forEach { $0.pauseForSleep() }
                 }
             }
             ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
                     guard let self else { return }
                     log("[escribano-recorder] System woke — resuming capture and resetting backoff")
-                    self.captures.forEach { $0.resumeFromScreenLock() }
+                    self.captures.forEach { $0.resumeFromSleep() }
                     // Reset analyzer and aggregator backoff since new frames are incoming
                     await self.analyzer?.resetBackoff()
                     await self.aggregator?.resetBackoff()

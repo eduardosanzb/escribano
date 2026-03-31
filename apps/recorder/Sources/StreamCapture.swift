@@ -22,7 +22,8 @@ final class StreamCapture: NSObject {
     private var frameCounter: Int     = 0
     private var isPausedByBackpressure: Bool = false
     private var isPausedByScreenLock:   Bool = false
-    private var isPaused: Bool { isPausedByBackpressure || isPausedByScreenLock }
+    private var isPausedBySleep:          Bool = false
+    private var isPaused: Bool { isPausedByBackpressure || isPausedByScreenLock || isPausedBySleep }
     
     // Rolling stats
     private var framesSeen:    Int = 0
@@ -118,6 +119,24 @@ final class StreamCapture: NSObject {
         isPausedByScreenLock = false
         if !isPausedByBackpressure { Task { try? await self.stream?.startCapture() } }
         print("[StreamCapture] Resumed from screen lock.")
+    }
+
+    func pauseForSleep() {
+        guard !isPausedBySleep else { return }
+        isPausedBySleep = true
+        if !isPausedByBackpressure && !isPausedByScreenLock { 
+            Task { try? await self.stream?.stopCapture() } 
+        }
+        log("[StreamCapture] Paused (sleep).")
+    }
+
+    func resumeFromSleep() {
+        guard isPausedBySleep else { return }
+        isPausedBySleep = false
+        if !isPausedByBackpressure && !isPausedByScreenLock { 
+            Task { try? await self.stream?.startCapture() } 
+        }
+        log("[StreamCapture] Resumed from sleep.")
     }
 
     // MARK: — Frame processing

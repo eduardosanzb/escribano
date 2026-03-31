@@ -65,6 +65,12 @@ Add NSStatusItem to existing recorder binary. One process, one target.
 - [ ] LaunchAgent migration: on first launch, detect old `~/Library/LaunchAgents/com.escribano.capture.plist`, bootout + delete
 - [ ] Create `~/.escribano/` directory structure on first launch if missing
 
+### Capture Quality Guards
+
+- [x] Screen lock detection — `DistributedNotificationCenter` listens for `com.apple.screenIsLocked`/`screenIsUnlocked`, pauses all captures on lock, resumes on unlock
+- [x] Frame churn rate limiter — rolling 60s window tracks frame-to-frame pHash changes; when unique frames/min exceeds `ESCRIBANO_CHURN_THRESHOLD` (default 40), throttles capture to 1 frame per `ESCRIBANO_CHURN_THROTTLE_INTERVAL` (default 30s); auto-resumes when rate normalizes
+- [ ] (Future) Observation-based smart throttle — use VLM activity detection (e.g., consecutive "YouTube" observations) to confirm/override churn-based throttle
+
 ### DMG Packaging
 
 - [ ] `.app` bundle structure: `Info.plist`, `entitlements.plist`, bundled Resources (SQL migrations, `mlx_bridge.py`)

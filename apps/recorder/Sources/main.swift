@@ -30,6 +30,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var tbStore: (any TopicBlockStore)?
     private var aggregator: SessionAggregator?
     private var aggregatorTask: Task<Void, Never>?
+    private var screenLockObserver: ScreenLockObserver?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGTERM) { _ in
@@ -213,8 +214,22 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             self?.captures.forEach { $0.resume() }
         }
 
+        // Screen lock detection — pause capture when screen is locked
+        let lockObserver = ScreenLockObserver()
+        lockObserver.onLock = { [weak self] in
+            self?.captures.forEach { $0.pause() }
+            log("[escribano-recorder] Screen locked — all captures paused")
+        }
+        lockObserver.onUnlock = { [weak self] in
+            self?.captures.forEach { $0.resume() }
+            log("[escribano-recorder] Screen unlocked — all captures resumed")
+        }
+        self.screenLockObserver = lockObserver
+
         let threshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "4") ?? 4
-        log("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold) QueueStreak=\(realtimeStreak)")
+        let churnThreshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_CHURN_THRESHOLD"] ?? "") ?? 40
+        let churnInterval = Int(ProcessInfo.processInfo.environment["ESCRIBANO_CHURN_THROTTLE_INTERVAL"] ?? "") ?? 30
+        log("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold) QueueStreak=\(realtimeStreak) ChurnThreshold=\(churnThreshold)/min ChurnInterval=\(churnInterval)s ScreenLock=active")
     }
 
     func applicationWillTerminate(_ notification: Notification) {

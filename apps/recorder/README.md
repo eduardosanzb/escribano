@@ -2,11 +2,11 @@
 
 ## Overview
 
-The Escribano Recorder is a Swift package that runs as a macOS LaunchAgent to continuously capture
-screen activity in the background. It uses ScreenCaptureKit to sample frames at ~1-second intervals,
-deduplicates visually identical frames using perceptual hashing, and pipelines them through a Python
-VLM bridge for frame-level description and LLM-based session aggregation — all without user
-intervention.
+The Escribano Recorder is a Swift package that runs as a macOS menu bar application to continuously
+capture screen activity in the background. It uses ScreenCaptureKit to sample frames at ~1-second
+intervals, deduplicates visually identical frames using perceptual hashing, and pipelines them
+through a Python VLM bridge for frame-level description and LLM-based session aggregation — all
+without user intervention.
 
 ## Architecture
 
@@ -25,6 +25,15 @@ Three concurrent async Tasks run in parallel after startup, coordinated by one s
    grouping, and creates `topic_blocks` rows via `TopicBlockStore`.
 
 Additionally:
+
+- **`MenuBarController`** — NSStatusItem with live stats (frames, topic blocks, RAM), pause/resume
+  capture, and Start at Login toggle via SMAppService.
+
+- **`MigrationRunner`** — Swift-native DB migrations (replicates Node.js migrate.ts), runs on
+  startup to ensure schema is up to date.
+
+- **`PythonSetup`** — Zero-config Python venv setup. Auto-creates `~/.escribano/venv` and installs
+  `mlx-vlm` on first launch.
 
 - **1 shared `WorkQueue`** (actor) — Serializes all bridge calls between `FrameAnalyzer` and
   `SessionAggregator`. Because VLM frame inference and LLM text generation share the same Python
@@ -59,6 +68,9 @@ ScreenCaptureKit
 | File | Description |
 |------|-------------|
 | `main.swift` | NSApplication delegate; wires up 3 tasks, 1 WorkQueue, and 3 SQLite connections |
+| `MenuBarController.swift` | NSStatusItem menu bar UI with live stats, pause/resume, Start at Login |
+| `MigrationRunner.swift` | DB schema migration runner (Swift-native, replicates Node.js migrate.ts) |
+| `PythonSetup.swift` | Python venv auto-setup at `~/.escribano/venv` with `mlx-vlm` installation |
 | `StreamCapture.swift` | `@MainActor` SCStream capture loop with pHash dedup |
 | `FrameAnalyzer.swift` | Actor; polls frames table and drives VLM inference loop |
 | `SessionAggregator.swift` | Actor; polls observations table, drives LLM grouping, creates TopicBlocks |
@@ -74,15 +86,15 @@ ScreenCaptureKit
 | `TopicBlockStore.sqlite.adapter.swift` | `SQLiteTopicBlockStore` (actor) |
 | `VLMInferenceService.port.swift` | Protocol for VLM frame inference |
 | `TextGenerationService.port.swift` | Protocol for text generation |
-| `Logger.swift` | Global `log()` function (timestamps to stdout) |
+| `Logger.swift` | Global `log()` function (timestamps to stdout + log file) |
 | `Prompts.swift` | VLM batch prompt template |
 | `ResponseParser.swift` | Parses VLM NDJSON output |
+| `Info.plist` | App bundle metadata (`LSUIElement=true` for Dock hiding) |
 
 ## Configuration
 
-All settings are read from environment variables at startup. When installed as a LaunchAgent, these
-are injected into the plist by `npx escribano recorder install`. If you change values in
-`~/.escribano/.env`, re-run `recorder install` for the changes to take effect.
+All settings are read from `~/.escribano/.env` at startup. The app loads this file on launch and
+applies the values to the environment.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -102,23 +114,36 @@ are injected into the plist by `npx escribano recorder install`. If you change v
 ## Build & Run
 
 ```bash
-# From project root — release build
+# Build the .app bundle + DMG
+bash scripts/build-app.sh
+
+# Output: dist/Escribano.app and dist/Escribano.dmg
+
+# Install: open the DMG and drag Escribano to /Applications
+open dist/Escribano.dmg
+```
+
+The app is self-contained:
+- Runs DB migrations on first launch
+- Auto-creates Python venv at `~/.escribano/venv` with `mlx-vlm` installed
+- Shows live stats in the menu bar (frames, topic blocks, RAM)
+- Pause/Resume capture from the menu
+- Start at Login via SMAppService
+
+### Dev Mode
+
+```bash
+# Build and run the binary directly (for development)
 swift build -c release --package-path apps/recorder
+apps/recorder/.build/release/escribano
 
-# Dev mode (builds and runs the binary directly, via pnpm script)
+# Or via pnpm
 pnpm recorder:dev
-
-# Install as a LaunchAgent (runs DB migrations + installs plist, registers with launchctl)
-npx escribano recorder install
-
-# Check agent status (pending frames, disk usage, agent state)
-npx escribano recorder status
 ```
 
 > **TCC permission note:** Screen recording permission is granted to the terminal or app used to
 > run the binary. In dev mode, grant permission to Terminal.app — it persists across rebuilds.
-> For the LaunchAgent (installed via `recorder install`), grant permission to the `escribano`
-> binary itself after the first launch.
+> For the installed .app, grant permission to Escribano.app after the first launch.
 
 ## Data Flow Detail
 
@@ -215,3 +240,16 @@ npx escribano recorder install
 ```
 
 This applies pending migrations and regenerates the LaunchAgent plist.
+
+## Logging
+
+Swift logs are written to `~/.escribano/logs/recorder.log`. Python bridge logs are at
+`~/.escribano/logs/mlx-bridge-recorder-vlm.log`.
+
+```bash
+# Tail all logs
+tail -f ~/.escribano/logs/*.log
+
+# Or use macOS Console.app / log stream
+log stream --predicate 'process == "escribano"' --level debug
+```

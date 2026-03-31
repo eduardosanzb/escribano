@@ -66,6 +66,9 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
             ?? "/tmp/escribano-recorder-vlm.sock"
         if let override = ProcessInfo.processInfo.environment["ESCRIBANO_BRIDGE_PATH"] {
             bridgePath = override
+        } else if let bundled = Bundle.main.resourceURL?.appendingPathComponent("mlx_bridge.py").path,
+                  FileManager.default.fileExists(atPath: bundled) {
+            bridgePath = bundled
         } else {
             bridgePath = (ProcessInfo.processInfo.environment["HOME"] ?? "/tmp")
                 + "/.escribano/scripts/mlx_bridge.py"

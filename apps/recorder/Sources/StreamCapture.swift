@@ -3,6 +3,13 @@ import Cocoa
 import CoreMedia
 import CoreImage
 
+enum PauseReason: Hashable {
+    case backpressure
+    case screenLock
+    case sleep
+    case user
+}
+
 /// StreamCapture: Manages SCStream lifecycle and frame processing.
 @MainActor
 final class StreamCapture: NSObject {
@@ -13,15 +20,17 @@ final class StreamCapture: NSObject {
     private let pHasher     = PHash()
     private let store:       any FrameStore
     private let backpressure: Backpressure
-    
+
+    private var pauseReasons: Set<PauseReason> = []
+    private var isPaused: Bool { !pauseReasons.isEmpty }
+
     // Debugging configuration
     private let debugPHash: Bool
     private let pHashThreshold: Int
 
     private var prevPHash:    UInt64? = nil
     private var frameCounter: Int     = 0
-    private var isPaused: Bool        = false
-    
+
     // Rolling stats
     private var framesSeen:    Int = 0
     private var framesSkipped: Int = 0
@@ -34,6 +43,14 @@ final class StreamCapture: NSObject {
         return f
     }()
     private let isoFormatter = ISO8601DateFormatter()
+
+    // Churn rate detection
+    private var lastSeenPHash: UInt64? = nil       // Updated EVERY frame (for churn measurement)
+    private var churnTimestamps: [Date] = []        // Rolling window of frame-to-frame changes
+    private var isThrottled: Bool = false
+    private var lastThrottledKeptTime: Date? = nil
+    private let churnThreshold: Int                 // Unique frames/min to trigger throttle
+    private let churnThrottleInterval: TimeInterval  // Seconds between kept frames when throttled
 
     // Frame storage root (persistent): ~/.escribano/frames/
     private static var framesBaseDir: URL {
@@ -50,6 +67,8 @@ final class StreamCapture: NSObject {
         // Read debug flag and threshold from environment
         self.debugPHash = ProcessInfo.processInfo.environment["ESCRIBANO_DEBUG_PHASH"] == "true"
         self.pHashThreshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "") ?? 4
+        self.churnThreshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_CHURN_THRESHOLD"] ?? "") ?? 40
+        self.churnThrottleInterval = Double(ProcessInfo.processInfo.environment["ESCRIBANO_CHURN_THROTTLE_INTERVAL"] ?? "") ?? 30.0
         
         super.init()
 
@@ -80,18 +99,21 @@ final class StreamCapture: NSObject {
         log("[StreamCapture] Stopped.")
     }
 
-    func pause() {
-        guard !isPaused else { return }
-        isPaused = true
-        Task { try? await stream?.stopCapture() }
-        log("[StreamCapture] Paused.")
+    func pause(_ reason: PauseReason) {
+        let wasEmpty = pauseReasons.isEmpty
+        pauseReasons.insert(reason)
+        if wasEmpty {
+            Task { try? await stream?.stopCapture() }
+        }
+        log("[StreamCapture] Paused (\(reason)). Active reasons: \(pauseReasons)")
     }
 
-    func resume() {
-        guard isPaused else { return }
-        isPaused = false
-        Task { try? await stream?.startCapture() }
-        log("[StreamCapture] Resumed.")
+    func resume(_ reason: PauseReason) {
+        pauseReasons.remove(reason)
+        if pauseReasons.isEmpty {
+            Task { try? await stream?.startCapture() }
+        }
+        log("[StreamCapture] Resumed from \(reason). Active reasons: \(pauseReasons)")
     }
 
     // MARK: — Frame processing
@@ -104,13 +126,36 @@ final class StreamCapture: NSObject {
         guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
 
         let hash = pHasher.compute(cgImage)
+
+        // --- Churn detection: compare to PREVIOUS frame (updated every frame) ---
+        let churnHamming = lastSeenPHash.map { (hash ^ $0).nonzeroBitCount } ?? 0
+        lastSeenPHash = hash  // Always update — tracks actual screen change rate
+
+        let now = Date()
+        if churnHamming > pHashThreshold {
+            churnTimestamps.append(now)
+        }
+        // Prune entries older than 60 seconds
+        churnTimestamps.removeAll { now.timeIntervalSince($0) > 60.0 }
+        
+        let wasThrottled = isThrottled
+        isThrottled = churnTimestamps.count > churnThreshold
+        
+        if isThrottled && !wasThrottled {
+            log("[StreamCapture] High churn detected (\(churnTimestamps.count) changes/min > \(churnThreshold)) — throttling to 1 frame per \(Int(churnThrottleInterval))s")
+        } else if !isThrottled && wasThrottled {
+            log("[StreamCapture] Churn rate normalized (\(churnTimestamps.count) changes/min) — resuming normal capture")
+            lastThrottledKeptTime = nil
+        }
+
+        // --- Dedup: compare to last KEPT frame ---
         let hamming = prevPHash.map { (hash ^ $0).nonzeroBitCount } ?? 99
         let isDuplicate = hamming <= pHashThreshold
-        
+
         if debugPHash && !isDuplicate {
-            print("[pHash] KEEP frame=\(framesSeen) hamming=\(hamming) threshold=\(pHashThreshold)")
+            log("[pHash] KEEP frame=\(framesSeen) hamming=\(hamming) churn=\(churnTimestamps.count)/min throttled=\(isThrottled)")
         }
-        
+
         // Rolling stats every 100 frames seen
         if framesSeen % 100 == 0 {
             let kept = framesSeen - framesSkipped
@@ -124,19 +169,28 @@ final class StreamCapture: NSObject {
                 fpsLine = String(format: ", %.2f fps delivered, %.2f fps stored", deliveredFps, storedFps)
             }
             
-            print(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept — last hamming=%d threshold=%d%@", 
-                framesSeen, framesSkipped, skipPct, kept, hamming, pHashThreshold, fpsLine))
+            log(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept, churn=%d/min, throttled=%@%@",
+                framesSeen, framesSkipped, skipPct, kept, churnTimestamps.count, isThrottled ? "YES" : "NO", fpsLine))
         }
 
         if isDuplicate {
             framesSkipped += 1
             return
         }
-        
+
+        // --- Throttle gate: allow only 1 frame per churnThrottleInterval ---
+        if isThrottled {
+            if let lastKept = lastThrottledKeptTime, 
+               now.timeIntervalSince(lastKept) < churnThrottleInterval {
+                framesSkipped += 1
+                return
+            }
+            lastThrottledKeptTime = now
+        }
+
         prevPHash = hash
 
         // Metadata generation
-        let now         = Date()
         let timestamp   = now.timeIntervalSince1970
         let hashHex     = String(hash, radix: 16, uppercase: false)
 
@@ -176,7 +230,7 @@ final class StreamCapture: NSObject {
         backpressure.onFrameCaptured()
 
         if frameCounter % 100 == 0 {
-            print("[StreamCapture] \(frameCounter) frames stored in DB")
+            log("[StreamCapture] \(frameCounter) frames stored in DB")
         }
     }
 

@@ -47,6 +47,7 @@ final class MenuBarController {
     // CPU tracking state for delta-based percentage calculation
     private var prevCPUTime: UInt64 = 0
     private var prevTimestamp: Double = 0
+    private var prevBridgePID: Int32 = 0
 
     // Cached Mach timebase info for converting hardware ticks → nanoseconds
     private static let machTimebaseInfo: mach_timebase_info_data_t = {
@@ -132,11 +133,28 @@ final class MenuBarController {
         setStatus(.setup)
     }
 
+    deinit {
+        statsTimer?.invalidate()
+    }
+
     // MARK: - Status
 
     /// Updates the menu bar icon and button title to reflect the current status.
     func setStatus(_ status: Status) {
         currentStatus = status
+
+        // Clean up permission-specific UI when leaving .permissionNeeded state
+        if case .permissionNeeded = status {
+            // Will be re-added below if needed
+        } else {
+            if let relaunchItem = menu.item(withTitle: "Relaunch Escribano") {
+                menu.removeItem(relaunchItem)
+            }
+            // Restore default stats display title
+            if statsDisplaysItem.title.hasPrefix("⚠️") {
+                statsDisplaysItem.title = "Recording — —"
+            }
+        }
 
         guard let button = statusItem.button else { return }
 
@@ -271,7 +289,20 @@ final class MenuBarController {
     ///
     /// CPU% is approximated via a delta of total user+sys time between 5s polling ticks.
     private func bridgeProcessRSS(pid: Int32) -> (rssBytes: UInt64, cpuPct: Double) {
-        guard pid > 0 else { return (0, 0) }
+        guard pid > 0 else {
+            prevBridgePID = 0
+            prevCPUTime = 0
+            prevTimestamp = 0
+            return (0, 0)
+        }
+
+        // Reset CPU tracking when bridge PID changes (e.g., after restart)
+        if pid != prevBridgePID {
+            prevBridgePID = pid
+            prevCPUTime = 0
+            prevTimestamp = 0
+        }
+
         var info = proc_taskinfo()
         let size = Int32(MemoryLayout<proc_taskinfo>.size)
         let result = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, size)
@@ -283,7 +314,7 @@ final class MenuBarController {
         let elapsed = now - prevTimestamp
         let currentCPUTime = info.pti_total_user + info.pti_total_system
         var cpuPct = 0.0
-        if prevTimestamp > 0 && elapsed > 0 && prevCPUTime > 0 {
+        if prevTimestamp > 0 && elapsed > 0 && prevCPUTime > 0 && currentCPUTime >= prevCPUTime {
             // pti_total_user/system are in Mach absolute time units (hardware ticks), NOT nanoseconds.
             // Must convert ticks → ns using the timebase ratio before dividing by elapsed ns.
             let tb = MenuBarController.machTimebaseInfo

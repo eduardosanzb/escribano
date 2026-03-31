@@ -60,6 +60,7 @@ enum MigrationRunner {
         let openRc = sqlite3_open_v2(dbPath, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil)
         guard openRc == SQLITE_OK else {
             let errMsg = handle.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
+            if let h = handle { sqlite3_close(h) }
             throw MigrationError.connectionFailed(errMsg)
         }
         // Always close the handle on exit, even when an error is thrown.
@@ -176,7 +177,15 @@ enum MigrationRunner {
         }
 
         // Filter to files whose name matches the expected pattern.
-        let pattern = try! NSRegularExpression(pattern: #"^(\d+)_.+\.sql$"#)
+        let pattern: NSRegularExpression
+        do {
+            pattern = try NSRegularExpression(pattern: #"^(\d+)_.+\.sql$"#)
+        } catch {
+            // The pattern is a compile-time constant — this should never fail.
+            // If it somehow does, return an empty migration list rather than crashing.
+            log("[MigrationRunner] Warning: Failed to compile migration filename regex: \(error)")
+            return []
+        }
 
         let files: [MigrationFile] = contents.compactMap { filename -> MigrationFile? in
             let range = NSRange(filename.startIndex..., in: filename)
@@ -205,9 +214,14 @@ enum MigrationRunner {
         defer { sqlite3_finalize(stmt) }
 
         let stepRc = sqlite3_step(stmt)
-        guard stepRc == SQLITE_ROW else {
-            // Empty result set should not happen after CREATE TABLE IF NOT EXISTS, but guard anyway.
+        switch stepRc {
+        case SQLITE_ROW:
+            break
+        case SQLITE_DONE:
             return 0
+        default:
+            let errMsg = String(cString: sqlite3_errmsg(handle))
+            throw MigrationError.connectionFailed("Failed to read schema version (rc=\(stepRc)): \(errMsg)")
         }
 
         // If the table is empty, MAX(version) returns NULL (SQLITE_NULL column type).

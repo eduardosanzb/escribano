@@ -154,14 +154,47 @@ enum PythonSetup {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        // Drain pipes concurrently to prevent buffer deadlock.
+        // Pipe buffers are ~64KB — pip install easily exceeds this.
+        // Use a class-based accumulator so the @Sendable readabilityHandler closure
+        // can safely mutate shared state under NSLock (Swift 6 strict concurrency).
+        final class DataAccumulator: @unchecked Sendable {
+            private let lock = NSLock()
+            private var chunks: [Data] = []
+            func append(_ data: Data) { lock.withLock { chunks.append(data) } }
+            func collect() -> Data { lock.withLock { chunks.reduce(Data(), +) } }
+        }
+        let stdoutAcc = DataAccumulator()
+        let stderrAcc = DataAccumulator()
+
+        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty { stdoutAcc.append(data) }
+        }
+        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty { stderrAcc.append(data) }
+        }
+
         try process.run()
 
         // Timeout: poll isRunning until deadline, then terminate.
         let deadline = Date(timeIntervalSinceNow: timeout)
+        var timedOut = false
         while process.isRunning {
             if Date() > deadline {
                 process.terminate()
                 log("[PythonSetup] Process timed out after \(Int(timeout))s: \(executable)")
+                // Grace period: wait 2s for SIGTERM, then escalate to SIGKILL
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if process.isRunning {
+                    process.interrupt() // SIGINT as intermediate step
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    if process.isRunning {
+                        kill(process.processIdentifier, SIGKILL)
+                    }
+                }
+                timedOut = true
                 break
             }
             do {
@@ -174,13 +207,24 @@ enum PythonSetup {
             }
         }
 
-        process.waitUntilExit()
-        // Close write ends to guarantee EOF on read ends (prevents blocking after SIGTERM)
-        stdoutPipe.fileHandleForWriting.closeFile()
-        stderrPipe.fileHandleForWriting.closeFile()
+        if !timedOut { process.waitUntilExit() }
 
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        // Stop readability handlers and collect remaining data
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        stderrPipe.fileHandleForReading.readabilityHandler = nil
+
+        // Read any remaining data in the pipe
+        let finalStdout = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        let finalStderr = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        if !finalStdout.isEmpty {
+            stdoutAcc.append(finalStdout)
+        }
+        if !finalStderr.isEmpty {
+            stderrAcc.append(finalStderr)
+        }
+
+        let stdoutData = stdoutAcc.collect()
+        let stderrData = stderrAcc.collect()
         let stdoutStr = String(data: stdoutData, encoding: .utf8) ?? ""
         let stderrStr = String(data: stderrData, encoding: .utf8) ?? ""
 

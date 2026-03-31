@@ -215,6 +215,33 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
 
         let threshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "4") ?? 4
         log("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold) QueueStreak=\(realtimeStreak)")
+
+        // Sleep/wake hooks — pause capture during sleep, reset backoff on wake.
+        // Only install in daemon mode (not dev mode) since dev users restart manually.
+        let isDevMode = ProcessInfo.processInfo.environment["ESCRIBANO_DEV_MODE"] != nil
+            || isatty(STDIN_FILENO) != 0
+
+        if !isDevMode {
+            let ws = NSWorkspace.shared.notificationCenter
+            ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+                log("[escribano-recorder] System will sleep — pausing capture")
+                self?.captures.forEach { $0.pause() }
+            }
+            ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+                log("[escribano-recorder] System woke — resuming capture and resetting backoff")
+                self?.captures.forEach { $0.resume() }
+                // Reset analyzer and aggregator backoff since new frames are incoming
+                if let analyzer = self?.analyzer {
+                    Task { await analyzer.resetBackoff() }
+                }
+                if let aggregator = self?.aggregator {
+                    Task { await aggregator.resetBackoff() }
+                }
+            }
+            log("[escribano-recorder] Sleep/wake hooks installed (daemon mode)")
+        } else {
+            log("[escribano-recorder] Dev mode detected — sleep/wake hooks disabled")
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

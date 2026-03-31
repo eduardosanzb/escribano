@@ -25,6 +25,7 @@ final class StreamCapture: NSObject {
     // Rolling stats
     private var framesSeen:    Int = 0
     private var framesSkipped: Int = 0
+    private var captureStartTime: Date?
 
     // Reuse formatters — DateFormatter allocation is expensive (~5ms each)
     private let dayFormatter: DateFormatter = {
@@ -66,6 +67,7 @@ final class StreamCapture: NSObject {
         
         try stream?.addStreamOutput(bridge, type: .screen, sampleHandlerQueue: .main)
         try await stream?.startCapture()
+        captureStartTime = Date()
 
         print("[StreamCapture] Started — display \(displayID), \(display.width/2)x\(display.height/2)")
         if debugPHash {
@@ -113,8 +115,17 @@ final class StreamCapture: NSObject {
         if framesSeen % 100 == 0 {
             let kept = framesSeen - framesSkipped
             let skipPct = (Double(framesSkipped) / Double(framesSeen)) * 100.0
-            print(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept — last hamming=%d threshold=%d", 
-                framesSeen, framesSkipped, skipPct, kept, hamming, pHashThreshold))
+            
+            var fpsLine = ""
+            if let start = captureStartTime {
+                let elapsed = Date().timeIntervalSince(start)
+                let deliveredFps = elapsed > 0 ? Double(framesSeen) / elapsed : 0
+                let storedFps = elapsed > 0 ? Double(frameCounter) / elapsed : 0
+                fpsLine = String(format: ", %.2f fps delivered, %.2f fps stored", deliveredFps, storedFps)
+            }
+            
+            print(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept — last hamming=%d threshold=%d%@", 
+                framesSeen, framesSkipped, skipPct, kept, hamming, pHashThreshold, fpsLine))
         }
 
         if isDuplicate {

@@ -36,6 +36,9 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var screenLockObserver: ScreenLockObserver?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Load .env file early, before any components read environment variables
+        loadEnvFile()
+        
         signal(SIGTERM) { _ in
             DispatchQueue.main.async {
                 log("[escribano-recorder] SIGTERM — shutting down")

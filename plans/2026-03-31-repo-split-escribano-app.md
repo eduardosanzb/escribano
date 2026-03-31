@@ -35,10 +35,10 @@ Public: escribano (current repo)
 ### Phase 1: Prepare Private Repo Structure
 
 #### Unit 1.1: Create private repo on GitHub
-- **Type:** Manual (user action)
-- **Description:** Create new private repository `escribano-app` on GitHub
-- **Command:** User does this in GitHub UI
-- **Verification:** Repo exists at `git@github.com:eduardosanzb/escribano-app.git`
+- **Type:** Implementation
+- **Description:** Create new private repository `escribano-app` using gh CLI
+- **Command:** `gh repo create escribano-app --private --description "Escribano Swift recorder (private)"`
+- **Verification:** `gh repo view eduardosanzb/escribano-app` succeeds
 
 #### Unit 1.2: Initialize private repo with Swift code
 - **Type:** Implementation
@@ -179,7 +179,7 @@ Public: escribano (current repo)
 
 ```
 Phase 1 (Private Repo Setup)
-├── Unit 1.1 ─── Manual (user creates GitHub repo)
+├── Unit 1.1 ─── Implementation (gh repo create)
 ├── Unit 1.2 ─── After 1.1
 ├── Unit 1.3 ─── After 1.2
 └── Unit 1.4 ─── After 1.3
@@ -206,7 +206,7 @@ Phase 4 (Finalize) — Must be last
 ## Parallelization Strategy
 
 **Batch 1 (Can run in parallel):**
-- Unit 1.1 (manual) — user creates repo
+- Unit 1.1 — create repo via gh CLI
 - Unit 2.1, 2.2, 2.3, 2.5, 2.6, 2.7, 3.1 — all independent
 
 **Batch 2 (After Batch 1):**
@@ -231,8 +231,7 @@ Phase 4 (Finalize) — Must be last
 
 ## User Decisions Required
 
-1. **Create the private repo** — User must create `escribano-app` on GitHub (Unit 1.1)
-2. **Worktree preference** — Does user want to work in a new worktree or current directory?
+1. **Worktree preference** — Does user want to work in a new worktree or current directory?
 
 ---
 

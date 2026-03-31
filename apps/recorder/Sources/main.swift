@@ -24,8 +24,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var obsStore: (any ObservationStore)?
     private var analyzer: FrameAnalyzer?
     private var analyzerTask: Task<Void, Never>?
-    private var vlmAdapter: PythonBridgeVLMAdapter?
-    private var workQueue: WorkQueue?
+    private var inferenceQueue: InferenceQueue?
     private var analyzerFrameStore: (any FrameStore)?
     private var tbStore: (any TopicBlockStore)?
     private var aggregator: SessionAggregator?
@@ -149,36 +148,35 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             exit(1)
         }
         self.analyzerFrameStore = analyzerFrameStore
-        // 2. Create the VLM adapter (Python bridge) and inject it into FrameAnalyzer.
-        //    Also store a direct reference so applicationWillTerminate can call
-        //    terminateSync() without needing an async context.
-        let vlmService = PythonBridgeVLMAdapter()
-        self.vlmAdapter = vlmService
+        // 2. Create the inference worker and queue.
+        //    InferenceQueue owns the worker lifecycle — callers never see the bridge.
+        let worker = PythonBridgeVLMAdapter()
         let realtimeStreak = Int(
             ProcessInfo.processInfo.environment["ESCRIBANO_QUEUE_REALTIME_STREAK"] ?? ""
         ) ?? 10
-        let workQueue = WorkQueue(maxRealtimeStreak: realtimeStreak)
-        self.workQueue = workQueue
-        let analyzer = FrameAnalyzer(frameStore: analyzerFrameStore, obsStore: obsStore, vlmService: vlmService, queue: workQueue)
+        let inferenceQueue = InferenceQueue(workers: [worker], maxRealtimeStreak: realtimeStreak)
+        self.inferenceQueue = inferenceQueue
+
+        // Start workers (blocks until Python bridge is ready and model is loaded)
+        do {
+            try await inferenceQueue.startWorkers()
+        } catch {
+            log("[escribano-recorder] FATAL: Failed to start inference workers: \(error.localizedDescription)")
+            exit(1)
+        }
+        log("[escribano-recorder] Inference queue ready.")
+
+        let analyzer = FrameAnalyzer(frameStore: analyzerFrameStore, obsStore: obsStore, queue: inferenceQueue)
         self.analyzer = analyzer
-        // 3. Start the analyzer in a background Task. start() blocks until the Python
-        //    process is ready, then analyzeLoop() runs forever without blocking capture.
         self.analyzerTask = Task {
-            do {
-                try await analyzer.start()
-            } catch {
-                log("[FrameAnalyzer] Failed to start: \(error.localizedDescription)")
-                return
-            }
             await analyzer.analyzeLoop()
         }
-        log("[escribano-recorder] VLM analyzer task started.")
+        log("[escribano-recorder] FrameAnalyzer task started.")
 
-        // 4. Create TopicBlockStore and SessionAggregator for Phase 3a.
+        // 3. Create TopicBlockStore and SessionAggregator for Phase 3a.
         //    The aggregator polls unclaimed observations every TB_POLL_INTERVAL
         //    and groups them into TopicBlocks using the VLM bridge for semantic grouping.
-        //    Note: The bridge is started by FrameAnalyzer.analyzer.start() above.
-        //    SessionAggregator will wait for textService.isStarted before processing.
+        //    The inference queue is already started — workers are ready.
         let tbStore: any TopicBlockStore
         do {
             tbStore = try SQLiteTopicBlockStore(path: dbPath)
@@ -191,17 +189,13 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         }
         self.tbStore = tbStore
 
-        // vlmService conforms to both VLMInferenceService and TextGenerationService
         let aggregator = SessionAggregator(
             obsStore: obsStore,
             tbStore: tbStore,
-            textService: vlmService,
-            queue: workQueue
+            queue: inferenceQueue
         )
         self.aggregator = aggregator
         self.aggregatorTask = Task {
-            // Bridge is already up (analyzer.start() awaited above).
-            // WorkQueue serialises bridge calls — SA starts immediately.
             await aggregator.aggregateLoop()
         }
         log("[escribano-recorder] SessionAggregator task started.")
@@ -248,17 +242,17 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         log("[escribano-recorder] applicationWillTerminate — cleaning up")
-        // Cancel all pending WorkQueue entries first — resumes their continuations
-        // with CancellationError so they don't leak when the bridge is killed.
-        if let workQueue {
-            Task { await workQueue.cancelAll() }
+        // Cancel all pending queue entries first — resumes their continuations
+        // with CancellationError so they don't leak when workers are killed.
+        if let inferenceQueue {
+            Task { await inferenceQueue.cancelAll() }
         }
         // Cancel the analyzer and aggregator tasks so their loops exit cleanly.
         analyzerTask?.cancel()
         aggregatorTask?.cancel()
-        // Kill the Python bridge. Child processes are NOT automatically killed when the
+        // Kill worker processes. Child processes are NOT automatically killed when the
         // parent exits on macOS — they become orphaned without this explicit call.
-        vlmAdapter?.terminateSync()
+        inferenceQueue?.terminateWorkersSync()
         // Close synchronous (class-based) frame store handles.
         store?.close()
         analyzerFrameStore?.close()

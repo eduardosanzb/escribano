@@ -33,6 +33,7 @@ actor InferenceQueue {
         let sequence: UInt64
         let work: @Sendable () async -> Void
         let cancel: @Sendable () -> Void
+        let fail: @Sendable (Error) -> Void
     }
 
     // MARK: - State
@@ -117,6 +118,9 @@ actor InferenceQueue {
                     },
                     cancel: {
                         cont.resume(throwing: CancellationError())
+                    },
+                    fail: { error in
+                        cont.resume(throwing: error)
                     }
                 )
                 queue.append(entry)
@@ -182,14 +186,27 @@ actor InferenceQueue {
         }
     }
 
+    /// Drain the queue resuming all pending continuations with a specific error.
+    /// Used when the circuit breaker opens — callers need to distinguish bridge
+    /// death from user cancellation so they can take the correct cleanup path.
+    private func drainWithError(_ error: Error) {
+        let pending = queue
+        queue.removeAll()
+        for entry in pending {
+            entry.fail(error)
+        }
+        if !pending.isEmpty {
+            log("[InferenceQueue] Drained \(pending.count) pending entries with error: \(error.localizedDescription)")
+        }
+    }
+
     private func processLoop() async {
         while let entry = pickNext() {
             // Health check: verify worker is alive before running the job
             await ensureWorkerHealthy()
             if circuitOpen {
-                // Worker is dead and unrecoverable — cancel this and remaining entries
-                entry.cancel()
-                cancelAll()
+                entry.fail(PythonBridgeError.bridgeDied)
+                drainWithError(PythonBridgeError.bridgeDied)
                 break
             }
             await entry.work()

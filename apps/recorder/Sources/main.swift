@@ -224,18 +224,20 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         if !isDevMode {
             let ws = NSWorkspace.shared.notificationCenter
             ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-                log("[escribano-recorder] System will sleep — pausing capture")
-                self?.captures.forEach { $0.pause() }
+                Task { @MainActor in
+                    guard let self else { return }
+                    log("[escribano-recorder] System will sleep — pausing capture")
+                    self.captures.forEach { $0.pause() }
+                }
             }
             ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-                log("[escribano-recorder] System woke — resuming capture and resetting backoff")
-                self?.captures.forEach { $0.resume() }
-                // Reset analyzer and aggregator backoff since new frames are incoming
-                if let analyzer = self?.analyzer {
-                    Task { await analyzer.resetBackoff() }
-                }
-                if let aggregator = self?.aggregator {
-                    Task { await aggregator.resetBackoff() }
+                Task { @MainActor in
+                    guard let self else { return }
+                    log("[escribano-recorder] System woke — resuming capture and resetting backoff")
+                    self.captures.forEach { $0.resume() }
+                    // Reset analyzer and aggregator backoff since new frames are incoming
+                    await self.analyzer?.resetBackoff()
+                    await self.aggregator?.resetBackoff()
                 }
             }
             log("[escribano-recorder] Sleep/wake hooks installed (daemon mode)")
@@ -246,6 +248,11 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         log("[escribano-recorder] applicationWillTerminate — cleaning up")
+        // Cancel all pending WorkQueue entries first — resumes their continuations
+        // with CancellationError so they don't leak when the bridge is killed.
+        if let workQueue {
+            Task { await workQueue.cancelAll() }
+        }
         // Cancel the analyzer and aggregator tasks so their loops exit cleanly.
         analyzerTask?.cancel()
         aggregatorTask?.cancel()

@@ -186,13 +186,9 @@ actor InferenceQueue {
 
         // Worker is down — attempt restart with backoff
         log("[InferenceQueue] Worker not healthy — attempting restart...")
+        // Restart loop: try each delay, check circuit breaker AFTER failed attempt.
+        // Delays are applied between failed attempts (5s → 10s → 20s → 40s → 60s).
         for (attempt, delay) in restartDelays.enumerated() {
-            workerFailureCount += 1
-            if workerFailureCount >= maxRestartAttempts {
-                log("[InferenceQueue] FATAL: Worker failed \(workerFailureCount) times — circuit open, stopping all inference")
-                circuitOpen = true
-                return
-            }
             await worker.stop()
             do {
                 try await worker.start()
@@ -200,7 +196,13 @@ actor InferenceQueue {
                 workerFailureCount = 0
                 return
             } catch {
+                workerFailureCount += 1
                 log("[InferenceQueue] Restart attempt \(attempt + 1)/\(restartDelays.count) failed: \(error.localizedDescription)")
+                if workerFailureCount >= maxRestartAttempts {
+                    log("[InferenceQueue] FATAL: Worker failed \(workerFailureCount) times — circuit open, stopping all inference")
+                    circuitOpen = true
+                    return
+                }
                 if attempt < restartDelays.count - 1 {
                     try? await Task.sleep(for: .seconds(delay))
                 }

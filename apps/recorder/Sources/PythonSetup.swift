@@ -74,11 +74,13 @@ enum PythonSetup {
             log("[PythonSetup] Venv created successfully.")
         }
 
-        // Install packages
+        // Install packages (always fire progress before pip, regardless of whether venv is new or reused)
         progress("Installing ML packages (first run — may take several minutes)...")
         log("[PythonSetup] Installing packages: \(requiredPackages.joined(separator: ", "))")
 
-        let pip3Path = venvPath + "/bin/pip3"
+        let pip3Candidate = venvPath + "/bin/pip3"
+        let pipCandidate  = venvPath + "/bin/pip"
+        let pip3Path = FileManager.default.fileExists(atPath: pip3Candidate) ? pip3Candidate : pipCandidate
         let (pipExit, _, pipStderr) = try await runProcess(
             executable: pip3Path,
             arguments: ["install"] + requiredPackages,
@@ -162,10 +164,20 @@ enum PythonSetup {
                 log("[PythonSetup] Process timed out after \(Int(timeout))s: \(executable)")
                 break
             }
-            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            do {
+                try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            } catch {
+                // Task cancelled — kill child before propagating.
+                process.terminate()
+                process.waitUntilExit()
+                throw error
+            }
         }
 
         process.waitUntilExit()
+        // Close write ends to guarantee EOF on read ends (prevents blocking after SIGTERM)
+        stdoutPipe.fileHandleForWriting.closeFile()
+        stderrPipe.fileHandleForWriting.closeFile()
 
         let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
         let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()

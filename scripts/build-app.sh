@@ -30,7 +30,14 @@ cp "$RECORDER_DIR/.build/release/escribano" "$CONTENTS/MacOS/escribano"
 cp "$INFO_PLIST" "$CONTENTS/Info.plist"
 
 # Resources: migration SQL files
-cp "$REPO_ROOT"/migrations/*.sql "$CONTENTS/Resources/migrations/"
+shopt -s nullglob
+SQL_FILES=("$REPO_ROOT"/migrations/*.sql)
+shopt -u nullglob
+if [ ${#SQL_FILES[@]} -eq 0 ]; then
+  echo "Warning: No .sql migration files found in $REPO_ROOT/migrations/" >&2
+else
+  cp "${SQL_FILES[@]}" "$CONTENTS/Resources/migrations/"
+fi
 
 # Resources: Python bridge script
 cp "$REPO_ROOT/scripts/mlx_bridge.py" "$CONTENTS/Resources/mlx_bridge.py"
@@ -44,7 +51,7 @@ else
   IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
     | grep -E '"(Apple Development|Developer ID Application):' \
     | head -1 \
-    | awk -F'"' '{print $2}')
+    | awk -F'"' '{print $2}') || true
 fi
 
 if [ -n "$IDENTITY" ]; then

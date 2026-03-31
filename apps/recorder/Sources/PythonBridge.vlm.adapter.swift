@@ -47,7 +47,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     /// synchronously without an async context. nonisolated(unsafe) is safe here
     /// because storedPID is only written once (in start()) before any concurrent
     /// reads, and reads in terminateSync() are always after that write.
-    private nonisolated(unsafe) var storedPID: Int32 = 0
+    internal nonisolated(unsafe) var storedPID: Int32 = 0
 
     // MARK: - Init
 

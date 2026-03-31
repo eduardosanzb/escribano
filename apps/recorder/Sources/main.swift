@@ -321,14 +321,11 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Start stats timer
-        // Note: storedPID is private on PythonBridgeVLMAdapter; bridge RSS/CPU stats
-        // are not available from this scope. Pass 0 so bridgeProcessRSS returns (0,0)
-        // gracefully — the menu bar will show "—" for bridge CPU which is acceptable.
         menuBar.startStatsTimer(
             frameStore: store,
             tbStore: tbStore,
             displayCount: captures.count,
-            bridgePID: { 0 }
+            bridgePID: { [vlmAdapter] in vlmAdapter?.storedPID ?? 0 }
         )
     }
 

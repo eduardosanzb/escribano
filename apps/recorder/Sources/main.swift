@@ -84,8 +84,14 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/bin/launchctl")
             proc.arguments = ["bootout", "gui/\(uid)/com.escribano.capture"]
-            try? proc.run()
-            proc.waitUntilExit()
+            do {
+                try proc.run()
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    proc.terminationHandler = { _ in continuation.resume() }
+                }
+            } catch {
+                log("[escribano-recorder] launchctl bootout failed to launch: \(error)")
+            }
             try? FileManager.default.removeItem(at: oldPlist)
             log("[escribano-recorder] Old LaunchAgent removed")
         }
@@ -138,14 +144,14 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             log("[escribano-recorder] Screen Recording permission not granted.")
             CGRequestScreenCaptureAccess()
             menuBar.setStatus(.permissionNeeded)
-            menuBar.onRelaunch = {
-                // Spawn a new instance and quit
-                if let bundleURL = Bundle.main.bundleURL as URL? {
+            menuBar.onRelaunch = { [weak menuBar] in
+                _ = menuBar // suppress unused capture warning if needed
+                Task { @MainActor in
+                    let bundleURL = Bundle.main.bundleURL
                     let config = NSWorkspace.OpenConfiguration()
                     config.createsNewApplicationInstance = true
                     NSWorkspace.shared.openApplication(at: bundleURL, configuration: config) { _, _ in }
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
                     NSApp.terminate(nil)
                 }
             }

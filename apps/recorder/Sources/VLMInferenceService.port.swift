@@ -1,36 +1,33 @@
 import Foundation
-// MARK: - VLMInferenceService (Port)
+// MARK: - InferenceWorker (Port)
 //
-// Port interface for VLM inference.
+// Unified port for VLM frame inference + text generation.
 //
-// "Port" = a protocol that defines what the business logic (FrameAnalyzer) needs.
-// "Adapter" = a concrete type that implements the protocol for a specific backend.
+// Previously split across VLMInferenceService and TextGenerationService,
+// merged because the same physical backend (Python bridge) handles both.
+// The InferenceQueue owns worker lifecycle (start/stop/restart).
+// Callers (FrameAnalyzer, SessionAggregator) never see this protocol —
+// they only interact with InferenceQueue.
 //
-// Think of it like a power outlet (port) vs. a plug (adapter):
-//   - The outlet shape is fixed — that's this protocol.
-//   - You can have a US plug, a UK plug, etc. — those are adapters.
-//   - The lamp (FrameAnalyzer) just plugs in — it doesn't care which country it's in.
-//
-// Current adapter: PythonBridgeVLMAdapter — calls mlx_bridge.py via Unix socket.
-// Future adapters could be: a pure-Swift CoreML adapter, a cloud API adapter, etc.
-//
-// Why "AnyObject, Sendable"?
-//   Same reason as ObservationStore: FrameAnalyzer is an actor, and Swift 6 requires
-//   anything stored in an actor to be Sendable. "AnyObject" restricts to classes/actors,
-//   which have reference semantics Swift can reason about across isolation boundaries.
-protocol VLMInferenceService: AnyObject, Sendable {
+// Design: dumb process wrapper. isReady/start()/stop()/ping() for lifecycle,
+// analyzeFrames()/generateText() for inference. No restart logic, no state machine.
+protocol InferenceWorker: AnyObject, Sendable {
+    /// Whether the worker is ready to accept inference requests.
+    var isReady: Bool { get async }
     /// Start the inference backend (spawn process, connect socket, load model).
-    /// Called once at startup. Idempotent — safe to call multiple times.
+    /// Called by InferenceQueue. Idempotent — safe to call when already started.
     func start() async throws
-    /// Run VLM inference on a batch of frames.
-    /// - Parameter frames: DB rows; `.imagePath` fields are read as JPEG inputs.
-    /// - Returns: One `FrameDescription` per frame. Count MAY be less than input
-    ///   if the VLM output was malformed (parser couldn't extract a frame).
-    func runBatch(frames: [DbFrame]) async throws -> [FrameDescription]
     /// Gracefully shut down the inference backend.
-    /// Called on SIGTERM / app shutdown.
+    /// Called by InferenceQueue on restart or shutdown.
     func stop() async
+    /// Zero-cost health check. Returns true if the backend is responsive.
+    /// Used by InferenceQueue to verify worker health before dispatching jobs.
+    func ping() async throws -> Bool
     /// Synchronously terminate the underlying process.
     /// For use in applicationWillTerminate where async context is unavailable.
     nonisolated func terminateSync()
+    /// Run VLM inference on a batch of frames.
+    func analyzeFrames(frames: [DbFrame]) async throws -> [FrameDescription]
+    /// Generate text from a prompt using the loaded model.
+    func generateText(prompt: String, maxTokens: Int) async throws -> String
 }

@@ -465,6 +465,10 @@ def handle_request(
             )
             return
 
+        if method == "ping":
+            send_response(conn, {"id": request_id, "pong": True, "text": "", "done": True})
+            return
+
         if method == "vlm_infer":
             handle_vlm_infer(
                 conn, model_obj, processor_obj, config_obj, params, request_id

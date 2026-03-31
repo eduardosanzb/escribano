@@ -14,6 +14,17 @@ Close the loop from always-on capture → automatic artifact generation → user
 - [ ] Rebase PR #54 (code quality improvements) on main, resolve conflicts, merge
 - [ ] Verify recorder + bridge + aggregator working end-to-end after merges
 
+## Tier 2: Recorder Quality (Post-Prerequisites)
+
+- [ ] **Test coverage for recorder actors** — Unit tests for FrameAnalyzer bridge recovery, SessionAggregator backoff, WorkQueue fairness
+- [ ] **`recorder status` improvements** — Show bridge state (ready/dead/restarting), backoff intervals, failure counts
+- [ ] **Frame cleanup job** — Delete JPEG files for frames older than 7 days (currently frames accumulate forever)
+
+## Tier 3: Performance Optimization
+
+- [ ] **VLM idle unload** — Unload model from GPU memory after N minutes of inactivity, reload on next frame batch
+- [ ] **Adaptive batch sizing** — Increase batch size when queue is deep, decrease when shallow
+
 ## Week 1: Core Product Loop
 
 ### Phase 3b: Time-Range Artifact Generation (Days 1-3)

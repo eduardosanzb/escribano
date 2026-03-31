@@ -26,15 +26,10 @@ actor SQLiteObservationStore: ObservationStore {
             throw ObservationStoreError.connectionFailed(errMsg)
         }
         // Match Node.js pragma config exactly (src/db/index.ts:42-45)
-        let pragmas = [
-            "PRAGMA journal_mode = WAL",
-            "PRAGMA synchronous = NORMAL",
-            "PRAGMA foreign_keys = ON",
-            "PRAGMA busy_timeout = 5000"
-        ]
-        for pragma in pragmas {
-            sqlite3_exec(handle, pragma, nil, nil, nil)
-        }
+        try Self.checkedExec(handle, "PRAGMA journal_mode = WAL")
+        try Self.checkedExec(handle, "PRAGMA synchronous = NORMAL")
+        try Self.checkedExec(handle, "PRAGMA foreign_keys = ON")
+        try Self.checkedExec(handle, "PRAGMA busy_timeout = 5000")
 
         // Schema version check (matches FrameStore pattern)
         var version: Int32 = 0
@@ -65,9 +60,11 @@ actor SQLiteObservationStore: ObservationStore {
                vlm_description, activity_type, apps, topics, vlm_stats, created_at)
             VALUES (?, ?, 'visual', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         """
+        try exec("BEGIN")
         for (frame, desc) in zip(frames, descriptions) {
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK else {
+                try? exec("ROLLBACK")
                 throw ObservationStoreError.insertFailed(String(cString: sqlite3_errmsg(handle)))
             }
             defer { sqlite3_finalize(stmt) }
@@ -101,9 +98,11 @@ actor SQLiteObservationStore: ObservationStore {
             }
             let rc = sqlite3_step(stmt)
             guard rc == SQLITE_DONE else {
+                try? exec("ROLLBACK")
                 throw ObservationStoreError.insertFailed(String(cString: sqlite3_errmsg(handle)))
             }
         }
+        try exec("COMMIT")
     }
     /// Fetch observations not yet claimed by any TopicBlock.
     func fetchUnclaimed(limit: Int) async throws -> [UnclaimedObservation] {
@@ -227,6 +226,18 @@ actor SQLiteObservationStore: ObservationStore {
         return arr
     }
     private func exec(_ sql: String) throws {
+        var errmsg: UnsafeMutablePointer<CChar>?
+        let rc = sqlite3_exec(handle, sql, nil, nil, &errmsg)
+        guard rc == SQLITE_OK else {
+            let msg = errmsg.map { String(cString: $0) } ?? "unknown"
+            sqlite3_free(errmsg)
+            throw ObservationStoreError.queryFailed(msg)
+        }
+    }
+    /// Nonisolated variant of exec() that can be called from init().
+    /// Actor-isolated methods cannot be called from synchronous init(),
+    /// so we use a static helper that takes the handle explicitly.
+    private static func checkedExec(_ handle: OpaquePointer?, _ sql: String) throws {
         var errmsg: UnsafeMutablePointer<CChar>?
         let rc = sqlite3_exec(handle, sql, nil, nil, &errmsg)
         guard rc == SQLITE_OK else {

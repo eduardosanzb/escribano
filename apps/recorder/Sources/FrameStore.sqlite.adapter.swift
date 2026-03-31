@@ -120,8 +120,10 @@ final class SQLiteFrameStore: FrameStore, @unchecked Sendable {
         }
         defer { sqlite3_finalize(stmt) }
 
-        // sqlite3_step advances to the first (and only) row
-        sqlite3_step(stmt)
+        let stepRc = sqlite3_step(stmt)
+        guard stepRc == SQLITE_ROW else {
+            throw FrameStoreError.queryFailed("COUNT(*) returned no rows (rc=\(stepRc))")
+        }
 
         // Column 0 contains the COUNT(*) result
         return Int(sqlite3_column_int(stmt, 0))
@@ -212,10 +214,15 @@ final class SQLiteFrameStore: FrameStore, @unchecked Sendable {
     /// This is set by the Node.js migration runner after each migration.
     private func getUserVersion() throws -> Int32 {
         var stmt: OpaquePointer?
-        sqlite3_prepare_v2(handle, "PRAGMA user_version", -1, &stmt, nil)
-        // defer: ensures the statement is finalized when the function returns
+        guard sqlite3_prepare_v2(handle, "PRAGMA user_version", -1, &stmt, nil) == SQLITE_OK else {
+            let errMsg = String(cString: sqlite3_errmsg(handle))
+            throw FrameStoreError.queryFailed("Failed to prepare PRAGMA user_version: \(errMsg)")
+        }
         defer { sqlite3_finalize(stmt) }
-        sqlite3_step(stmt)
+        let stepRc = sqlite3_step(stmt)
+        guard stepRc == SQLITE_ROW else {
+            throw FrameStoreError.queryFailed("PRAGMA user_version returned no rows (rc=\(stepRc))")
+        }
         return sqlite3_column_int(stmt, 0)
     }
 

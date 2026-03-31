@@ -20,15 +20,10 @@ actor SQLiteTopicBlockStore: TopicBlockStore {
             throw TopicBlockStoreError.connectionFailed(errMsg)
         }
 
-        let pragmas = [
-            "PRAGMA journal_mode = WAL",
-            "PRAGMA synchronous = NORMAL",
-            "PRAGMA foreign_keys = ON",
-            "PRAGMA busy_timeout = 5000",
-        ]
-        for pragma in pragmas {
-            sqlite3_exec(handle, pragma, nil, nil, nil)
-        }
+        try Self.exec(handle, "PRAGMA journal_mode = WAL")
+        try Self.exec(handle, "PRAGMA synchronous = NORMAL")
+        try Self.exec(handle, "PRAGMA foreign_keys = ON")
+        try Self.exec(handle, "PRAGMA busy_timeout = 5000")
 
         // Schema version check — the adapter cannot run migrations.
         // The Node.js CLI (escribano recorder install) is responsible for running migrations.
@@ -48,7 +43,10 @@ actor SQLiteTopicBlockStore: TopicBlockStore {
             throw TopicBlockStoreError.queryFailed("Failed to prepare PRAGMA user_version")
         }
         defer { sqlite3_finalize(stmt) }
-        sqlite3_step(stmt)
+        let stepRc = sqlite3_step(stmt)
+        guard stepRc == SQLITE_ROW else {
+            throw TopicBlockStoreError.queryFailed("PRAGMA user_version returned no rows (rc=\(stepRc))")
+        }
         return sqlite3_column_int(stmt, 0)
     }
 
@@ -93,12 +91,27 @@ actor SQLiteTopicBlockStore: TopicBlockStore {
             throw TopicBlockStoreError.queryFailed(String(cString: sqlite3_errmsg(handle)))
         }
         defer { sqlite3_finalize(stmt) }
-        sqlite3_step(stmt)
+        let stepRc = sqlite3_step(stmt)
+        guard stepRc == SQLITE_ROW else {
+            throw TopicBlockStoreError.queryFailed("COUNT(*) returned no rows (rc=\(stepRc))")
+        }
         return Int(sqlite3_column_int(stmt, 0))
     }
 
     func close() async {
         sqlite3_close(handle)
         handle = nil
+    }
+
+    /// Actor-isolated methods cannot be called from synchronous init(),
+    /// so we use a static helper that takes the handle explicitly.
+    private static func exec(_ handle: OpaquePointer?, _ sql: String) throws {
+        var errmsg: UnsafeMutablePointer<CChar>?
+        let rc = sqlite3_exec(handle, sql, nil, nil, &errmsg)
+        guard rc == SQLITE_OK else {
+            let msg = errmsg.map { String(cString: $0) } ?? "unknown"
+            sqlite3_free(errmsg)
+            throw TopicBlockStoreError.queryFailed(msg)
+        }
     }
 }

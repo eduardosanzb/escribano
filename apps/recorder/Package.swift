@@ -14,7 +14,8 @@ let package = Package(
             dependencies: [],
             path: "Sources",
             linkerSettings: [
-                .linkedLibrary("sqlite3")
+                .linkedLibrary("sqlite3"),
+                .linkedLibrary("proc")   // for proc_pidinfo / proc_taskinfo
             ]
         )
     ]

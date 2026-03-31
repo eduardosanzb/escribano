@@ -48,6 +48,13 @@ final class MenuBarController {
     private var prevCPUTime: UInt64 = 0
     private var prevTimestamp: Double = 0
 
+    // Cached Mach timebase info for converting hardware ticks → nanoseconds
+    private static let machTimebaseInfo: mach_timebase_info_data_t = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info
+    }()
+
     // MARK: - Public Closures
 
     /// Called when the user toggles pause/resume. `true` = pause, `false` = resume.
@@ -194,13 +201,15 @@ final class MenuBarController {
         statsDisplaysItem.title = "Recording — \(displayCount) display(s)"
 
         statsTimer?.invalidate()
-        statsTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.refreshStats(frameStore: frameStore, tbStore: tbStore, bridgePID: bridgePID)
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        statsTimer = timer
         // Fire once immediately
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -275,8 +284,10 @@ final class MenuBarController {
         let currentCPUTime = info.pti_total_user + info.pti_total_system
         var cpuPct = 0.0
         if prevTimestamp > 0 && elapsed > 0 && prevCPUTime > 0 {
-            // pti_total_user/system are in Mach time units (nanoseconds on Apple Silicon)
-            let deltaCPUNs = Double(currentCPUTime &- prevCPUTime)
+            // pti_total_user/system are in Mach absolute time units (hardware ticks), NOT nanoseconds.
+            // Must convert ticks → ns using the timebase ratio before dividing by elapsed ns.
+            let tb = MenuBarController.machTimebaseInfo
+            let deltaCPUNs = Double(currentCPUTime &- prevCPUTime) * Double(tb.numer) / Double(tb.denom)
             let elapsedNs = elapsed * 1_000_000_000.0
             cpuPct = (deltaCPUNs / elapsedNs) * 100.0
         }
@@ -316,11 +327,11 @@ final class MenuBarController {
     @objc private func toggleStartAtLogin() {
         if SMAppService.mainApp.status == .enabled {
             try? SMAppService.mainApp.unregister()
-            startAtLoginItem.state = .off
         } else {
             try? SMAppService.mainApp.register()
-            startAtLoginItem.state = .on
         }
+        // Reflect actual state, not assumed state
+        startAtLoginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 
     @objc private func quitApp() {

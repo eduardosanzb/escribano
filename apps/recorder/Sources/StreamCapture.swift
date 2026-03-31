@@ -26,6 +26,14 @@ final class StreamCapture: NSObject {
     private var framesSeen:    Int = 0
     private var framesSkipped: Int = 0
 
+    // Churn rate detection
+    private var lastSeenPHash: UInt64? = nil       // Updated EVERY frame (for churn measurement)
+    private var churnTimestamps: [Date] = []        // Rolling window of frame-to-frame changes
+    private var isThrottled: Bool = false
+    private var lastThrottledKeptTime: Date? = nil
+    private let churnThreshold: Int                 // Unique frames/min to trigger throttle
+    private let churnThrottleInterval: TimeInterval  // Seconds between kept frames when throttled
+
     // Frame storage root (persistent): ~/.escribano/frames/
     private static var framesBaseDir: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -41,6 +49,8 @@ final class StreamCapture: NSObject {
         // Read debug flag and threshold from environment
         self.debugPHash = ProcessInfo.processInfo.environment["ESCRIBANO_DEBUG_PHASH"] == "true"
         self.pHashThreshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "") ?? 4
+        self.churnThreshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_CHURN_THRESHOLD"] ?? "") ?? 40
+        self.churnThrottleInterval = Double(ProcessInfo.processInfo.environment["ESCRIBANO_CHURN_THROTTLE_INTERVAL"] ?? "") ?? 30.0
         
         super.init()
 
@@ -94,30 +104,62 @@ final class StreamCapture: NSObject {
         guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
 
         let hash = pHasher.compute(cgImage)
+
+        // --- Churn detection: compare to PREVIOUS frame (updated every frame) ---
+        let churnHamming = lastSeenPHash.map { (hash ^ $0).nonzeroBitCount } ?? 0
+        lastSeenPHash = hash  // Always update — tracks actual screen change rate
+
+        let now = Date()
+        if churnHamming > pHashThreshold {
+            churnTimestamps.append(now)
+        }
+        // Prune entries older than 60 seconds
+        churnTimestamps.removeAll { now.timeIntervalSince($0) > 60.0 }
+        
+        let wasThrottled = isThrottled
+        isThrottled = churnTimestamps.count > churnThreshold
+        
+        if isThrottled && !wasThrottled {
+            print("[StreamCapture] High churn detected (\(churnTimestamps.count) changes/min > \(churnThreshold)) — throttling to 1 frame per \(Int(churnThrottleInterval))s")
+        } else if !isThrottled && wasThrottled {
+            print("[StreamCapture] Churn rate normalized (\(churnTimestamps.count) changes/min) — resuming normal capture")
+            lastThrottledKeptTime = nil
+        }
+
+        // --- Dedup: compare to last KEPT frame ---
         let hamming = prevPHash.map { (hash ^ $0).nonzeroBitCount } ?? 99
         let isDuplicate = hamming <= pHashThreshold
-        
+
         if debugPHash && !isDuplicate {
-            print("[pHash] KEEP frame=\(framesSeen) hamming=\(hamming) threshold=\(pHashThreshold)")
+            print("[pHash] KEEP frame=\(framesSeen) hamming=\(hamming) churn=\(churnTimestamps.count)/min throttled=\(isThrottled)")
         }
-        
+
         // Rolling stats every 100 frames seen
         if framesSeen % 100 == 0 {
             let kept = framesSeen - framesSkipped
             let skipPct = (Double(framesSkipped) / Double(framesSeen)) * 100.0
-            print(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept — last hamming=%d threshold=%d", 
-                framesSeen, framesSkipped, skipPct, kept, hamming, pHashThreshold))
+            print(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept, churn=%d/min, throttled=%@",
+                framesSeen, framesSkipped, skipPct, kept, churnTimestamps.count, isThrottled ? "YES" : "NO"))
         }
 
         if isDuplicate {
             framesSkipped += 1
             return
         }
-        
+
+        // --- Throttle gate: allow only 1 frame per churnThrottleInterval ---
+        if isThrottled {
+            if let lastKept = lastThrottledKeptTime, 
+               now.timeIntervalSince(lastKept) < churnThrottleInterval {
+                framesSkipped += 1
+                return
+            }
+            lastThrottledKeptTime = now
+        }
+
         prevPHash = hash
 
         // Metadata generation
-        let now         = Date()
         let timestamp   = now.timeIntervalSince1970
         let hashHex     = String(hash, radix: 16, uppercase: false)
 

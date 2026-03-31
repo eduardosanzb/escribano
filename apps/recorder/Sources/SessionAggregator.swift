@@ -21,25 +21,23 @@ enum SessionAggregatorError: Error, LocalizedError {
 
 /// Actor that periodically groups unclaimed observations into TopicBlocks.
 ///
-/// Follows the same pattern as FrameAnalyzer:
-///   - Injected dependencies via init (port interfaces)
-///   - Long-running loop with Task.isCancelled checks
-///   - CancellationError breaks the loop
-///
-/// The LLM grouping uses the VLM bridge's text_infer method (same model,
-/// same socket, zero extra RAM). This was validated in the VLM-as-LLM POC.
+/// Bridge-unaware: submits text generation work to InferenceQueue, which owns
+/// the worker lifecycle (health checks, restart, circuit breaker).
 actor SessionAggregator {
 
     private let obsStore: any ObservationStore
     private let tbStore: any TopicBlockStore
-    private let textService: any TextGenerationService
-    private let queue: WorkQueue
+    private let queue: InferenceQueue
 
     // Configuration
     private let minObservations: Int
-    private let pollInterval: Double   // seconds
+    private let pollInterval: Double
     private let maxObsPerCycle: Int
     private let llmBatchSize: Int
+
+    // Backoff state for idle polling
+    private var currentIdlePollInterval: Double = 120.0
+    private let maxIdlePollInterval: Double = 480.0
 
     // Sentinel recording ID for recorder-generated TopicBlocks
     private let recorderRecordingId = "__recorder__"
@@ -47,12 +45,10 @@ actor SessionAggregator {
     init(
         obsStore: any ObservationStore,
         tbStore: any TopicBlockStore,
-        textService: any TextGenerationService,
-        queue: WorkQueue
+        queue: InferenceQueue
     ) {
         self.obsStore = obsStore
         self.tbStore = tbStore
-        self.textService = textService
         self.queue = queue
 
         let rawMinObs = Int(ProcessInfo.processInfo.environment["ESCRIBANO_TB_MIN_OBSERVATIONS"] ?? "") ?? 3
@@ -78,50 +74,51 @@ actor SessionAggregator {
         if self.llmBatchSize != rawLlmBatch {
             log("[SessionAggregator] WARN: ESCRIBANO_TB_LLM_BATCH_SIZE clamped from \(rawLlmBatch) to \(self.llmBatchSize)")
         }
+
+        self.currentIdlePollInterval = self.pollInterval
     }
 
-    /// Main aggregation loop. Runs until Task is cancelled.
+    /// Reset the idle polling backoff to base interval.
+    func resetBackoff() {
+        currentIdlePollInterval = pollInterval
+    }
+
+    /// Main aggregation loop. Runs until Task is cancelled or circuit breaker opens.
     func aggregateLoop() async {
         log("[SessionAggregator] Starting. MinObs=\(minObservations) IdlePoll=\(Int(pollInterval))s MaxObs=\(maxObsPerCycle) LLMBatch=\(llmBatchSize)")
-        
-        // Wait for the Python bridge to become ready before processing any observations.
-        // The bridge is started by FrameAnalyzer and takes 30-120s to load the VLM model.
-        // Without this gate, text_infer calls fail with .notStarted and the fallback path
-        // creates poorly-grouped TopicBlocks that permanently claim observations.
+
+        // Wait for inference queue to be ready (workers started by main.swift)
         var readyAttempts = 0
         while !Task.isCancelled {
             readyAttempts += 1
             do {
-                _ = try await queue.submit(priority: .normal) { [textService] in
-                    try await textService.generateText(prompt: "ping", maxTokens: 1)
-                }
-                break // Success — bridge is ready
+                try await queue.ping()
+                break
+            } catch PythonBridgeError.bridgeDied {
+                log("[SessionAggregator] Inference queue circuit open while waiting for readiness — stopping")
+                return
             } catch {
-                if case PythonBridgeError.notStarted = error {
-                    if readyAttempts % 6 == 0 {
-                        log("[SessionAggregator] Waiting for text service... (\(readyAttempts * 5)s elapsed)")
-                    }
-                    try? await Task.sleep(for: .seconds(5))
-                } else {
-                    // Bridge IS running but returned some other error — treat as ready
-                    break
+                if readyAttempts % 6 == 0 {
+                    log("[SessionAggregator] Waiting for inference queue... (\(readyAttempts * 5)s elapsed)")
                 }
+                try? await Task.sleep(for: .seconds(5))
             }
         }
 
         guard !Task.isCancelled else {
-            log("[SessionAggregator] Cancelled while waiting for text service.")
+            log("[SessionAggregator] Cancelled while waiting for inference queue.")
             return
         }
 
-        log("[SessionAggregator] Text service ready, beginning aggregation")
+        log("[SessionAggregator] Inference queue ready, beginning aggregation")
 
         while !Task.isCancelled {
             do {
                 let observations = try await obsStore.fetchUnclaimed(limit: maxObsPerCycle)
 
                 if observations.isEmpty {
-                    try await Task.sleep(for: .seconds(pollInterval))
+                    try await Task.sleep(for: .seconds(currentIdlePollInterval))
+                    currentIdlePollInterval = min(currentIdlePollInterval * 2, maxIdlePollInterval)
                     continue
                 }
 
@@ -136,10 +133,14 @@ actor SessionAggregator {
                     let created = try await processWindow(observations)
                     if created > 0 {
                         log("[SessionAggregator] Cycle complete: created \(created) TopicBlock(s)")
+                        currentIdlePollInterval = pollInterval
                     } else {
                         log("[SessionAggregator] No TBs created — waiting for more observations")
                         try await Task.sleep(for: .seconds(pollInterval))
                     }
+                } catch PythonBridgeError.bridgeDied {
+                    log("[SessionAggregator] Inference queue circuit open — stopping aggregation loop")
+                    break
                 } catch {
                     log("[SessionAggregator] Error processing observations: \(error.localizedDescription)")
                     try await Task.sleep(for: .seconds(pollInterval))
@@ -158,11 +159,7 @@ actor SessionAggregator {
 
     // MARK: - Window Processing
 
-    /// Process a single time window: group observations via LLM, create TopicBlocks.
-    /// Large windows are split into sub-batches of llmBatchSize to keep prompts small.
-    /// Returns the number of TopicBlocks created.
     private func processWindow(_ window: [UnclaimedObservation]) async throws -> Int {
-        // Split the window into sub-batches to keep each text_infer prompt small.
         let subBatches = stride(from: 0, to: window.count, by: llmBatchSize).map { start in
             Array(window[start..<min(start + llmBatchSize, window.count)])
         }
@@ -174,12 +171,8 @@ actor SessionAggregator {
             let prompt = buildGroupingPrompt(subBatch)
             let response: String
             do {
-                response = try await queue.submit(priority: .normal) { [textService] in
-                    try await textService.generateText(prompt: prompt, maxTokens: 4000)
-                }
+                response = try await queue.generateText(prompt: prompt, maxTokens: 4000)
             } catch {
-                // Any LLM/bridge error: abort this cycle and retry later.
-                // Creating fallback TBs would permanently consume observations with garbage grouping.
                 log("[SessionAggregator] text_infer failed for sub-batch: \(error.localizedDescription) — aborting cycle to retry later")
                 throw error
             }
@@ -204,7 +197,6 @@ actor SessionAggregator {
         log("[SessionAggregator] Sub-batch loop done: \(allGroups.count) group(s) from \(subBatches.count) batch(es)")
 
         if allGroups.isEmpty {
-            // All sub-batches failed parsing — treat whole window as one TB
             log("[SessionAggregator] No groups parsed across all sub-batches — creating single TB")
             let tb = createTopicBlock(from: window, label: dominantActivity(window))
             try await tbStore.save(tb)
@@ -222,8 +214,7 @@ actor SessionAggregator {
             }
             log("[SessionAggregator] Group '\(group.label)': \(group.observationIds.count) IDs → \(groupObs.count) matched in window")
             guard !groupObs.isEmpty else { continue }
-            
-            // Create and save TopicBlock FIRST (satisfies FK constraint), then claim observations
+
             let tb = createTopicBlock(from: groupObs, label: group.label)
             do {
                 try await tbStore.save(tb)
@@ -232,12 +223,10 @@ actor SessionAggregator {
                 log("[SessionAggregator] FAILED to save TB \(tb.id): \(error.localizedDescription)")
                 continue
             }
-            
-            // Now claim observations (FK constraint satisfied since TB exists)
+
             let claimed = try await obsStore.claimObservations(
                 ids: groupObs.map { $0.id }, tbId: tb.id
             )
-            
             if claimed > 0 {
                 created += 1
                 log("[SessionAggregator] TB \(tb.id) (\(group.label)): \(claimed)/\(groupObs.count) obs claimed")
@@ -246,7 +235,6 @@ actor SessionAggregator {
             }
         }
 
-        // Claim any observations the LLM did not assign to any group (previously lost).
         let claimedIds = Set(allGroups.flatMap { $0.observationIds })
         let unclaimed = window.filter { !claimedIds.contains($0.id) }
         if !unclaimed.isEmpty {
@@ -271,7 +259,6 @@ actor SessionAggregator {
         let toTs = observations.map { $0.capturedAt }.max() ?? 0
         let duration = toTs - fromTs
 
-        // Aggregate apps and topics
         var appsSet = Set<String>()
         var topicsSet = Set<String>()
         var activityCounts: [String: Int] = [:]
@@ -284,7 +271,6 @@ actor SessionAggregator {
 
         let dominantActivity = activityCounts.max(by: { $0.value < $1.value })?.key ?? "other"
 
-        // Build key_description from VLM descriptions (first 5 + last if many)
         let descSample: [String]
         if observations.count <= 6 {
             descSample = observations.map { $0.vlmDescription }
@@ -334,7 +320,6 @@ actor SessionAggregator {
         let fromTs = observations.first?.capturedAt ?? 0
         let toTs = observations.last?.capturedAt ?? 0
 
-        // Build observation descriptions for the prompt
         var blockDescriptions = ""
         for (i, obs) in observations.enumerated() {
             let timeStr = formatTime(obs.capturedAt)
@@ -395,32 +380,27 @@ actor SessionAggregator {
         let validIds = Set(observations.map { $0.id })
         var groups: [ParsedGroup] = []
 
-        // Strip thinking tags (Qwen3 may add <think>...</think>)
         var cleaned = response
         while let start = cleaned.range(of: "<think>"),
               let end = cleaned.range(of: "</think>"),
               start.lowerBound <= end.lowerBound {
             cleaned.removeSubrange(start.lowerBound..<end.upperBound)
         }
-        // Handle orphan </think>
         if let orphan = cleaned.range(of: "</think>") {
             cleaned = String(cleaned[orphan.upperBound...])
         }
 
         let lines = cleaned.split(separator: "\n", omittingEmptySubsequences: true)
 
-        // Match: Group N: label: ... | obsIds: [id1, id2, ...]
         for line in lines {
             let lineStr = String(line).trimmingCharacters(in: .whitespaces)
             guard lineStr.lowercased().hasPrefix("group ") else { continue }
 
-            // Extract label
             guard let labelStart = lineStr.range(of: "label: "),
                   let separator = lineStr.range(of: " | obsIds:") else { continue }
             let label = String(lineStr[labelStart.upperBound..<separator.lowerBound])
                 .trimmingCharacters(in: .whitespaces)
 
-            // Extract obsIds
             guard let idsStart = lineStr.range(of: "obsIds: ["),
                   let idsEnd = lineStr.range(of: "]", range: idsStart.upperBound..<lineStr.endIndex) else { continue }
             let idsStr = String(lineStr[idsStart.upperBound..<idsEnd.lowerBound])

@@ -77,6 +77,11 @@ protocol FrameStore: AnyObject, Sendable {
     /// (permanently skipped — won't appear in future claimFrames calls).
     func markFrameFailed(id: String) throws
 
+    /// Release frames back to the unanalyzed pool without incrementing retry_count.
+    /// Used when the bridge crashes mid-batch — these frames were never actually analyzed.
+    /// Only releases frames still in unanalyzed state (analyzed = 0).
+    func releaseFrames(ids: [String]) throws
+
     // Releases resources (closes connections, etc.).
     func close()
 }

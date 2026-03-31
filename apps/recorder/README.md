@@ -10,7 +10,7 @@ without user intervention.
 
 ## Architecture
 
-Three concurrent async Tasks run in parallel after startup, coordinated by one shared actor:
+Three concurrent async Tasks run in parallel after startup, coordinated by one shared `InferenceQueue`:
 
 1. **`StreamCapture`** (`@MainActor`) — Uses ScreenCaptureKit `SCStream` to capture frames at ~1s
    intervals. Applies pHash dedup (Hamming distance threshold=4) to skip visually identical frames.
@@ -35,10 +35,10 @@ Additionally:
 - **`PythonSetup`** — Zero-config Python venv setup. Auto-creates `~/.escribano/venv` and installs
   `mlx-vlm` on first launch.
 
-- **1 shared `WorkQueue`** (actor) — Serializes all bridge calls between `FrameAnalyzer` and
-  `SessionAggregator`. Because VLM frame inference and LLM text generation share the same Python
-  socket, all requests are queued through this actor with a priority mechanism to prevent
-  starvation.
+- **1 shared `InferenceQueue`** (actor) — Owns the Python bridge worker lifecycle and serializes
+  all inference calls. Checks worker health before each job via `ping()`, restarts dead workers
+  with exponential backoff, and acts as circuit breaker (stops after 5 consecutive failures).
+  Priority scheduling with fairness prevents starvation.
 
 - **3 SQLite connections** — One per component (WAL mode enables concurrent reads alongside
   the single writer, avoiding lock contention between the three tasks).
@@ -67,7 +67,7 @@ ScreenCaptureKit
 
 | File | Description |
 |------|-------------|
-| `main.swift` | NSApplication delegate; wires up 3 tasks, 1 WorkQueue, and 3 SQLite connections |
+| `main.swift` | NSApplication delegate; wires up 3 tasks, 1 InferenceQueue, and 3 SQLite connections |
 | `MenuBarController.swift` | NSStatusItem menu bar UI with live stats, pause/resume, Start at Login |
 | `MigrationRunner.swift` | DB schema migration runner (Swift-native, replicates Node.js migrate.ts) |
 | `PythonSetup.swift` | Python venv auto-setup at `~/.escribano/venv` with `mlx-vlm` installation |
@@ -75,17 +75,16 @@ ScreenCaptureKit
 | `FrameAnalyzer.swift` | Actor; polls frames table and drives VLM inference loop |
 | `SessionAggregator.swift` | Actor; polls observations table, drives LLM grouping, creates TopicBlocks |
 | `Backpressure.swift` | `@MainActor` pause/resume based on pending frame count thresholds |
-| `WorkQueue.swift` | Actor priority queue serializing all Python bridge calls |
+| `WorkQueue.swift` | InferenceQueue: owns worker lifecycle, scheduling, health checks, and restart |
 | `PHash.swift` | vDSP-accelerated DCT perceptual hash for frame deduplication |
-| `PythonBridge.vlm.adapter.swift` | Implements `VLMInferenceService` + `TextGenerationService` over Unix socket |
+| `PythonBridge.vlm.adapter.swift` | Implements `InferenceWorker` over Unix socket (dumb process wrapper) |
 | `FrameStore.port.swift` | Protocol + types for frame persistence |
 | `FrameStore.sqlite.adapter.swift` | `SQLiteFrameStore` (class, synchronous SQLite C API) |
 | `ObservationStore.port.swift` | Protocol + types for observation persistence |
 | `ObservationStore.sqlite.adapter.swift` | `SQLiteObservationStore` (actor, async SQLite C API) |
 | `TopicBlockStore.port.swift` | Protocol for TopicBlock persistence |
 | `TopicBlockStore.sqlite.adapter.swift` | `SQLiteTopicBlockStore` (actor) |
-| `VLMInferenceService.port.swift` | Protocol for VLM frame inference |
-| `TextGenerationService.port.swift` | Protocol for text generation |
+| `VLMInferenceService.port.swift` | `InferenceWorker` protocol: unified VLM + text generation port |
 | `Logger.swift` | Global `log()` function (timestamps to stdout + log file) |
 | `Prompts.swift` | VLM batch prompt template |
 | `ResponseParser.swift` | Parses VLM NDJSON output |
@@ -105,7 +104,7 @@ applies the values to the environment.
 | `ESCRIBANO_TB_POLL_INTERVAL` | `120` | Seconds between SessionAggregator polls |
 | `ESCRIBANO_TB_MIN_OBSERVATIONS` | `3` | Minimum observations to trigger aggregation |
 | `ESCRIBANO_TB_MAX_OBS_PER_CYCLE` | `300` | Max observations per aggregation cycle |
-| `ESCRIBANO_TB_LLM_BATCH_SIZE` | `100` | Observations per LLM sub-batch |
+| `ESCRIBANO_TB_LLM_BATCH_SIZE` | `50` | Observations per LLM sub-batch |
 | `ESCRIBANO_QUEUE_REALTIME_STREAK` | `10` | Max consecutive realtime tasks before a normal task runs |
 | `ESCRIBANO_SESSION_GAP_THRESHOLD` | (removed) | Removed — was used for gap-based windowing, no longer needed |
 | `ESCRIBANO_PYTHON_PATH` | auto | Python executable used to launch the bridge |
@@ -225,11 +224,12 @@ the LLM grouping failed and fallback TopicBlocks were created.
 
 ### Race conditions with shared bridge
 
-Both `FrameAnalyzer` and `SessionAggregator` use the same `PythonBridgeVLMAdapter` instance. The
-bridge is an actor that serializes calls, but if `isStarted` is false, calls fail immediately.
+Both `FrameAnalyzer` and `SessionAggregator` share the same Python bridge worker. Neither
+component is aware of the bridge — they submit work to `InferenceQueue`.
 
-**Solution:** The `WorkQueue` actor wraps all bridge calls and ensures proper ordering. Make sure
-the bridge is started before any tasks begin submitting work to the queue.
+**Solution:** The `InferenceQueue` actor owns the worker lifecycle: it checks health via `ping()`
+before each job, restarts dead workers with exponential backoff, and opens a circuit breaker
+after 5 consecutive failures. `main.swift` calls `queue.startWorkers()` before creating tasks.
 
 ### Schema version mismatches
 

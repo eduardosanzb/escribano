@@ -230,6 +230,18 @@ final class SQLiteFrameStore: FrameStore, @unchecked Sendable {
         }
     }
 
+    /// Release frames back to the pool. Since claimFrames doesn't change analyzed state
+    /// (frames remain analyzed=0), this is currently a no-op for the DB. But the explicit
+    /// method documents intent and future-proofs for a processing_lock column.
+    func releaseFrames(ids: [String]) throws {
+        // Currently frames remain analyzed=0 after claimFrames, so no DB update needed.
+        // This method exists for:
+        // 1. Semantic clarity — distinguishes "bridge crashed, retry" from "inference failed, mark bad"
+        // 2. Future-proofing — if we add a processing_lock column, this is where we'd clear it
+        guard !ids.isEmpty else { return }
+        log("[FrameStore] Released \(ids.count) frames back to pool (bridge crash recovery)")
+    }
+
     // MARK: - Private Helpers
 
     /// Retrieves the current PRAGMA user_version.

@@ -1,10 +1,11 @@
 import Dispatch
 import Foundation
+import os
 
 // MARK: - PythonBridgeVLMAdapter
 
 ///
-/// Adapter that implements VLMInferenceService by spawning mlx_bridge.py as a
+/// Adapter that implements InferenceWorker by spawning mlx_bridge.py as a
 /// child process and communicating over a Unix domain socket.
 ///
 /// --- Unix domain socket vs. TCP ---
@@ -20,14 +21,14 @@ import Foundation
 /// --- Process lifecycle ---
 /// 1. start() spawns Python, waits for {"status":"ready"} on stdout, then
 ///    connects the Unix socket.
-/// 2. runBatch() sends one vlm_infer request and waits for {"done":true}.
+/// 2. analyzeFrames() sends one vlm_infer request and waits for {"done":true}.
 /// 3. stop() sends SIGTERM to the Python process, disconnects the socket.
 ///
 /// Why "actor"?
 ///   An actor in Swift serializes access to its mutable state — only one task
-///   can run inside the actor at a time. This prevents two concurrent runBatch()
+///   can run inside the actor at a time. This prevents two concurrent analyzeFrames()
 ///   calls from racing on the socket write/read state.
-actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
+actor PythonBridgeVLMAdapter: InferenceWorker {
     // MARK: - Configuration
 
     private let socketPath: String // e.g. /tmp/escribano-recorder-vlm.sock
@@ -42,12 +43,13 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     private var process: Process?
     private var fileHandle: FileHandle?
     private var requestId: Int = 0
-    private var isStarted: Bool = false
-    /// PID stored nonisolated so applicationWillTerminate can kill the bridge
-    /// synchronously without an async context. nonisolated(unsafe) is safe here
-    /// because storedPID is only written once (in start()) before any concurrent
-    /// reads, and reads in terminateSync() are always after that write.
-    internal nonisolated(unsafe) var storedPID: Int32 = 0
+    private var _isReady: Bool = false
+    /// PID stored behind a lock so terminateSync() can read it safely from any thread.
+    private let pidLock = OSAllocatedUnfairLock(initialState: Int32(0))
+
+    var isReady: Bool {
+        _isReady
+    }
 
     // MARK: - Init
 
@@ -102,54 +104,67 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     }
 
     func start() async throws {
-        guard !isStarted else { return }
-        log("[PythonBridge] Starting mlx_bridge.py (VLM mode)...")
-        log("[PythonBridge] Python: \(pythonPath)")
-        log("[PythonBridge] Bridge: \(bridgePath)")
-        log("[PythonBridge] Model: \(modelId)")
-        log("[PythonBridge] Max tokens: \(maxTokens)")
-        if FileManager.default.fileExists(atPath: socketPath) {
+        guard !_isReady else { return }
+        do {
+            log("[PythonBridge] Starting mlx_bridge.py (VLM mode)...")
+            log("[PythonBridge] Python: \(pythonPath)")
+            log("[PythonBridge] Bridge: \(bridgePath)")
+            log("[PythonBridge] Model: \(modelId)")
+            log("[PythonBridge] Max tokens: \(maxTokens)")
+            if FileManager.default.fileExists(atPath: socketPath) {
+                try? FileManager.default.removeItem(atPath: socketPath)
+            }
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: pythonPath)
+            proc.arguments = [bridgePath, "--mode", "vlm"]
+            proc.environment = buildEnv()
+            let stdoutPipe = Pipe()
+            proc.standardOutput = stdoutPipe
+            let logDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".escribano/logs")
+            try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+            let logURL = logDir.appendingPathComponent("mlx-bridge-recorder-vlm.log")
+            let stdoutLogURL = logDir.appendingPathComponent("mlx-bridge-recorder-vlm-stdout.log")
+            try? FileManager.default.removeItem(at: logURL)
+            try? FileManager.default.removeItem(at: stdoutLogURL)
+            FileManager.default.createFile(atPath: logURL.path, contents: nil)
+            FileManager.default.createFile(atPath: stdoutLogURL.path, contents: nil)
+            let stderrLogHandle = try? FileHandle(forWritingTo: logURL)
+            let stdoutLogHandle = try? FileHandle(forWritingTo: stdoutLogURL)
+            let stderrPipe = Pipe()
+            proc.standardError = stderrPipe
+            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                FileHandle.standardError.write(data)
+                stderrLogHandle?.write(data)
+            }
+            try proc.run()
+            process = proc
+            pidLock.withLock { $0 = proc.processIdentifier }
+            log("[PythonBridge] Python PID: \(proc.processIdentifier)")
+            try await waitForReady(stdout: stdoutPipe, logHandle: stdoutLogHandle)
+            try connectSocket()
+            _isReady = true
+            log("[PythonBridge] Ready. Socket connected at \(socketPath)")
+        } catch {
+            _isReady = false
+            // Clean up partially-started process to prevent orphaning
+            fileHandle?.closeFile()
+            fileHandle = nil
+            if let proc = process {
+                proc.terminate()
+                // Don't waitUntilExit here — we're already in an error path
+            }
+            process = nil
+            pidLock.withLock { $0 = 0 }
             try? FileManager.default.removeItem(atPath: socketPath)
+            throw error
         }
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: pythonPath)
-        proc.arguments = [bridgePath, "--mode", "vlm"]
-        proc.environment = buildEnv()
-        let stdoutPipe = Pipe()
-        proc.standardOutput = stdoutPipe
-        let logDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".escribano/logs")
-        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
-        let logURL = logDir.appendingPathComponent("mlx-bridge-recorder-vlm.log")
-        let stdoutLogURL = logDir.appendingPathComponent("mlx-bridge-recorder-vlm-stdout.log")
-        try? FileManager.default.removeItem(at: logURL)
-        try? FileManager.default.removeItem(at: stdoutLogURL)
-        FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        FileManager.default.createFile(atPath: stdoutLogURL.path, contents: nil)
-        let stderrLogHandle = try? FileHandle(forWritingTo: logURL)
-        let stdoutLogHandle = try? FileHandle(forWritingTo: stdoutLogURL)
-        let stderrPipe = Pipe()
-        proc.standardError = stderrPipe
-        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            FileHandle.standardError.write(data)
-            stderrLogHandle?.write(data)
-        }
-        try proc.run()
-        process = proc
-        storedPID = proc.processIdentifier
-        log("[PythonBridge] Python PID: \(proc.processIdentifier)")
-        try await waitForReady(stdout: stdoutPipe, logHandle: stdoutLogHandle)
-        try connectSocket()
-        isStarted = true
-        log("[PythonBridge] Ready. Socket connected at \(socketPath)")
     }
 
-    func runBatch(frames: [DbFrame]) async throws -> [FrameDescription] {
-        guard isStarted else {
-            throw PythonBridgeError.notStarted
-        }
+    func analyzeFrames(frames: [DbFrame]) async throws -> [FrameDescription] {
+        guard _isReady else { throw PythonBridgeError.notStarted }
         guard !frames.isEmpty else { return [] }
         requestId += 1
         let id = requestId
@@ -170,7 +185,14 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
                 "maxTokens": maxTokens,
             ] as [String: Any],
         ]
-        let (rawText, rawStats) = try await sendAndReceive(request: request)
+        let rawText: String
+        let rawStats: VLMStats?
+        do {
+            (rawText, rawStats) = try await sendAndReceive(request: request)
+        } catch PythonBridgeError.bridgeDied {
+            _isReady = false
+            throw PythonBridgeError.bridgeDied
+        }
         let stats = rawStats.map { s in
             VLMStats(model: s.model, promptTokens: s.promptTokens, generationTokens: s.generationTokens,
                      promptTps: s.promptTps, generationTps: s.generationTps, inferenceMs: s.inferenceMs,
@@ -186,9 +208,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     }
 
     func generateText(prompt: String, maxTokens: Int = 2000) async throws -> String {
-        guard isStarted else {
-            throw PythonBridgeError.notStarted
-        }
+        guard _isReady else { throw PythonBridgeError.notStarted }
         requestId += 1
         let id = requestId
 
@@ -201,27 +221,71 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
             ] as [String: Any],
         ]
 
-        let (rawText, _) = try await sendAndReceive(request: request)
+        let rawText: String
+        do {
+            (rawText, _) = try await sendAndReceive(request: request)
+        } catch PythonBridgeError.bridgeDied {
+            _isReady = false
+            throw PythonBridgeError.bridgeDied
+        }
         return rawText
     }
 
     func stop() async {
         log("[PythonBridge] Shutting down...")
+        _isReady = false
         fileHandle?.closeFile()
         fileHandle = nil
-        process?.terminate()
+        if let proc = process {
+            proc.terminate()
+            let pid = proc.processIdentifier
+            // Time-bounded wait: 5s for graceful exit, then SIGKILL.
+            // Unbounded waitUntilExit() would deadlock the actor if Python ignores SIGTERM.
+            let exited = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                let flag = ResumeFlag()
+                let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global())
+                timer.schedule(deadline: .now() + 5)
+                timer.setEventHandler {
+                    guard flag.trySet() else { return }
+                    timer.cancel()
+                    cont.resume(returning: false)
+                }
+                timer.resume()
+                DispatchQueue.global().async {
+                    proc.waitUntilExit()
+                    guard flag.trySet() else { return }
+                    timer.cancel()
+                    cont.resume(returning: true)
+                }
+            }
+            if !exited {
+                log("[PythonBridge] Process did not exit after 5s SIGTERM — sending SIGKILL")
+                kill(pid, SIGKILL)
+            }
+        }
         process = nil
-        isStarted = false
+        pidLock.withLock { $0 = 0 }
         try? FileManager.default.removeItem(atPath: socketPath)
     }
 
     /// Synchronous bridge kill for use in applicationWillTerminate where async is not available.
     /// Sends SIGTERM directly to the stored PID — reliable regardless of socket path or env vars.
     nonisolated func terminateSync() {
-        let pid = storedPID
+        let pid = pidLock.withLock { $0 }
         guard pid > 0 else { return }
         kill(pid, SIGTERM)
         log("[PythonBridge] terminateSync: sent SIGTERM to PID \(pid)")
+    }
+
+    func ping() async throws -> Bool {
+        guard _isReady else { return false }
+        requestId += 1
+        let request: [String: Any] = [
+            "id": requestId,
+            "method": "ping",
+        ]
+        let (_, _) = try await sendAndReceive(request: request)
+        return true
     }
 
     private func buildEnv() -> [String: String] {

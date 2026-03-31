@@ -151,6 +151,16 @@ actor InferenceQueue {
         }
     }
 
+    /// Convenience: zero-cost health check through the queue.
+    func ping() async throws {
+        _ = try await submit(priority: .low) { [workers] in
+            guard let worker = workers.first else {
+                throw PythonBridgeError.notStarted
+            }
+            return try await worker.ping()
+        }
+    }
+
     // MARK: - Processing Loop
 
     private func removeEntry(id: UInt64) {

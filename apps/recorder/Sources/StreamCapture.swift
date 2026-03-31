@@ -26,6 +26,14 @@ final class StreamCapture: NSObject {
     private var framesSeen:    Int = 0
     private var framesSkipped: Int = 0
 
+    // Reuse formatters — DateFormatter allocation is expensive (~5ms each)
+    private let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+    private let isoFormatter = ISO8601DateFormatter()
+
     // Frame storage root (persistent): ~/.escribano/frames/
     private static var framesBaseDir: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -121,9 +129,7 @@ final class StreamCapture: NSObject {
         let timestamp   = now.timeIntervalSince1970
         let hashHex     = String(hash, radix: 16, uppercase: false)
 
-        let dateFmt = DateFormatter()
-        dateFmt.dateFormat = "yyyy-MM-dd"
-        let dayDir  = Self.framesBaseDir.appendingPathComponent(dateFmt.string(from: now))
+        let dayDir  = Self.framesBaseDir.appendingPathComponent(dayFormatter.string(from: now))
         let fileURL = dayDir.appendingPathComponent("\(Int(timestamp * 1000))_\(displayID).jpg")
 
         do {
@@ -134,8 +140,7 @@ final class StreamCapture: NSObject {
             return
         }
 
-        let isoFmt = ISO8601DateFormatter()
-        let capturedAt = isoFmt.string(from: now)
+        let capturedAt = isoFormatter.string(from: now)
 
         let metadata = FrameMetadata(
             id:         UUID().uuidString,

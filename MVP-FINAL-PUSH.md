@@ -26,6 +26,23 @@ Close the loop from always-on capture → automatic artifact generation → user
 - [x] Full architectural design for menu bar app (edge cases, bootstrap, permission handling)
 - [x] Research: LM Studio uses `venvstacks` + `python-build-standalone` for Python bundling (informing Phase 4)
 
+### Capture Quality Guards
+
+- [x] Screen lock detection — `DistributedNotificationCenter` listens for `com.apple.screenIsLocked`/`screenIsUnlocked`, pauses all captures on lock, resumes on unlock
+- [x] Frame churn rate limiter — rolling 60s window tracks frame-to-frame pHash changes; when unique frames/min exceeds `ESCRIBANO_CHURN_THRESHOLD` (default 40), throttles capture to 1 frame per `ESCRIBANO_CHURN_THROTTLE_INTERVAL` (default 30s); auto-resumes when rate normalizes
+- [ ] (Future) Observation-based smart throttle — use VLM activity detection (e.g., consecutive "YouTube" observations) to confirm/override churn-based throttle
+
+## Tier 2: Recorder Quality (Post-Prerequisites)
+
+- [ ] **Test coverage for recorder actors** — Unit tests for FrameAnalyzer bridge recovery, SessionAggregator backoff, WorkQueue fairness
+- [ ] **`recorder status` improvements** — Show bridge state (ready/dead/restarting), backoff intervals, failure counts
+- [ ] **Frame cleanup job** — Delete JPEG files for frames older than 7 days (currently frames accumulate forever)
+
+## Tier 3: Performance Optimization
+
+- [ ] **VLM idle unload** — Unload model from GPU memory after N minutes of inactivity, reload on next frame batch
+- [ ] **Adaptive batch sizing** — Increase batch size when queue is deep, decrease when shallow
+
 ---
 
 ## Day 1 (2026-03-31): Swift Menu Bar App + DMG
@@ -64,12 +81,6 @@ Add NSStatusItem to existing recorder binary. One process, one target.
 - [ ] Screen Recording permission: if `CGPreflightScreenCaptureAccess()` fails, stay alive, show "Grant Screen Recording" in menu, poll on timer
 - [ ] LaunchAgent migration: on first launch, detect old `~/Library/LaunchAgents/com.escribano.capture.plist`, bootout + delete
 - [ ] Create `~/.escribano/` directory structure on first launch if missing
-
-### Capture Quality Guards
-
-- [x] Screen lock detection — `DistributedNotificationCenter` listens for `com.apple.screenIsLocked`/`screenIsUnlocked`, pauses all captures on lock, resumes on unlock
-- [x] Frame churn rate limiter — rolling 60s window tracks frame-to-frame pHash changes; when unique frames/min exceeds `ESCRIBANO_CHURN_THRESHOLD` (default 40), throttles capture to 1 frame per `ESCRIBANO_CHURN_THROTTLE_INTERVAL` (default 30s); auto-resumes when rate normalizes
-- [ ] (Future) Observation-based smart throttle — use VLM activity detection (e.g., consecutive "YouTube" observations) to confirm/override churn-based throttle
 
 ### DMG Packaging
 

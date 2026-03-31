@@ -27,6 +27,15 @@ final class StreamCapture: NSObject {
     // Rolling stats
     private var framesSeen:    Int = 0
     private var framesSkipped: Int = 0
+    private var captureStartTime: Date?
+
+    // Reuse formatters — DateFormatter allocation is expensive (~5ms each)
+    private let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+    private let isoFormatter = ISO8601DateFormatter()
 
     // Churn rate detection
     private var lastSeenPHash: UInt64? = nil       // Updated EVERY frame (for churn measurement)
@@ -70,6 +79,7 @@ final class StreamCapture: NSObject {
         
         try stream?.addStreamOutput(bridge, type: .screen, sampleHandlerQueue: .main)
         try await stream?.startCapture()
+        captureStartTime = Date()
 
         print("[StreamCapture] Started — display \(displayID), \(display.width/2)x\(display.height/2)")
         if debugPHash {
@@ -154,8 +164,17 @@ final class StreamCapture: NSObject {
         if framesSeen % 100 == 0 {
             let kept = framesSeen - framesSkipped
             let skipPct = (Double(framesSkipped) / Double(framesSeen)) * 100.0
-            print(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept, churn=%d/min, throttled=%@",
-                framesSeen, framesSkipped, skipPct, kept, churnTimestamps.count, isThrottled ? "YES" : "NO"))
+            
+            var fpsLine = ""
+            if let start = captureStartTime {
+                let elapsed = Date().timeIntervalSince(start)
+                let deliveredFps = elapsed > 0 ? Double(framesSeen) / elapsed : 0
+                let storedFps = elapsed > 0 ? Double(frameCounter) / elapsed : 0
+                fpsLine = String(format: ", %.2f fps delivered, %.2f fps stored", deliveredFps, storedFps)
+            }
+            
+            print(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept, churn=%d/min, throttled=%@%@",
+                framesSeen, framesSkipped, skipPct, kept, churnTimestamps.count, isThrottled ? "YES" : "NO", fpsLine))
         }
 
         if isDuplicate {
@@ -179,9 +198,7 @@ final class StreamCapture: NSObject {
         let timestamp   = now.timeIntervalSince1970
         let hashHex     = String(hash, radix: 16, uppercase: false)
 
-        let dateFmt = DateFormatter()
-        dateFmt.dateFormat = "yyyy-MM-dd"
-        let dayDir  = Self.framesBaseDir.appendingPathComponent(dateFmt.string(from: now))
+        let dayDir  = Self.framesBaseDir.appendingPathComponent(dayFormatter.string(from: now))
         let fileURL = dayDir.appendingPathComponent("\(Int(timestamp * 1000))_\(displayID).jpg")
 
         do {
@@ -192,8 +209,7 @@ final class StreamCapture: NSObject {
             return
         }
 
-        let isoFmt = ISO8601DateFormatter()
-        let capturedAt = isoFmt.string(from: now)
+        let capturedAt = isoFormatter.string(from: now)
 
         let metadata = FrameMetadata(
             id:         UUID().uuidString,

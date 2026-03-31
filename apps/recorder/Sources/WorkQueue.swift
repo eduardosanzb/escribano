@@ -31,6 +31,7 @@ actor WorkQueue {
         let priority: Priority
         let sequence: UInt64
         let work: @Sendable () async -> Void
+        let cancel: @Sendable () -> Void  // Resume continuation with CancellationError
     }
 
     // MARK: - State
@@ -78,6 +79,9 @@ actor WorkQueue {
                         } catch {
                             cont.resume(throwing: error)
                         }
+                    },
+                    cancel: {
+                        cont.resume(throwing: CancellationError())
                     }
                 )
                 queue.append(entry)
@@ -99,8 +103,22 @@ actor WorkQueue {
     /// Remove an entry from the queue by its sequence ID if still pending.
     private func removeEntry(id: UInt64) {
         if let idx = queue.firstIndex(where: { $0.sequence == id }) {
-            queue.remove(at: idx)
+            let entry = queue.remove(at: idx)
+            entry.cancel()
             logQueueIfNeeded()
+        }
+    }
+
+    /// Cancel all pending (not yet started) entries. Resumes their continuations
+    /// with CancellationError. Called during applicationWillTerminate for clean shutdown.
+    func cancelAll() {
+        let pending = queue
+        queue.removeAll()
+        for entry in pending {
+            entry.cancel()
+        }
+        if !pending.isEmpty {
+            log("[WorkQueue] Cancelled \(pending.count) pending entries during shutdown")
         }
     }
 

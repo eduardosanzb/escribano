@@ -131,6 +131,26 @@ actor InferenceQueue {
         }
     }
 
+    /// Convenience: run VLM frame analysis through the queue at realtime priority.
+    func analyzeFrames(frames: [DbFrame]) async throws -> [FrameDescription] {
+        try await submit(priority: .realtime) { [workers] in
+            guard let worker = workers.first else {
+                throw PythonBridgeError.notStarted
+            }
+            return try await worker.analyzeFrames(frames: frames)
+        }
+    }
+
+    /// Convenience: run text generation through the queue at normal priority.
+    func generateText(prompt: String, maxTokens: Int = 2000) async throws -> String {
+        try await submit(priority: .normal) { [workers] in
+            guard let worker = workers.first else {
+                throw PythonBridgeError.notStarted
+            }
+            return try await worker.generateText(prompt: prompt, maxTokens: maxTokens)
+        }
+    }
+
     // MARK: - Processing Loop
 
     private func removeEntry(id: UInt64) {

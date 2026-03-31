@@ -90,7 +90,7 @@ final class StreamCapture: NSObject {
 
         log("[StreamCapture] Started — display \(displayID), \(display.width/2)x\(display.height/2)")
         if debugPHash {
-            print("[pHash] Verbose logging ENABLED")
+            log("[pHash] Verbose logging ENABLED")
         }
     }
 

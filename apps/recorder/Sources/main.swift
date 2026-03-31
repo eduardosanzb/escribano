@@ -84,13 +84,30 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/bin/launchctl")
             proc.arguments = ["bootout", "gui/\(uid)/com.escribano.capture"]
-            do {
-                try proc.run()
-                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                    proc.terminationHandler = { _ in continuation.resume() }
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                // Safety: didResume is only accessed from the main thread (terminationHandler
+                // dispatches to .main below) and from the synchronous catch block which also
+                // runs on MainActor. nonisolated(unsafe) suppresses the Swift 6 Sendable
+                // diagnostic — the single-threaded access pattern makes this safe.
+                nonisolated(unsafe) var didResume = false
+
+                proc.terminationHandler = { _ in
+                    DispatchQueue.main.async {
+                        guard !didResume else { return }
+                        didResume = true
+                        continuation.resume()
+                    }
                 }
-            } catch {
-                log("[escribano-recorder] launchctl bootout failed to launch: \(error)")
+
+                do {
+                    try proc.run()
+                } catch {
+                    if !didResume {
+                        didResume = true
+                        log("[escribano-recorder] launchctl bootout failed to launch: \(error)")
+                        continuation.resume()
+                    }
+                }
             }
             try? FileManager.default.removeItem(at: oldPlist)
             log("[escribano-recorder] Old LaunchAgent removed")
@@ -268,7 +285,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         do {
             tbStore = try SQLiteTopicBlockStore(path: dbPath)
         } catch TopicBlockStoreError.schemaMismatch(let current, let expected) {
-            log("[escribano-recorder] ERROR: Database schema out of date (version \(current), expected \(expected)). Run 'escribano recorder install' from Node.js.")
+            log("[escribano-recorder] ERROR: Database schema out of date (version \(current), expected \(expected)). Database migrations normally run automatically on startup; please reinstall or repair the Escribano app and try again.")
             menuBar.setStatus(.error("Database schema error"))
             return
         } catch {

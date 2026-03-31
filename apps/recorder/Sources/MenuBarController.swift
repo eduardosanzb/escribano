@@ -31,7 +31,9 @@ final class MenuBarController {
 
     private let statusItem: NSStatusItem
     private let menu: NSMenu
-    private var statsTimer: Timer?
+    // Timer is accessed only from @MainActor methods and deinit.
+    // nonisolated(unsafe) lets deinit read the property without a Sendable diagnostic.
+    private nonisolated(unsafe) var statsTimer: Timer?
     private var currentStatus: Status = .setup
 
     // Display-only menu items (disabled, used as stat labels)

@@ -6,6 +6,9 @@ import Foundation
 // For a headless CLI application, NSApplication.shared behaves like a daemon.
 let app = NSApplication.shared
 
+// Hide from the Dock — run as a menu bar accessory app.
+app.setActivationPolicy(.accessory)
+
 // Ignore SIGPIPE globally. This prevents the process from being killed when
 // writing to a Unix domain socket (FileHandle) whose remote end has disconnected.
 // Without this, a VLM inference timeout that closes the readability handler can
@@ -30,6 +33,7 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
     private var tbStore: (any TopicBlockStore)?
     private var aggregator: SessionAggregator?
     private var aggregatorTask: Task<Void, Never>?
+    private var menuBar: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGTERM) { _ in
@@ -48,39 +52,109 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
         let buildCommit = ProcessInfo.processInfo.environment["ESCRIBANO_BUILD_COMMIT"] ?? "unknown"
         log("[escribano-recorder] Build commit: \(buildCommit)")
 
+        // 1. Create menu bar immediately (shows "Setting up..." to user)
+        let menuBar = MenuBarController()
+        self.menuBar = menuBar
+        menuBar.setStatus(.setup)
+        menuBar.setSetupProgress("Starting up...")
+
+        // 2. Run bootstrap in a Task (async operations)
         Task { @MainActor in
-            await self.start()
+            await self.bootstrap(menuBar: menuBar)
         }
     }
 
-    private func start() async {
-        // Permission check: Screen Recording permission must be granted before capture can start.
-        //
-        // Why no polling loop: CGPreflightScreenCaptureAccess() never updates in the same
-        // running process after the user grants permission — macOS only reflects TCC changes
-        // on the next process launch. Polling with try? Task.sleep is also dangerous because
-        // discarding CancellationError with try? turns a cancelled task into a CPU spin loop.
-        //
-        // Instead: request the dialog, log clear instructions, exit cleanly (code 0).
-        // With KeepAlive=true + ThrottleInterval=30 in the LaunchAgent plist, launchd will
-        // restart us every 30s. When the user grants permission, the next restart succeeds.
+    private func bootstrap(menuBar: MenuBarController) async {
+        // Step 4a — Duplicate instance check
+        if let bundleId = Bundle.main.bundleIdentifier {
+            let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+            if running.count > 1 {
+                log("[escribano-recorder] Another instance is already running. Exiting.")
+                NSApp.terminate(nil)
+                return
+            }
+        }
+
+        // Step 4b — LaunchAgent migration (remove old plist if present)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let oldPlist = home.appendingPathComponent("Library/LaunchAgents/com.escribano.capture.plist")
+        if FileManager.default.fileExists(atPath: oldPlist.path) {
+            log("[escribano-recorder] Found old LaunchAgent plist — migrating to .app")
+            let uid = getuid()
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            proc.arguments = ["bootout", "gui/\(uid)/com.escribano.capture"]
+            try? proc.run()
+            proc.waitUntilExit()
+            try? FileManager.default.removeItem(at: oldPlist)
+            log("[escribano-recorder] Old LaunchAgent removed")
+        }
+
+        // Step 4c — Create directory structure
+        let escribanoDir = home.appendingPathComponent(".escribano")
+        let dirs = ["", "frames", "logs", "artifacts", "scripts"]
+        for dir in dirs {
+            let path = escribanoDir.appendingPathComponent(dir)
+            try? FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+        }
+
+        // Step 4d — Run DB migrations
+        menuBar.setSetupProgress("Running database migrations...")
+        let dbPath = home.appendingPathComponent(".escribano/escribano.db").path
+        if let migrationsDir = MigrationRunner.resolveMigrationsDir() {
+            do {
+                let result = try MigrationRunner.run(dbPath: dbPath, migrationsDir: migrationsDir)
+                if !result.applied.isEmpty {
+                    log("[escribano-recorder] Applied \(result.applied.count) migration(s). Schema version: \(result.currentVersion)")
+                } else {
+                    log("[escribano-recorder] Database up to date (version \(result.currentVersion))")
+                }
+            } catch {
+                log("[escribano-recorder] Migration error: \(error.localizedDescription)")
+                menuBar.setStatus(.error("Database migration failed"))
+                return
+            }
+        } else {
+            log("[escribano-recorder] WARNING: No migrations directory found. Skipping migrations.")
+        }
+
+        // Step 4e — Python venv setup
+        menuBar.setSetupProgress("Checking Python environment...")
+        do {
+            let pythonPath = try await PythonSetup.ensureVenv { message in
+                Task { @MainActor in
+                    menuBar.setSetupProgress(message)
+                }
+            }
+            log("[escribano-recorder] Python ready: \(pythonPath)")
+        } catch {
+            log("[escribano-recorder] Python setup failed: \(error.localizedDescription)")
+            log("[escribano-recorder] VLM analysis will not be available until Python is configured")
+            // Don't return — capture can still run, just without VLM analysis
+        }
+
+        // Step 4f — Screen Recording permission check
         if !CGPreflightScreenCaptureAccess() {
             log("[escribano-recorder] Screen Recording permission not granted.")
-            // Trigger the system permission dialog. This returns immediately (non-blocking).
             CGRequestScreenCaptureAccess()
-            log("[escribano-recorder] Permission dialog shown.")
-            log("[escribano-recorder] Grant permission in: System Settings > Privacy & Security > Screen Recording")
-            log("[escribano-recorder] The recorder will restart automatically (every 30s) until permission is granted.")
-            // Exit cleanly (code 0). The LaunchAgent ThrottleInterval=30 prevents a restart
-            // loop: launchd will retry in 30 seconds, by which time the user may have granted.
-            NSApp.terminate(nil)
-            return
+            menuBar.setStatus(.permissionNeeded)
+            menuBar.onRelaunch = {
+                // Spawn a new instance and quit
+                if let bundleURL = Bundle.main.bundleURL as URL? {
+                    let config = NSWorkspace.OpenConfiguration()
+                    config.createsNewApplicationInstance = true
+                    NSWorkspace.shared.openApplication(at: bundleURL, configuration: config) { _, _ in }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    NSApp.terminate(nil)
+                }
+            }
+            return  // Don't start capture — user must relaunch after granting
         }
         log("[escribano-recorder] Screen Recording permission: granted")
+        menuBar.setSetupProgress("Starting capture...")
 
-        let dbPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".escribano/escribano.db").path
-
+        // Step 4g — Normal startup (preserve existing logic)
         let highWater = Int(ProcessInfo.processInfo.environment["ESCRIBANO_CAPTURE_HIGH_WATER"] ?? "") ?? 500
         let lowWater = Int(ProcessInfo.processInfo.environment["ESCRIBANO_CAPTURE_LOW_WATER"] ?? "") ?? 100
 
@@ -90,11 +164,13 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             store = try SQLiteFrameStore(path: dbPath)
             log("[escribano-recorder] Database ready")
         } catch FrameStoreError.schemaMismatch(let current, let expected) {
-            log("[escribano-recorder] ERROR: Database schema out of date (version \(current), expected \(expected)). Run 'escribano recorder install' from Node.js.")
-            exit(1)
+            log("[escribano-recorder] ERROR: Schema mismatch (version \(current), expected \(expected))")
+            menuBar.setStatus(.error("Database schema error"))
+            return
         } catch {
-            log("[escribano-recorder] ERROR: Cannot open database at \(dbPath): \(error.localizedDescription)")
-            exit(1)
+            log("[escribano-recorder] ERROR: Cannot open database: \(error.localizedDescription)")
+            menuBar.setStatus(.error("Database error"))
+            return
         }
         self.store = store
 
@@ -106,12 +182,14 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             content = try await SCShareableContent.current
         } catch {
             log("[escribano-recorder] ERROR: ScreenCaptureKit unavailable: \(error.localizedDescription)")
-            exit(1)
+            menuBar.setStatus(.error("ScreenCaptureKit unavailable"))
+            return
         }
 
         if content.displays.isEmpty {
             log("[escribano-recorder] ERROR: No displays found")
-            exit(1)
+            menuBar.setStatus(.error("No displays found"))
+            return
         }
 
         log("[escribano-recorder] Found \(content.displays.count) display(s). Starting capture for ALL.")
@@ -133,7 +211,8 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             obsStore = try SQLiteObservationStore(path: dbPath)
         } catch {
             log("[escribano-recorder] ERROR: Cannot open observation store: \(error.localizedDescription)")
-            exit(1)
+            menuBar.setStatus(.error("Observation store error"))
+            return
         }
         self.obsStore = obsStore
         // Open a dedicated SQLiteFrameStore connection for FrameAnalyzer.
@@ -146,7 +225,8 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             analyzerFrameStore = try SQLiteFrameStore(path: dbPath)
         } catch {
             log("[escribano-recorder] ERROR: Cannot open analyzer frame store: \(error.localizedDescription)")
-            exit(1)
+            menuBar.setStatus(.error("Analyzer frame store error"))
+            return
         }
         self.analyzerFrameStore = analyzerFrameStore
         // 2. Create the VLM adapter (Python bridge) and inject it into FrameAnalyzer.
@@ -184,10 +264,12 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             tbStore = try SQLiteTopicBlockStore(path: dbPath)
         } catch TopicBlockStoreError.schemaMismatch(let current, let expected) {
             log("[escribano-recorder] ERROR: Database schema out of date (version \(current), expected \(expected)). Run 'escribano recorder install' from Node.js.")
-            exit(1)
+            menuBar.setStatus(.error("Database schema error"))
+            return
         } catch {
             log("[escribano-recorder] ERROR: Cannot open topic block store: \(error.localizedDescription)")
-            exit(1)
+            menuBar.setStatus(.error("Topic block store error"))
+            return
         }
         self.tbStore = tbStore
 
@@ -208,13 +290,40 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
 
         bp.onPause = { [weak self] in
             self?.captures.forEach { $0.pause() }
+            self?.menuBar?.setStatus(.paused)
         }
         bp.onResume = { [weak self] in
             self?.captures.forEach { $0.resume() }
+            self?.menuBar?.setStatus(.running)
         }
 
         let threshold = Int(ProcessInfo.processInfo.environment["ESCRIBANO_PHASH_THRESHOLD"] ?? "4") ?? 4
         log("[escribano-recorder] Running. High-water=\(highWater) Low-water=\(lowWater) Threshold=\(threshold) QueueStreak=\(realtimeStreak)")
+
+        // Step 4h — Wire menu bar
+        // Set running status
+        menuBar.setStatus(.running)
+
+        // Wire pause/resume
+        menuBar.onPauseResume = { [weak self] shouldPause in
+            guard let self = self else { return }
+            if shouldPause {
+                self.captures.forEach { $0.pause() }
+            } else {
+                self.captures.forEach { $0.resume() }
+            }
+        }
+
+        // Start stats timer
+        // Note: storedPID is private on PythonBridgeVLMAdapter; bridge RSS/CPU stats
+        // are not available from this scope. Pass 0 so bridgeProcessRSS returns (0,0)
+        // gracefully — the menu bar will show "—" for bridge CPU which is acceptable.
+        menuBar.startStatsTimer(
+            frameStore: store,
+            tbStore: tbStore,
+            displayCount: captures.count,
+            bridgePID: { 0 }
+        )
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -240,6 +349,8 @@ final class EscribanoRecorderDelegate: NSObject, NSApplicationDelegate {
             sema.signal()
         }
         _ = sema.wait(timeout: .now() + 2)
+        // MenuBarController cleanup (timer invalidation happens automatically when the controller is deallocated)
+        menuBar = nil
     }
 }
 

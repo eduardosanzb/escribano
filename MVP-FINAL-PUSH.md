@@ -34,13 +34,17 @@ Close the loop from always-on capture → automatic artifact generation → user
 
 ## Tier 2: Recorder Quality (Post-Prerequisites)
 
-- [ ] **Test coverage for recorder actors** — Unit tests for FrameAnalyzer bridge recovery, SessionAggregator backoff, WorkQueue fairness
-- [ ] **`recorder status` improvements** — Show bridge state (ready/dead/restarting), backoff intervals, failure counts
-- [ ] **Frame cleanup job** — Delete JPEG files for frames older than 7 days (currently frames accumulate forever)
+- [ ] **Test coverage for recorder actors** — Unit tests for FrameAnalyzer bridge recovery, SessionAggregator
+      backoff, WorkQueue fairness
+- [ ] **`recorder status` improvements** — Show bridge state (ready/dead/restarting), backoff intervals,
+      failure counts
+- [ ] **Frame cleanup job** — Delete JPEG files for frames older than 7 days (currently frames accumulate
+      forever)
 
 ## Tier 3: Performance Optimization
 
-- [ ] **VLM idle unload** — Unload model from GPU memory after N minutes of inactivity, reload on next frame batch
+- [ ] **VLM idle unload** — Unload model from GPU memory after N minutes of inactivity, reload on next frame
+      batch
 - [ ] **Adaptive batch sizing** — Increase batch size when queue is deep, decrease when shallow
 
 ---

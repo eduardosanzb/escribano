@@ -3,6 +3,13 @@ import Cocoa
 import CoreMedia
 import CoreImage
 
+enum PauseReason: Hashable {
+    case backpressure
+    case screenLock
+    case sleep
+    case user
+}
+
 /// StreamCapture: Manages SCStream lifecycle and frame processing.
 @MainActor
 final class StreamCapture: NSObject {
@@ -13,18 +20,17 @@ final class StreamCapture: NSObject {
     private let pHasher     = PHash()
     private let store:       any FrameStore
     private let backpressure: Backpressure
-    
+
+    private var pauseReasons: Set<PauseReason> = []
+    private var isPaused: Bool { !pauseReasons.isEmpty }
+
     // Debugging configuration
     private let debugPHash: Bool
     private let pHashThreshold: Int
 
     private var prevPHash:    UInt64? = nil
     private var frameCounter: Int     = 0
-    private var isPausedByBackpressure: Bool = false
-    private var isPausedByScreenLock:   Bool = false
-    private var isPausedBySleep:          Bool = false
-    private var isPaused: Bool { isPausedByBackpressure || isPausedByScreenLock || isPausedBySleep }
-    
+
     // Rolling stats
     private var framesSeen:    Int = 0
     private var framesSkipped: Int = 0
@@ -82,61 +88,32 @@ final class StreamCapture: NSObject {
         try await stream?.startCapture()
         captureStartTime = Date()
 
-        print("[StreamCapture] Started — display \(displayID), \(display.width/2)x\(display.height/2)")
+        log("[StreamCapture] Started — display \(displayID), \(display.width/2)x\(display.height/2)")
         if debugPHash {
-            print("[pHash] Verbose logging ENABLED")
+            log("[pHash] Verbose logging ENABLED")
         }
     }
 
     func stop() async {
         try? await stream?.stopCapture()
-        print("[StreamCapture] Stopped.")
+        log("[StreamCapture] Stopped.")
     }
 
-    func pauseForBackpressure() {
-        guard !isPausedByBackpressure else { return }
-        isPausedByBackpressure = true
-        if !isPausedByScreenLock { Task { try? await self.stream?.stopCapture() } }
-        print("[StreamCapture] Paused (backpressure).")
-    }
-
-    func resumeFromBackpressure() {
-        guard isPausedByBackpressure else { return }
-        isPausedByBackpressure = false
-        if !isPausedByScreenLock { Task { try? await self.stream?.startCapture() } }
-        print("[StreamCapture] Resumed from backpressure.")
-    }
-
-    func pauseForScreenLock() {
-        guard !isPausedByScreenLock else { return }
-        isPausedByScreenLock = true
-        if !isPausedByBackpressure { Task { try? await self.stream?.stopCapture() } }
-        print("[StreamCapture] Paused (screen lock).")
-    }
-
-    func resumeFromScreenLock() {
-        guard isPausedByScreenLock else { return }
-        isPausedByScreenLock = false
-        if !isPausedByBackpressure { Task { try? await self.stream?.startCapture() } }
-        print("[StreamCapture] Resumed from screen lock.")
-    }
-
-    func pauseForSleep() {
-        guard !isPausedBySleep else { return }
-        isPausedBySleep = true
-        if !isPausedByBackpressure && !isPausedByScreenLock { 
-            Task { try? await self.stream?.stopCapture() } 
+    func pause(_ reason: PauseReason) {
+        let wasEmpty = pauseReasons.isEmpty
+        pauseReasons.insert(reason)
+        if wasEmpty {
+            Task { try? await stream?.stopCapture() }
         }
-        log("[StreamCapture] Paused (sleep).")
+        log("[StreamCapture] Paused (\(reason)). Active reasons: \(pauseReasons)")
     }
 
-    func resumeFromSleep() {
-        guard isPausedBySleep else { return }
-        isPausedBySleep = false
-        if !isPausedByBackpressure && !isPausedByScreenLock { 
-            Task { try? await self.stream?.startCapture() } 
+    func resume(_ reason: PauseReason) {
+        pauseReasons.remove(reason)
+        if pauseReasons.isEmpty {
+            Task { try? await stream?.startCapture() }
         }
-        log("[StreamCapture] Resumed from sleep.")
+        log("[StreamCapture] Resumed from \(reason). Active reasons: \(pauseReasons)")
     }
 
     // MARK: — Frame processing
@@ -165,9 +142,9 @@ final class StreamCapture: NSObject {
         isThrottled = churnTimestamps.count > churnThreshold
         
         if isThrottled && !wasThrottled {
-            print("[StreamCapture] High churn detected (\(churnTimestamps.count) changes/min > \(churnThreshold)) — throttling to 1 frame per \(Int(churnThrottleInterval))s")
+            log("[StreamCapture] High churn detected (\(churnTimestamps.count) changes/min > \(churnThreshold)) — throttling to 1 frame per \(Int(churnThrottleInterval))s")
         } else if !isThrottled && wasThrottled {
-            print("[StreamCapture] Churn rate normalized (\(churnTimestamps.count) changes/min) — resuming normal capture")
+            log("[StreamCapture] Churn rate normalized (\(churnTimestamps.count) changes/min) — resuming normal capture")
             lastThrottledKeptTime = nil
         }
 
@@ -176,7 +153,7 @@ final class StreamCapture: NSObject {
         let isDuplicate = hamming <= pHashThreshold
 
         if debugPHash && !isDuplicate {
-            print("[pHash] KEEP frame=\(framesSeen) hamming=\(hamming) churn=\(churnTimestamps.count)/min throttled=\(isThrottled)")
+            log("[pHash] KEEP frame=\(framesSeen) hamming=\(hamming) churn=\(churnTimestamps.count)/min throttled=\(isThrottled)")
         }
 
         // Rolling stats every 100 frames seen
@@ -192,7 +169,7 @@ final class StreamCapture: NSObject {
                 fpsLine = String(format: ", %.2f fps delivered, %.2f fps stored", deliveredFps, storedFps)
             }
             
-            print(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept, churn=%d/min, throttled=%@%@",
+            log(String(format: "[pHash] Stats: %d seen, %d skipped (%.1f%%), %d kept, churn=%d/min, throttled=%@%@",
                 framesSeen, framesSkipped, skipPct, kept, churnTimestamps.count, isThrottled ? "YES" : "NO", fpsLine))
         }
 
@@ -224,7 +201,7 @@ final class StreamCapture: NSObject {
             try FileManager.default.createDirectory(at: dayDir, withIntermediateDirectories: true)
             saveJPEG(cgImage, to: fileURL)
         } catch {
-            print("[StreamCapture] Filesystem error: \(error.localizedDescription)")
+            log("[StreamCapture] Filesystem error: \(error.localizedDescription)")
             return
         }
 
@@ -244,7 +221,7 @@ final class StreamCapture: NSObject {
         do {
             try store.insertFrame(metadata)
         } catch {
-            print("[StreamCapture] Store insert failed: \(error.localizedDescription)")
+            log("[StreamCapture] Store insert failed: \(error.localizedDescription)")
             try? FileManager.default.removeItem(at: fileURL)  
             return
         }
@@ -253,12 +230,12 @@ final class StreamCapture: NSObject {
         backpressure.onFrameCaptured()
 
         if frameCounter % 100 == 0 {
-            print("[StreamCapture] \(frameCounter) frames stored in DB")
+            log("[StreamCapture] \(frameCounter) frames stored in DB")
         }
     }
 
     fileprivate func handleStreamError(_ error: any Error) {
-        print("[StreamCapture] Stream error: \(error.localizedDescription)")
+        log("[StreamCapture] Stream error: \(error.localizedDescription)")
     }
 
     private func saveJPEG(_ image: CGImage, to url: URL) {

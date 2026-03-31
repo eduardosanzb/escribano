@@ -1,6 +1,17 @@
 import Dispatch
 import Foundation
 
+// MARK: - BridgeState
+
+/// State machine for the Python bridge lifecycle.
+enum BridgeState: Sendable {
+    case idle       // Not started yet
+    case starting   // start() is in progress
+    case ready      // Bridge is running and accepting requests
+    case dead       // Bridge process died unexpectedly
+    case restarting // restart() is in progress
+}
+
 // MARK: - PythonBridgeVLMAdapter
 
 ///
@@ -42,7 +53,8 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     private var process: Process?
     private var fileHandle: FileHandle?
     private var requestId: Int = 0
-    private var isStarted: Bool = false
+    private var state: BridgeState = .idle
+    private var restartContinuations: [CheckedContinuation<Void, Error>] = []
     /// PID stored nonisolated so applicationWillTerminate can kill the bridge
     /// synchronously without an async context. nonisolated(unsafe) is safe here
     /// because storedPID is only written once (in start()) before any concurrent
@@ -99,52 +111,66 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     }
 
     func start() async throws {
-        guard !isStarted else { return }
-        log("[PythonBridge] Starting mlx_bridge.py (VLM mode)...")
-        log("[PythonBridge] Python: \(pythonPath)")
-        log("[PythonBridge] Bridge: \(bridgePath)")
-        log("[PythonBridge] Model: \(modelId)")
-        log("[PythonBridge] Max tokens: \(maxTokens)")
-        if FileManager.default.fileExists(atPath: socketPath) {
-            try? FileManager.default.removeItem(atPath: socketPath)
+        guard state != .ready else { return }
+        state = .starting
+        do {
+            log("[PythonBridge] Starting mlx_bridge.py (VLM mode)...")
+            log("[PythonBridge] Python: \(pythonPath)")
+            log("[PythonBridge] Bridge: \(bridgePath)")
+            log("[PythonBridge] Model: \(modelId)")
+            log("[PythonBridge] Max tokens: \(maxTokens)")
+            if FileManager.default.fileExists(atPath: socketPath) {
+                try? FileManager.default.removeItem(atPath: socketPath)
+            }
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: pythonPath)
+            proc.arguments = [bridgePath, "--mode", "vlm"]
+            proc.environment = buildEnv()
+            let stdoutPipe = Pipe()
+            proc.standardOutput = stdoutPipe
+            let logDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".escribano/logs")
+            try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+            let logURL = logDir.appendingPathComponent("mlx-bridge-recorder-vlm.log")
+            let stdoutLogURL = logDir.appendingPathComponent("mlx-bridge-recorder-vlm-stdout.log")
+            try? FileManager.default.removeItem(at: logURL)
+            try? FileManager.default.removeItem(at: stdoutLogURL)
+            FileManager.default.createFile(atPath: logURL.path, contents: nil)
+            FileManager.default.createFile(atPath: stdoutLogURL.path, contents: nil)
+            let stderrLogHandle = try? FileHandle(forWritingTo: logURL)
+            let stdoutLogHandle = try? FileHandle(forWritingTo: stdoutLogURL)
+            let stderrPipe = Pipe()
+            proc.standardError = stderrPipe
+            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                FileHandle.standardError.write(data)
+                stderrLogHandle?.write(data)
+            }
+            try proc.run()
+            proc.terminationHandler = { [weak self] _ in
+                Task { await self?.handleBridgeDeath() }
+            }
+            process = proc
+            storedPID = proc.processIdentifier
+            log("[PythonBridge] Python PID: \(proc.processIdentifier)")
+            try await waitForReady(stdout: stdoutPipe, logHandle: stdoutLogHandle)
+            try connectSocket()
+            state = .ready
+            log("[PythonBridge] Ready. Socket connected at \(socketPath)")
+        } catch {
+            state = .dead
+            throw error
         }
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: pythonPath)
-        proc.arguments = [bridgePath, "--mode", "vlm"]
-        proc.environment = buildEnv()
-        let stdoutPipe = Pipe()
-        proc.standardOutput = stdoutPipe
-        let logDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".escribano/logs")
-        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
-        let logURL = logDir.appendingPathComponent("mlx-bridge-recorder-vlm.log")
-        let stdoutLogURL = logDir.appendingPathComponent("mlx-bridge-recorder-vlm-stdout.log")
-        try? FileManager.default.removeItem(at: logURL)
-        try? FileManager.default.removeItem(at: stdoutLogURL)
-        FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        FileManager.default.createFile(atPath: stdoutLogURL.path, contents: nil)
-        let stderrLogHandle = try? FileHandle(forWritingTo: logURL)
-        let stdoutLogHandle = try? FileHandle(forWritingTo: stdoutLogURL)
-        let stderrPipe = Pipe()
-        proc.standardError = stderrPipe
-        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            FileHandle.standardError.write(data)
-            stderrLogHandle?.write(data)
-        }
-        try proc.run()
-        process = proc
-        storedPID = proc.processIdentifier
-        log("[PythonBridge] Python PID: \(proc.processIdentifier)")
-        try await waitForReady(stdout: stdoutPipe, logHandle: stdoutLogHandle)
-        try connectSocket()
-        isStarted = true
-        log("[PythonBridge] Ready. Socket connected at \(socketPath)")
     }
 
     func runBatch(frames: [DbFrame]) async throws -> [FrameDescription] {
-        guard isStarted else {
+        switch state {
+        case .ready: break
+        case .dead: throw PythonBridgeError.bridgeDied
+        case .restarting:
+            try await waitForRestart()
+        default:
             throw PythonBridgeError.notStarted
         }
         guard !frames.isEmpty else { return [] }
@@ -167,7 +193,14 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
                 "maxTokens": maxTokens,
             ] as [String: Any],
         ]
-        let (rawText, rawStats) = try await sendAndReceive(request: request)
+        let rawText: String
+        let rawStats: VLMStats?
+        do {
+            (rawText, rawStats) = try await sendAndReceive(request: request)
+        } catch PythonBridgeError.bridgeDied {
+            state = .dead
+            throw PythonBridgeError.bridgeDied
+        }
         let stats = rawStats.map { s in
             VLMStats(model: s.model, promptTokens: s.promptTokens, generationTokens: s.generationTokens,
                      promptTps: s.promptTps, generationTps: s.generationTps, inferenceMs: s.inferenceMs,
@@ -183,7 +216,12 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
     }
 
     func generateText(prompt: String, maxTokens: Int = 2000) async throws -> String {
-        guard isStarted else {
+        switch state {
+        case .ready: break
+        case .dead: throw PythonBridgeError.bridgeDied
+        case .restarting:
+            try await waitForRestart()
+        default:
             throw PythonBridgeError.notStarted
         }
         requestId += 1
@@ -198,7 +236,13 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
             ] as [String: Any],
         ]
 
-        let (rawText, _) = try await sendAndReceive(request: request)
+        let rawText: String
+        do {
+            (rawText, _) = try await sendAndReceive(request: request)
+        } catch PythonBridgeError.bridgeDied {
+            state = .dead
+            throw PythonBridgeError.bridgeDied
+        }
         return rawText
     }
 
@@ -208,7 +252,7 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
         fileHandle = nil
         process?.terminate()
         process = nil
-        isStarted = false
+        state = .idle
         try? FileManager.default.removeItem(atPath: socketPath)
     }
 
@@ -219,6 +263,65 @@ actor PythonBridgeVLMAdapter: VLMInferenceService, TextGenerationService {
         guard pid > 0 else { return }
         kill(pid, SIGTERM)
         log("[PythonBridge] terminateSync: sent SIGTERM to PID \(pid)")
+    }
+
+    /// Called (via Task bounce) when the Python process terminates unexpectedly.
+    private func handleBridgeDeath() {
+        guard state == .ready || state == .starting else { return }
+        log("[PythonBridge] Bridge process terminated unexpectedly")
+        state = .dead
+    }
+
+    /// Restart the bridge with exponential backoff.
+    /// If a restart is already in progress, waits for it to complete.
+    func restart() async throws {
+        if state == .restarting {
+            try await waitForRestart()
+            return
+        }
+        guard state == .dead || state == .ready else {
+            throw PythonBridgeError.notStarted
+        }
+        state = .restarting
+        log("[PythonBridge] Restarting bridge...")
+
+        let delays: [Double] = [5, 10, 20, 40, 60]
+        var lastError: Error?
+
+        for (attempt, delay) in delays.enumerated() {
+            await stop()
+            state = .restarting
+            do {
+                try await start()
+                state = .ready
+                log("[PythonBridge] Restart succeeded on attempt \(attempt + 1)")
+                // Resume any waiters
+                let waiters = restartContinuations
+                restartContinuations = []
+                for waiter in waiters { waiter.resume(returning: ()) }
+                return
+            } catch {
+                lastError = error
+                log("[PythonBridge] Restart attempt \(attempt + 1)/\(delays.count) failed: \(error.localizedDescription)")
+                if attempt < delays.count - 1 {
+                    try? await Task.sleep(for: .seconds(delay))
+                }
+            }
+        }
+
+        state = .dead
+        let waiters = restartContinuations
+        restartContinuations = []
+        let err = lastError ?? PythonBridgeError.bridgeDied
+        for waiter in waiters { waiter.resume(throwing: err) }
+        throw err
+    }
+
+    /// Suspend the caller until an in-progress restart completes (or fails).
+    private func waitForRestart() async throws {
+        try await withCheckedThrowingContinuation { cont in
+            restartContinuations.append(cont)
+        }
     }
 
     private func buildEnv() -> [String: String] {
@@ -401,6 +504,7 @@ enum PythonBridgeError: Error, LocalizedError {
     case serializationFailed
     case inferenceError(String)
     case inferenceTimeout(TimeInterval)
+    case restartFailed(Int) // number of attempts
     var errorDescription: String? {
         switch self {
         case .notStarted: return "PythonBridge not started — call start() first"
@@ -410,6 +514,7 @@ enum PythonBridgeError: Error, LocalizedError {
         case .serializationFailed: return "Failed to serialize request to JSON"
         case let .inferenceError(m): return "VLM inference error from Python: \(m)"
         case let .inferenceTimeout(t): return "VLM inference timed out after \(Int(t))s"
+        case let .restartFailed(n): return "Bridge restart failed after \(n) attempts"
         }
     }
 }

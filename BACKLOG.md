@@ -105,6 +105,18 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 - [x] `apps/recorder/README.md` created — architecture, dataflow, config reference
 - **Phase 3a complete (2026-03-27)** — See PR #53. Design amended: LLM semantic grouping replaces pure gap-aware windowing. See ADR-011 Addendum.
 
+##### Recorder Hardening (Bridge Crash Recovery + Backoff)
+- [x] `BridgeState` enum with `.idle/.starting/.ready/.dead/.restarting` — replaces boolean `isStarted`
+- [x] `Process.terminationHandler` for proactive bridge death detection
+- [x] `restart()` with exponential backoff (5s→10s→20s→40s→60s, max 5 attempts), idempotent (concurrent callers coalesce)
+- [x] `releaseFrames(ids:)` on FrameStore — returns frames to pool without wasting retry budget on bridge crashes
+- [x] FrameAnalyzer: distinguishes `bridgeDied` from other errors, releases frames + restarts bridge, stops loop after 5 consecutive failures
+- [x] SessionAggregator: re-enters bridge readiness wait loop on `bridgeDied`, stops after 5 consecutive failures
+- [x] Exponential backoff on empty polling (FrameAnalyzer: 10→120s cap, SessionAggregator: 120→480s cap)
+- [x] Sleep/wake hooks via `NSWorkspace` notifications — pause capture on sleep, resume + reset backoff on wake (daemon mode only)
+- [x] StreamCapture: `DateFormatter` and `ISO8601DateFormatter` moved to stored properties (avoid per-frame allocation)
+- **Recorder hardening complete (2026-03-30)**
+
 ##### Phase 3b: Time-Range Artifact Generation (Node.js, on-demand)
 - [ ] Update `generate-summary-v3.ts` — accept `from_ts`/`to_ts` instead of (or in addition to) `recording_id`
 - [ ] Add flush-aggregate step: run aggregation SQL on unclaimed observations before querying TBs
@@ -178,6 +190,7 @@ See: `docs/adr/009-always-on-recorder.md` for architecture decision and design.
 
 ### 2026-03
 
+- **Recorder hardening complete (2026-03-30)** — Bridge crash recovery with BridgeState machine + exponential backoff restart, frame release on bridge death, exponential backoff polling, sleep/wake hooks, DateFormatter optimization
 - **Phase 3a complete (2026-03-27)** — SessionAggregator with LLM-based semantic grouping, WorkQueue priority serialization, protocol split (FrameStore/ObservationStore), migration 017. PR #53.
 - **VLM-as-LLM POC complete** — Validated single-model approach for frame analysis + text generation via shared Python bridge socket
 - **PR #55 merged** — Fixed deprecated `launchctl load/unload` → modern `bootstrap/bootout`, monitor false positives

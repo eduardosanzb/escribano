@@ -133,6 +133,8 @@ The config file is auto-created on first run with sensible defaults and inline c
 | `ESCRIBANO_TB_MAX_OBS_PER_CYCLE` | Max observations per aggregation cycle | `300` |
 | `ESCRIBANO_TB_LLM_BATCH_SIZE` | Observations per LLM sub-batch (keeps prompts small) | `50` |
 | `ESCRIBANO_QUEUE_REALTIME_STREAK` | Max consecutive realtime tasks before normal task runs (WorkQueue fairness) | `10` |
+| `ESCRIBANO_CHURN_THRESHOLD` | Unique frame changes per minute (rolling 60s window) that trigger throttle; set lower to throttle video sooner | `40` |
+| `ESCRIBANO_CHURN_THROTTLE_INTERVAL` | Seconds between kept frames when churn throttle is active (video/screensaver detected) | `30` |
 
 **Note:** Recorder variables are injected into the LaunchAgent plist at install time. If you change these values in `~/.escribano/.env`, you must re-run `npx escribano recorder install` for the changes to take effect in the background agent.
 

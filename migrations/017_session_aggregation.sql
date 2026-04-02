@@ -1,3 +1,7 @@
+-- SHARED SCHEMA: This migration is part of the contract between
+-- escribano (public TS pipeline) and escribano-app (private Swift recorder).
+-- Both repos must agree on this schema version before changing this file.
+--
 -- Phase 3a: Session Aggregation Schema
 -- Adds support for continuous TopicBlock generation by the recorder daemon
 

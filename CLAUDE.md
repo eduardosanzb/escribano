@@ -4,6 +4,14 @@
 
 **Escribano** ("The Scribe") is an AI-powered session intelligence tool that automatically captures, transcribes, classifies, and generates artifacts from work sessions.
 
+## Two-Repo Architecture
+
+This project is split across two repositories:
+1. **[escribano](https://github.com/eduardosanzb/escribano)** (Public): The TypeScript processing pipeline, including VLM/LLM orchestration, audio alignment, and artifact generation.
+2. **[escribano-app](https://github.com/eduardosanzb/escribano-app)** (Private): The native macOS Swift app/recorder and full product backlog. It includes this public repo as a Git submodule.
+
+Note: Configuration for pipeline stability such as `ESCRIBANO_CHURN_THRESHOLD` and `ESCRIBANO_CHURN_THROTTLE_INTERVAL` apply directly to the pipeline in this public repository.
+
 ## Technology Stack
 
 - **Language**: TypeScript
@@ -14,10 +22,6 @@
 - **Linting/Formatting**: Biome
 - **Database**: SQLite (better-sqlite3)
 - **Transcription**: whisper.cpp (whisper-cli)
-
-> **Note**: The Swift recorder (`apps/recorder/`) has been moved to the private repo
-> [escribano-app](https://github.com/eduardosanzb/escribano-app). See that repo for
-> recorder architecture, VLM setup, and Swift development docs.
 
 ## Development Environment
 

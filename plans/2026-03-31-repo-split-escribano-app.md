@@ -1,6 +1,6 @@
 # Plan: Split Escribano into Public TS + Private Swift Repo
 
-**Status:** PENDING APPROVAL  
+**Status:** IN PROGRESS  
 **Created:** 2026-03-31  
 **Goal:** Move Swift recorder to private `escribano-app` repo, keep TS pipeline public
 
@@ -16,17 +16,34 @@ The user wants to:
 **Target Architecture:**
 ```
 Private: escribano-app
-├── apps/recorder/          # Swift source (migrated)
-├── escribano-ts/           # Submodule → public repo
-├── scripts/mlx_bridge.py   # Copy (maintained separately)
+├── apps/recorder/              # Swift source (migrated)
+├── escribano-ts/               # Submodule → public repo
+│   ├── scripts/mlx_bridge.py   # ← Referenced from here (not copied)
+│   └── src/db/migrations/      # ← Referenced from here (not copied)
 └── README.md
 
 Public: escribano (current repo)
-├── src/                    # TS pipeline (unchanged)
-├── db/migrations/          # Schema (shared contract)
-├── scripts/mlx_bridge.py   # Keep (batch pipeline uses it)
-└── README.md               # Updated docs
+├── src/                        # TS pipeline
+├── scripts/mlx_bridge.py       # Single source of truth
+├── src/db/migrations/          # Single source of truth (shared contract)
+└── README.md
 ```
+
+---
+
+## Shared Files Strategy
+
+Files used by both repos stay in the public repo and are referenced via submodule:
+
+| File | Location | Private repo path |
+|------|----------|-------------------|
+| `mlx_bridge.py` | Public only | `escribano-ts/scripts/mlx_bridge.py` |
+| Migrations | Public only | `escribano-ts/src/db/migrations/` |
+
+**Benefits:**
+- Single source of truth — no duplication, no drift
+- Submodule IS the sync mechanism — no git hooks/GHA needed
+- When public repo updates, private repo updates submodule reference
 
 ---
 
@@ -51,20 +68,13 @@ Public: escribano (current repo)
   - `apps/recorder/README.md`
 - **Verification:** `swift build -c release` succeeds in private repo
 
-#### Unit 1.3: Copy shared assets to private repo
+#### Unit 1.3: Add public repo as submodule
 - **Type:** Implementation
-- **Description:** Copy files that both repos need
-- **Files:**
-  - `scripts/mlx_bridge.py` → `scripts/mlx_bridge.py`
-  - `src/db/migrations/014_recorder_frames.sql` → `docs/schema/` (reference only)
-  - `src/db/migrations/015_observations_frame_fk.sql` → `docs/schema/`
-  - `src/db/migrations/017_session_aggregation.sql` → `docs/schema/`
-- **Verification:** Files exist in private repo
-
-#### Unit 1.4: Add public repo as submodule
-- **Type:** Implementation
-- **Description:** Add the public TS repo as a submodule in the private repo
+- **Description:** Add the public TS repo as a submodule in the private repo. Shared files (mlx_bridge.py, migrations) are accessed via the submodule path.
 - **Command:** `git submodule add git@github.com:eduardosanzb/escribano.git escribano-ts`
+- **Shared file access:**
+  - `mlx_bridge.py` → `escribano-ts/scripts/mlx_bridge.py`
+  - Migrations → `escribano-ts/src/db/migrations/`
 - **Verification:** `escribano-ts/` directory exists with TS code
 
 ---
@@ -181,8 +191,7 @@ Public: escribano (current repo)
 Phase 1 (Private Repo Setup)
 ├── Unit 1.1 ─── Implementation (gh repo create)
 ├── Unit 1.2 ─── After 1.1
-├── Unit 1.3 ─── After 1.2
-└── Unit 1.4 ─── After 1.3
+└── Unit 1.3 ─── After 1.2
 
 Phase 2 (Public Repo Cleanup) — Can run in parallel with Phase 1
 ├── Unit 2.1 ─── Independent
@@ -210,7 +219,7 @@ Phase 4 (Finalize) — Must be last
 - Unit 2.1, 2.2, 2.3, 2.5, 2.6, 2.7, 3.1 — all independent
 
 **Batch 2 (After Batch 1):**
-- Unit 1.2, 1.3, 1.4 — private repo setup
+- Unit 1.2, 1.3 — private repo setup
 - Unit 2.4 — needs recorder-commands.ts deleted first
 
 **Batch 3 (Final):**
@@ -224,7 +233,7 @@ Phase 4 (Finalize) — Must be last
 |------|------------|
 | Git history lost for Swift files | Use `git filter-repo` or accept fresh start (simpler) |
 | Schema drift between repos | Document as shared contract, version in migrations |
-| `mlx_bridge.py` diverges | Accept duplication; both repos maintain independently |
+| `mlx_bridge.py` diverges | Single source of truth in public repo; private repo references via submodule |
 | CI breaks after removal | Update CI config if needed (check `.github/workflows/`) |
 
 ---
@@ -248,4 +257,6 @@ pnpm test                                      # Should pass
 swift build -c release                         # Should succeed
 ls apps/recorder/Sources/                      # Should show all Swift files
 ls escribano-ts/                               # Should show TS submodule
+ls escribano-ts/scripts/mlx_bridge.py          # Should show shared bridge script
+ls escribano-ts/src/db/migrations/             # Should show shared migrations
 ```

@@ -1,6 +1,6 @@
 # Plan: Split Escribano into Public TS + Private Swift Repo
 
-**Status:** IN PROGRESS  
+**Status:** COMPLETED  
 **Created:** 2026-03-31  
 **Goal:** Move Swift recorder to private `escribano-app` repo, keep TS pipeline public
 

@@ -386,7 +386,7 @@ async function sendTextInferRequest(prompt: string): Promise<string> {
         model: LLM_MODEL,
         messages: [{ role: 'user', content: prompt }],
         stream: false,
-        max_tokens: 1000,
+        max_tokens: 4000,
       }),
       signal: controller.signal,
     });

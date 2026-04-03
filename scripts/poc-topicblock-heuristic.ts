@@ -20,6 +20,7 @@ interface Observation {
   timestamp: number;
   activity_type: string | null;
   vlm_description: string | null;
+  apps: string | null;
 }
 
 interface TopicBlock {
@@ -27,8 +28,7 @@ interface TopicBlock {
   from_ts: number;
   to_ts: number;
   observation_count: number;
-  activity_type?: string | null;
-  vlm_description?: string | null;
+  classification: string | null;
 }
 
 interface HeuristicBlock {
@@ -38,7 +38,9 @@ interface HeuristicBlock {
   endTime: number;
   duration: number;
   observationCount: number;
-  activityTypes: Set<string>;
+  activityTypes: Map<string, number>;
+  descriptions: string[];
+  apps: Map<string, number>;
   currentBlocksInside: TopicBlock[];
 }
 
@@ -52,8 +54,12 @@ interface BlockStats {
 }
 
 function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
+  if (hrs > 0) {
+    return `${hrs}h ${mins}m`;
+  }
   if (mins > 0) {
     return `${mins}m ${secs}s`;
   }
@@ -79,6 +85,27 @@ function computeHeuristicBlocks(
     return blocks;
   }
 
+  function makeActivityMap(act: string | null): Map<string, number> {
+    const m = new Map<string, number>();
+    if (act) m.set(act, 1);
+    return m;
+  }
+
+  function makeAppSet(appsJson: string | null): Map<string, number> {
+    const m = new Map<string, number>();
+    if (appsJson) {
+      try {
+        const arr = JSON.parse(appsJson);
+        if (Array.isArray(arr)) {
+          for (const a of arr) {
+            if (typeof a === 'string') m.set(a, (m.get(a) ?? 0) + 1);
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    return m;
+  }
+
   let currentBlock: HeuristicBlock = {
     startIndex: 0,
     endIndex: 0,
@@ -86,7 +113,9 @@ function computeHeuristicBlocks(
     endTime: observations[0].timestamp,
     duration: 0,
     observationCount: 1,
-    activityTypes: new Set(observations[0].activity_type ? [observations[0].activity_type] : []),
+    activityTypes: makeActivityMap(observations[0].activity_type),
+    descriptions: observations[0].vlm_description ? [observations[0].vlm_description] : [],
+    apps: makeAppSet(observations[0].apps),
   };
 
   for (let i = 1; i < observations.length; i++) {
@@ -109,7 +138,9 @@ function computeHeuristicBlocks(
         endTime: currObs.timestamp,
         duration: 0,
         observationCount: 1,
-        activityTypes: new Set(currObs.activity_type ? [currObs.activity_type] : []),
+        activityTypes: makeActivityMap(currObs.activity_type),
+        descriptions: currObs.vlm_description ? [currObs.vlm_description] : [],
+        apps: makeAppSet(currObs.apps),
       };
     } else {
       // Continue current block
@@ -117,7 +148,25 @@ function computeHeuristicBlocks(
       currentBlock.endTime = currObs.timestamp;
       currentBlock.observationCount++;
       if (currObs.activity_type) {
-        currentBlock.activityTypes.add(currObs.activity_type);
+        currentBlock.activityTypes.set(
+          currObs.activity_type,
+          (currentBlock.activityTypes.get(currObs.activity_type) ?? 0) + 1
+        );
+      }
+      if (currObs.vlm_description) {
+        currentBlock.descriptions.push(currObs.vlm_description);
+      }
+      if (currObs.apps) {
+        try {
+          const arr = JSON.parse(currObs.apps);
+          if (Array.isArray(arr)) {
+            for (const a of arr) {
+              if (typeof a === 'string') {
+                currentBlock.apps.set(a, (currentBlock.apps.get(a) ?? 0) + 1);
+              }
+            }
+          }
+        } catch { /* ignore */ }
       }
     }
   }
@@ -205,16 +254,73 @@ function printComparisonTable(stats: BlockStats[]) {
   }
 }
 
+function topEntries(map: Map<string, number>, n: number): string[] {
+  return Array.from(map.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([k, v]) => `${k}(${v})`);
+}
+
+function topApps(map: Map<string, number>, n: number): string[] {
+  return Array.from(map.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([k]) => k);
+}
+
+function truncate(str: string, maxLen: number): string {
+  const clean = str.replace(/\n/g, ' ').trim();
+  if (clean.length <= maxLen) return clean;
+  return clean.slice(0, maxLen - 3) + '...';
+}
+
+function printBlockContent(
+  blockNum: number,
+  startTime: number,
+  endTime: number,
+  duration: number,
+  obsCount: number,
+  activityTypes: Map<string, number>,
+  apps: Map<string, number>,
+  descriptions: string[]
+) {
+  console.log(`\n  === BLOCK #${blockNum} ===`);
+  console.log(`  Time: ${formatTime(startTime)} - ${formatTime(endTime)} (${formatDuration(duration)})`);
+  console.log(`  Observations: ${obsCount}`);
+
+  const activities = topEntries(activityTypes, 3);
+  console.log(`  Activities: ${activities.length > 0 ? activities.join(', ') : 'none'}`);
+
+  const appList = topApps(apps, 5);
+  console.log(`  Apps: ${appList.length > 0 ? appList.join(', ') : 'none'}`);
+
+  const samples = descriptions.filter(d => d && d.length > 0).slice(0, 3);
+  if (samples.length > 0) {
+    console.log(`  Sample descriptions:`);
+    for (const s of samples) {
+      console.log(`    - "${truncate(s, 120)}"`);
+    }
+  } else {
+    console.log(`  Sample descriptions: (none)`);
+  }
+}
+
 function printHeuristicBlockDetails(blocks: HeuristicBlock[], threshold: number) {
-  console.log(`\n--- Gap ${threshold}s Heuristic Blocks (${blocks.length} total) ---\n`);
+  console.log(`\n${'='.repeat(70)}`);
+  console.log(`  GAP ${threshold}s — ${blocks.length} blocks`);
+  console.log(`${'='.repeat(70)}`);
 
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
-    const timeRange = `${formatTime(block.startTime)}-${formatTime(block.endTime)}`;
-    const activities = Array.from(block.activityTypes).slice(0, 3).join(', ') || 'none';
-
-    console.log(
-      `#${String(i + 1).padStart(3)} | ${timeRange.padStart(11)} | ${formatDuration(block.duration).padStart(6)} | ${String(block.observationCount).padStart(3)} obs | [${activities}]`
+    printBlockContent(
+      i + 1,
+      block.startTime,
+      block.endTime,
+      block.duration,
+      block.observationCount,
+      block.activityTypes,
+      block.apps,
+      block.descriptions
     );
   }
 }
@@ -496,6 +602,87 @@ function printDiffSummary(
   }
 }
 
+function printSubstantialDBBlocks(db: ReturnType<typeof Database>, since: number, maxTimestamp: number) {
+  // Fetch substantial blocks: >= 5 observations AND >= 60s duration
+  const substantialBlocks = db
+    .prepare(
+      `SELECT tb.id, tb.from_ts, tb.to_ts, tb.observation_count, tb.classification
+       FROM topic_blocks tb
+       WHERE tb.from_ts >= ? AND tb.to_ts <= ?
+         AND tb.observation_count >= 5
+         AND (tb.to_ts - tb.from_ts) >= 60
+       ORDER BY tb.from_ts ASC`
+    )
+    .all(since, maxTimestamp) as TopicBlock[];
+
+  console.log(`\n${'='.repeat(70)}`);
+  console.log(`  SUBSTANTIAL DB BLOCKS — ${substantialBlocks.length} blocks`);
+  console.log(`  (observation_count >= 5 AND duration >= 60s)`);
+  console.log(`${'='.repeat(70)}`);
+
+  if (substantialBlocks.length === 0) {
+    console.log(`\n  No substantial blocks found in this time range.`);
+    return;
+  }
+
+  // Prepare statement to fetch observations for each block
+  const fetchObsStmt = db.prepare(
+    `SELECT activity_type, vlm_description, apps
+     FROM observations
+     WHERE timestamp >= ? AND timestamp <= ?
+     ORDER BY timestamp ASC`
+  );
+
+  for (let i = 0; i < substantialBlocks.length; i++) {
+    const tb = substantialBlocks[i];
+    const duration = tb.to_ts - tb.from_ts;
+
+    // Fetch observations in this block's time range
+    const obs = fetchObsStmt.all(tb.from_ts, tb.to_ts) as {
+      activity_type: string | null;
+      vlm_description: string | null;
+      apps: string | null;
+    }[];
+
+    // Aggregate activity types
+    const activityTypes = new Map<string, number>();
+    const apps = new Map<string, number>();
+    const descriptions: string[] = [];
+
+    for (const o of obs) {
+      if (o.activity_type) {
+        activityTypes.set(o.activity_type, (activityTypes.get(o.activity_type) ?? 0) + 1);
+      }
+      if (o.vlm_description) {
+        descriptions.push(o.vlm_description);
+      }
+      if (o.apps) {
+        try {
+          const arr = JSON.parse(o.apps);
+          if (Array.isArray(arr)) {
+            for (const a of arr) {
+              if (typeof a === 'string') {
+                apps.set(a, (apps.get(a) ?? 0) + 1);
+              }
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
+    printBlockContent(
+      i + 1,
+      tb.from_ts,
+      tb.to_ts,
+      duration,
+      tb.observation_count,
+      activityTypes,
+      apps,
+      descriptions
+    );
+  }
+}
+
 function parseArgs(): { since: number | null } {
   const args = process.argv.slice(2);
   let since: number | null = null;
@@ -544,7 +731,7 @@ function main(): void {
   // Fetch observations in range
   const observations = db
     .prepare(
-      'SELECT id, timestamp, activity_type, vlm_description FROM observations WHERE timestamp >= ? ORDER BY timestamp ASC'
+      'SELECT id, timestamp, activity_type, vlm_description, apps FROM observations WHERE timestamp >= ? ORDER BY timestamp ASC'
     )
     .all(since) as Observation[];
 
@@ -598,6 +785,9 @@ function main(): void {
     const blocks = heuristicBlocksByThreshold.get(threshold)!;
     printHeuristicBlockDetails(blocks, threshold);
   }
+
+  // Print substantial DB blocks with full content
+  printSubstantialDBBlocks(db, since, maxTimestamp);
 
   // Enhanced gap analysis for 300s threshold
   console.log('\n');

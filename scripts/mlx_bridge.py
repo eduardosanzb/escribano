@@ -454,12 +454,12 @@ def handle_request(
             )
             return
 
-        if BRIDGE_MODE == "vlm" and method == "llm_infer":
+        if BRIDGE_MODE == "vlm" and method in ("llm_infer", "llm_prompt_fit"):
             send_response(
                 conn,
                 {
                     "id": request_id,
-                    "error": "llm_infer not available in VLM-only mode",
+                    "error": f"{method} not available in VLM-only mode",
                     "done": True,
                 },
             )
@@ -518,39 +518,47 @@ def handle_request(
                     from mlx_lm import generate
                     from mlx_lm.sample_utils import make_sampler
 
-                    messages = params.get("messages", [])
-                    raw_prompt = params.get("rawPrompt")
                     max_tokens = params.get("maxTokens", 8000)
                     temperature = params.get("temperature", 0.7)
                     think = params.get("think", False)
 
-                    # Determine prompt source and apply chat template
-                    if raw_prompt:
-                        # Apply chat template to raw prompt
-                        chat_messages = [{"role": "user", "content": raw_prompt}]
-                        prompt = llm_tokenizer.apply_chat_template(
-                            chat_messages,
-                            tokenize=False,
-                            add_generation_prompt=True,
-                            chat_template_kwargs={"enable_thinking": think},
-                        )
-                        log(
-                            f"Applied chat template to raw prompt (think={think}, temp={temperature})",
-                            "debug",
-                        )
-                    elif messages:
-                        # Apply chat template to messages array
-                        prompt = llm_tokenizer.apply_chat_template(
-                            messages,
-                            tokenize=False,
-                            add_generation_prompt=True,
-                            chat_template_kwargs={"enable_thinking": think},
-                        )
-                        log(
-                            f"Applied chat template to messages (think={think}, temp={temperature})",
-                            "debug",
-                        )
-                    else:
+                    def build_llm_prompt(tokenizer_obj: Any, prompt_params: dict) -> str | None:
+                        messages = prompt_params.get("messages", [])
+                        raw_prompt = prompt_params.get("rawPrompt")
+                        think_enabled = prompt_params.get("think", False)
+
+                        if raw_prompt:
+                            chat_messages = [{"role": "user", "content": raw_prompt}]
+                            built_prompt = tokenizer_obj.apply_chat_template(
+                                chat_messages,
+                                tokenize=False,
+                                add_generation_prompt=True,
+                                chat_template_kwargs={"enable_thinking": think_enabled},
+                            )
+                            log(
+                                f"Applied chat template to raw prompt (think={think_enabled}, temp={temperature})",
+                                "debug",
+                            )
+                            return built_prompt
+
+                        if messages:
+                            built_prompt = tokenizer_obj.apply_chat_template(
+                                messages,
+                                tokenize=False,
+                                add_generation_prompt=True,
+                                chat_template_kwargs={"enable_thinking": think_enabled},
+                            )
+                            log(
+                                f"Applied chat template to messages (think={think_enabled}, temp={temperature})",
+                                "debug",
+                            )
+                            return built_prompt
+
+                        return None
+
+                    prompt = build_llm_prompt(llm_tokenizer, params)
+
+                    if prompt is None:
                         send_response(
                             conn,
                             {
@@ -636,6 +644,140 @@ def handle_request(
 
                 except Exception as e:
                     log(f"Text generation failed: {e}", "error")
+                    send_response(
+                        conn, {"id": request_id, "error": str(e), "done": True}
+                    )
+        elif method == "llm_prompt_fit":
+            if llm_model is None or llm_tokenizer is None:
+                send_response(
+                    conn,
+                    {"id": request_id, "error": "LLM model not loaded", "done": True},
+                )
+            else:
+                try:
+                    requested_output_tokens = int(params.get("maxTokens", 8000))
+                    reserved_tokens = 24000
+                    fallback_context_limit = 262144
+
+                    def build_llm_prompt(tokenizer_obj: Any, prompt_params: dict) -> str | None:
+                        messages = prompt_params.get("messages", [])
+                        raw_prompt = prompt_params.get("rawPrompt")
+                        think_enabled = prompt_params.get("think", False)
+
+                        if raw_prompt:
+                            chat_messages = [{"role": "user", "content": raw_prompt}]
+                            built_prompt = tokenizer_obj.apply_chat_template(
+                                chat_messages,
+                                tokenize=False,
+                                add_generation_prompt=True,
+                                chat_template_kwargs={"enable_thinking": think_enabled},
+                            )
+                            log(
+                                f"Applied chat template to raw prompt for fit check (think={think_enabled})",
+                                "debug",
+                            )
+                            return built_prompt
+
+                        if messages:
+                            built_prompt = tokenizer_obj.apply_chat_template(
+                                messages,
+                                tokenize=False,
+                                add_generation_prompt=True,
+                                chat_template_kwargs={"enable_thinking": think_enabled},
+                            )
+                            log(
+                                f"Applied chat template to messages for fit check (think={think_enabled})",
+                                "debug",
+                            )
+                            return built_prompt
+
+                        return None
+
+                    def count_prompt_tokens(tokenizer_obj: Any, prompt_text: str) -> int:
+                        tokenized = tokenizer_obj.encode(prompt_text)
+                        input_ids = getattr(tokenized, "input_ids", tokenized)
+                        if isinstance(input_ids, dict):
+                            input_ids = input_ids.get("input_ids", [])
+                        if isinstance(input_ids, list) and input_ids and isinstance(input_ids[0], list):
+                            return len(input_ids[0])
+                        return len(input_ids)
+
+                    def resolve_context_limit(model_ref: Any, tokenizer_obj: Any) -> int:
+                        candidates = [
+                            getattr(model_ref, "config", None),
+                            getattr(model_ref, "args", None),
+                            tokenizer_obj,
+                            getattr(tokenizer_obj, "tokenizer", None),
+                        ]
+                        field_names = (
+                            "max_position_embeddings",
+                            "max_seq_len",
+                            "model_max_length",
+                            "max_length",
+                            "context_length",
+                            "n_ctx",
+                        )
+
+                        for candidate in candidates:
+                            if candidate is None:
+                                continue
+                            for field_name in field_names:
+                                value = getattr(candidate, field_name, None)
+                                if isinstance(value, int) and value > 0 and value < 10_000_000:
+                                    return value
+
+                        log(
+                            f"Context limit metadata unavailable for request {request_id}; using fallback {fallback_context_limit}",
+                            "error",
+                        )
+                        return fallback_context_limit
+
+                    prompt = build_llm_prompt(llm_tokenizer, params)
+
+                    if prompt is None:
+                        send_response(
+                            conn,
+                            {
+                                "id": request_id,
+                                "error": "No prompt provided (need 'rawPrompt' or 'messages')",
+                                "done": True,
+                            },
+                        )
+                        return
+
+                    if not prompt:
+                        send_response(
+                            conn,
+                            {
+                                "id": request_id,
+                                "error": "Empty prompt after template",
+                                "done": True,
+                            },
+                        )
+                        return
+
+                    prompt_tokens = count_prompt_tokens(llm_tokenizer, prompt)
+                    context_limit = resolve_context_limit(llm_model, llm_tokenizer)
+                    safe_input_budget = (
+                        context_limit - requested_output_tokens - reserved_tokens
+                    )
+                    fits = prompt_tokens <= safe_input_budget
+
+                    send_response(
+                        conn,
+                        {
+                            "id": request_id,
+                            "fits": fits,
+                            "prompt_tokens": prompt_tokens,
+                            "context_limit": context_limit,
+                            "requested_output_tokens": requested_output_tokens,
+                            "reserved_tokens": reserved_tokens,
+                            "safe_input_budget": safe_input_budget,
+                            "done": True,
+                        },
+                    )
+                except Exception as e:
+                    log(f"Prompt fit check failed: {e}", "error")
                     send_response(
                         conn, {"id": request_id, "error": str(e), "done": True}
                     )

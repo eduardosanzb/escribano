@@ -305,6 +305,132 @@ def send_response(conn: socket.socket, obj: dict) -> None:
         log(f"Failed to send response: {e}", "error")
 
 
+def build_vlm_prompt(processor_obj: Any, prompt_params: dict) -> str | None:
+    """Build a VLM prompt using the same template path as text_infer/vlm_infer."""
+    from mlx_vlm.prompt_utils import get_chat_template
+
+    messages = prompt_params.get("messages", [])
+    raw_prompt = prompt_params.get("rawPrompt")
+
+    if raw_prompt:
+        messages = [{"role": "user", "content": raw_prompt}]
+
+    if not messages:
+        return None
+
+    return get_chat_template(processor_obj, messages, add_generation_prompt=True)
+
+
+def count_prompt_tokens(tokenizer_obj: Any, prompt_text: str) -> int:
+    """Count prompt tokens across tokenizer return shapes."""
+    tokenized = tokenizer_obj.encode(prompt_text)
+    input_ids = getattr(tokenized, "input_ids", tokenized)
+    if isinstance(input_ids, dict):
+        input_ids = input_ids.get("input_ids", [])
+    if isinstance(input_ids, list) and input_ids and isinstance(input_ids[0], list):
+        return len(input_ids[0])
+    return len(input_ids)
+
+
+def resolve_context_limit(*candidates: Any, fallback_context_limit: int, request_id: int) -> int:
+    """Resolve model context limit from known config/tokenizer fields."""
+    field_names = (
+        "max_position_embeddings",
+        "max_seq_len",
+        "model_max_length",
+        "max_length",
+        "context_length",
+        "n_ctx",
+    )
+
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        for field_name in field_names:
+            value = getattr(candidate, field_name, None)
+            if isinstance(value, int) and value > 0 and value < 10_000_000:
+                return value
+
+    log(
+        f"Context limit metadata unavailable for request {request_id}; using fallback {fallback_context_limit}",
+        "error",
+    )
+    return fallback_context_limit
+
+
+def handle_text_prompt_fit(
+    conn: socket.socket,
+    model_obj: Any,
+    processor_obj: Any,
+    config_obj: Any,
+    params: dict,
+    request_id: int,
+) -> None:
+    """Check prompt fit for VLM-mode text generation using the text_infer prompt path."""
+    requested_output_tokens = int(params.get("maxTokens", 8000))
+    reserved_tokens = 24000
+    fallback_context_limit = 262144
+
+    try:
+        prompt = build_vlm_prompt(processor_obj, params)
+
+        if prompt is None:
+            send_response(
+                conn,
+                {
+                    "id": request_id,
+                    "error": "No prompt provided (need 'rawPrompt' or 'messages')",
+                    "done": True,
+                },
+            )
+            return
+
+        if not prompt:
+            send_response(
+                conn,
+                {
+                    "id": request_id,
+                    "error": "Empty prompt after template",
+                    "done": True,
+                },
+            )
+            return
+
+        tokenizer = getattr(processor_obj, "tokenizer", None)
+        if tokenizer is None:
+            raise ValueError("VLM tokenizer unavailable")
+
+        prompt_tokens = count_prompt_tokens(tokenizer, prompt)
+        context_limit = resolve_context_limit(
+            config_obj,
+            getattr(config_obj, "text_config", None),
+            getattr(model_obj, "config", None),
+            tokenizer,
+            getattr(tokenizer, "tokenizer", None),
+            fallback_context_limit=fallback_context_limit,
+            request_id=request_id,
+        )
+        safe_input_budget = context_limit - requested_output_tokens - reserved_tokens
+        fits = prompt_tokens <= safe_input_budget
+
+        send_response(
+            conn,
+            {
+                "id": request_id,
+                "fits": fits,
+                "prompt_tokens": prompt_tokens,
+                "context_limit": context_limit,
+                "requested_output_tokens": requested_output_tokens,
+                "reserved_tokens": reserved_tokens,
+                "safe_input_budget": safe_input_budget,
+                "done": True,
+            },
+        )
+    except Exception as e:
+        log(f"Prompt fit check failed: {e}", "error")
+        send_response(conn, {"id": request_id, "error": str(e), "done": True})
+
+
 
 
 def handle_vlm_infer(
@@ -322,7 +448,6 @@ def handle_vlm_infer(
     Output: raw text string + stats
     """
     from mlx_vlm import generate
-    from mlx_vlm.prompt_utils import get_chat_template
 
     global model, processor, config
 
@@ -345,7 +470,7 @@ def handle_vlm_infer(
         log(f"Processing VLM inference request", "debug")
 
         # Apply chat template
-        prompt = get_chat_template(processor_obj, messages, add_generation_prompt=True)
+        prompt = build_vlm_prompt(processor_obj, {"messages": messages})
 
         t_start = time.time()
 
@@ -479,6 +604,10 @@ def handle_request(
             # We call handle_vlm_infer directly — it already handles image=None
             # when no image paths are in the messages.
             handle_vlm_infer(
+                conn, model_obj, processor_obj, config_obj, params, request_id
+            )
+        elif method == "text_prompt_fit":
+            handle_text_prompt_fit(
                 conn, model_obj, processor_obj, config_obj, params, request_id
             )
         elif method == "load_llm":
@@ -693,45 +822,6 @@ def handle_request(
 
                         return None
 
-                    def count_prompt_tokens(tokenizer_obj: Any, prompt_text: str) -> int:
-                        tokenized = tokenizer_obj.encode(prompt_text)
-                        input_ids = getattr(tokenized, "input_ids", tokenized)
-                        if isinstance(input_ids, dict):
-                            input_ids = input_ids.get("input_ids", [])
-                        if isinstance(input_ids, list) and input_ids and isinstance(input_ids[0], list):
-                            return len(input_ids[0])
-                        return len(input_ids)
-
-                    def resolve_context_limit(model_ref: Any, tokenizer_obj: Any) -> int:
-                        candidates = [
-                            getattr(model_ref, "config", None),
-                            getattr(model_ref, "args", None),
-                            tokenizer_obj,
-                            getattr(tokenizer_obj, "tokenizer", None),
-                        ]
-                        field_names = (
-                            "max_position_embeddings",
-                            "max_seq_len",
-                            "model_max_length",
-                            "max_length",
-                            "context_length",
-                            "n_ctx",
-                        )
-
-                        for candidate in candidates:
-                            if candidate is None:
-                                continue
-                            for field_name in field_names:
-                                value = getattr(candidate, field_name, None)
-                                if isinstance(value, int) and value > 0 and value < 10_000_000:
-                                    return value
-
-                        log(
-                            f"Context limit metadata unavailable for request {request_id}; using fallback {fallback_context_limit}",
-                            "error",
-                        )
-                        return fallback_context_limit
-
                     prompt = build_llm_prompt(llm_tokenizer, params)
 
                     if prompt is None:
@@ -757,7 +847,14 @@ def handle_request(
                         return
 
                     prompt_tokens = count_prompt_tokens(llm_tokenizer, prompt)
-                    context_limit = resolve_context_limit(llm_model, llm_tokenizer)
+                    context_limit = resolve_context_limit(
+                        getattr(llm_model, "config", None),
+                        getattr(llm_model, "args", None),
+                        llm_tokenizer,
+                        getattr(llm_tokenizer, "tokenizer", None),
+                        fallback_context_limit=fallback_context_limit,
+                        request_id=request_id,
+                    )
                     safe_input_budget = (
                         context_limit - requested_output_tokens - reserved_tokens
                     )

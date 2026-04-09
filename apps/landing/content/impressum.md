@@ -2,11 +2,11 @@
 title: "Impressum"
 date: 2026-04-09
 draft: false
-description: "Legal Notice — Information according to § 5 TMG"
+description: "Legal Notice — Information according to § 5 DDG"
 layout: "single"
 ---
 
-## Angaben gemäß § 5 TMG
+## Angaben gemäß § 5 DDG
 
 Eduardo Sánchez Bautista
 Lübecker Strasse 15

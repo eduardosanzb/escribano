@@ -160,54 +160,51 @@
   </script>
 
   <script>
-    // Waitlist form handler for Buttondown
-    function initWaitlistForm(formId, messageId) {
+    // Beta access form handler — POSTs email to PocketBase
+    function initBetaForm(formId, messageId) {
       const form = document.getElementById(formId);
       const messageEl = document.getElementById(messageId);
       if (!form) return;
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
         const submitBtn = form.querySelector('.waitlist-submit');
         const originalText = submitBtn.textContent;
         const emailInput = form.querySelector('input[type="email"]');
-        
-        // Disable button and show loading state
+
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Joining...';
-        messageEl.textContent = '';
+        submitBtn.textContent = 'Sending...';
+        messageEl.style.display = 'none';
         messageEl.classList.remove('error', 'success');
 
         try {
-          const formData = new FormData(form);
-          const response = await fetch(form.action, {
+          const response = await fetch('https://admin.raus.cloud/api/collections/beta_requests/records', {
             method: 'POST',
-            body: formData,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailInput.value })
           });
 
-          // Buttondown redirects on success, so we check if request succeeded
-          if (response.ok || response.status === 0 || response.type === 'opaqueredirect') {
-            // Success
+          if (response.ok) {
             form.style.display = 'none';
-            messageEl.textContent = "You're on the list! We'll notify you when cloud launches.";
+            messageEl.textContent = "You\u2019re on the list \u2014 we\u2019ll be in touch.";
             messageEl.classList.add('success');
+            messageEl.style.display = 'block';
           } else {
-            throw new Error('Submission failed');
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data?.message || 'Submission failed');
           }
         } catch (error) {
-          // Error
           submitBtn.disabled = false;
           submitBtn.textContent = originalText;
-          messageEl.textContent = 'Something went wrong. Try again or email info@escribano.work';
+          messageEl.textContent = 'Something went wrong. Email info@escribano.work directly.';
           messageEl.classList.add('error');
+          messageEl.style.display = 'block';
         }
       });
     }
 
-    // Initialize both forms
-    initWaitlistForm('waitlist-form-hero', 'waitlist-msg-hero');
-    initWaitlistForm('waitlist-form-pricing', 'waitlist-msg-pricing');
+    initBetaForm('beta-form-pricing', 'beta-msg-pricing');
   </script>
 </body>
 </html>

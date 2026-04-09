@@ -24,7 +24,7 @@ Our web server records standard access log entries for each HTTP request. These 
 
 ### Analytics
 
-This site uses **Umami Analytics** (self-hosted on European infrastructure at `analytics.raus.cloud`). For each page view, Umami transiently processes: the page URL, the HTTP referrer, the browser User-Agent string, and the approximate country derived from your IP address. **Your IP address is not stored.** No cookies are set, no cross-site tracking occurs, and no personal identifiers are retained or linked to you. Legal basis: Art. 6(1)(f) GDPR (legitimate interest in understanding aggregate site usage). No data is shared with third parties. Data is stored on European infrastructure only.
+This site uses **Umami Analytics** (self-hosted on European infrastructure at `analytics.raus.cloud`). For each page view, Umami transiently processes: the page URL, the HTTP referrer, the browser User-Agent string, and the approximate country derived from your IP address. **Your IP address is not stored.** No cookies are set, no cross-site tracking occurs, and no personal identifiers are retained or linked to you. Legal basis: Art. 6(1)(f) GDPR (legitimate interest in understanding aggregate site usage). **Individual page-view request data is processed transiently and is not retained as personal data. Only aggregated, non-personal analytics statistics are stored on European infrastructure.** No data is shared with third parties.
 
 ### No cookies
 

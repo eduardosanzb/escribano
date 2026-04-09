@@ -6,7 +6,7 @@ description: "Download and set up Escribano in four steps"
 layout: "single"
 ---
 
-[**Download for macOS →**](https://github.com/eduardosanzb/escribano/releases/latest)
+[**Download for macOS →**](https://github.com/eduardosanzb/escribano-releases/releases/latest)
 
 *Apple Silicon (M1+) · 16 GB RAM minimum · macOS 13 or later*
 

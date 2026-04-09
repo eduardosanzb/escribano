@@ -30,6 +30,10 @@ This site uses **Umami Analytics** (self-hosted on European infrastructure at `a
 
 This site sets no tracking or advertising cookies. The only browser storage used is `localStorage` for your theme preference (light/dark/system). This constitutes technically necessary storage under § 25(2) Nr. 2 TTDSG — no consent is required, and this data never leaves your browser.
 
+### Beta access requests
+
+If you submit your email address using the "Request access" form on this site, your email address is stored in a self-hosted database running on our own European infrastructure (`raus.cloud`). Your email is used solely to contact you regarding beta access to Escribano. **Legal basis: Art. 6(1)(a) GDPR (your consent, given at the time of submission).** You may withdraw consent and request deletion of your email address at any time by writing to `info@escribano.work`. Your email is not shared with any third party.
+
 ## Your rights under GDPR
 
 You have the following rights regarding any personal data we process:

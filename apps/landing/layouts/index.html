@@ -84,16 +84,15 @@
       Escribano watches your screen recordings and turns hours of deep work into structured, shareable summaries — so you never start a status update from a blank page again.
     </p>
     <div class="hero-actions">
-      <form class="waitlist-form" id="waitlist-form-hero"
-            action="https://buttondown.com/api/emails/embed-subscribe/sanchez_bautista"
-            method="post">
-        <input type="email" name="email" placeholder="you@company.com"
-               class="waitlist-input" required autocomplete="email">
-        <button type="submit" class="btn-primary waitlist-submit">Join the waitlist</button>
-      </form>
-      <p class="waitlist-message" id="waitlist-msg-hero" aria-live="polite"></p>
-      <a href="#open-source" class="btn-ghost">Try it free <span>→</span></a>
+      <a href="https://github.com/eduardosanzb/escribano/releases/latest"
+         class="btn-primary" target="_blank" rel="noopener">
+        Download for macOS
+      </a>
+      <a href="#open-source" class="btn-ghost">View source <span>→</span></a>
     </div>
+    <p style="font-size:0.82em; opacity:0.55; margin-top:0.75rem; font-family: var(--font-sans);">
+      Free · Apple Silicon (M1+) · 16 GB RAM minimum
+    </p>
     <div class="indie-badge">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
@@ -161,18 +160,18 @@
     <div class="steps">
       <div class="step fade-up">
         <div class="step-num">01</div>
-        <h3>Record your session</h3>
-        <p>Use any screen recording tool you already have. Escribano works with whatever you capture — no new habits required.</p>
+        <h3>Download and install</h3>
+        <p>Download the DMG, drag Escribano to Applications. On first launch, grant Screen Recording permission. The recorder starts automatically — no terminal, no config, no daemon to manage.</p>
       </div>
       <div class="step fade-up" style="transition-delay: 0.15s">
         <div class="step-num">02</div>
-        <h3>Escribano understands</h3>
-        <p>Our vision pipeline watches what you did — not just what was on screen, but the activity: research, drafting, review, meetings, planning.</p>
+        <h3>It watches your screen</h3>
+        <p>Always-on capture at one-second intervals. A local VLM running entirely on your machine understands your activity — coding, debugging, reviewing, researching — and groups it into TopicBlocks automatically.</p>
       </div>
       <div class="step fade-up" style="transition-delay: 0.3s">
         <div class="step-num">03</div>
-        <h3>Your artifact, ready</h3>
-        <p>A structured, human-readable summary arrives — ready to paste into your standup, status report, or personal work journal.</p>
+        <h3>Ask for your artifact</h3>
+        <p>Open the menu bar app, pick your format — standup, session card, or narrative — and Escribano generates it from your recent work. Copy and paste. Nothing leaves your machine.</p>
       </div>
     </div>
   </div>
@@ -181,8 +180,8 @@
 <section class="open-source-section" id="open-source">
   <div class="open-source">
     <div class="section-label">Available now</div>
-    <h2>Open source. Runs locally.</h2>
-    <p class="open-source-sub">Process your recordings on your own machine. No cloud, no API keys, no data leaves your computer.</p>
+    <h2>Also open source.</h2>
+    <p class="open-source-sub">The TypeScript pipeline powering Escribano's VLM analysis is fully open source. Use it directly for batch processing, or contribute to the engine.</p>
 
     <div class="open-source-grid">
       <div class="terminal-demo">
@@ -210,7 +209,7 @@
 
       <div class="open-source-details">
         <div class="detail-block">
-          <h4>Quick start</h4>
+          <h4>Batch pipeline</h4>
           <code>npx escribano --file recording.mov</code>
         </div>
         <div class="detail-block">
@@ -231,7 +230,7 @@
           </ul>
         </div>
         <div class="detail-actions">
-          <a href="https://github.com/eduardosanzb/escribano" class="btn-primary" target="_blank" rel="noopener">View on GitHub</a>
+          <a href="https://github.com/eduardosanzb/escribano" class="btn-primary" target="_blank" rel="noopener">View source on GitHub</a>
           <a href="https://github.com/eduardosanzb/escribano" class="btn-ghost" target="_blank" rel="noopener">Star the repo <span>★</span></a>
         </div>
       </div>
@@ -305,38 +304,33 @@
   <div class="pricing">
     <div class="section-label">Pricing</div>
     <h2>Simple, honest pricing.</h2>
-    <p class="pricing-sub">No free tier designed to frustrate you into upgrading. One price, all features.</p>
+    <p class="pricing-sub">Local-first. No cloud required. Beta testers get unlimited history and direct access to the roadmap.</p>
     <div class="pricing-cards">
       <div class="pricing-card">
-        <div class="pricing-card-label">Open Source</div>
+        <div class="pricing-card-label">Free</div>
         <div class="price">Free</div>
-        <div class="price-period">Forever · self-hosted</div>
+        <div class="price-period">Always · local processing</div>
         <ul class="pricing-features">
-          <li>Unlimited sessions</li>
+          <li>7-day history window</li>
           <li>3 artifact formats — card, standup, narrative</li>
-          <li>Local processing, no cloud upload</li>
-          <li>macOS Apple Silicon · 16GB+ RAM</li>
+          <li>All processing runs locally</li>
+          <li>macOS Apple Silicon · 16 GB+ RAM</li>
         </ul>
-        <a href="#open-source" class="btn-pricing">Get started</a>
+        <a href="https://github.com/eduardosanzb/escribano/releases/latest"
+           class="btn-pricing" target="_blank" rel="noopener">Download</a>
       </div>
       <div class="pricing-card featured">
-        <div class="pricing-card-label">Cloud · Coming soon</div>
-        <div class="price">Coming soon</div>
-        <div class="price-period">per month · cancel anytime</div>
+        <div class="pricing-card-label">Beta</div>
+        <div class="price">Invite only</div>
+        <div class="price-period">Unlimited history · all formats</div>
         <ul class="pricing-features">
-          <li>Cloud processing — no setup required</li>
-          <li>Automatic recording capture</li>
-          <li>Cross-session search &amp; context</li>
-          <li>European infrastructure only</li>
+          <li>Unlimited history window</li>
+          <li>All artifact formats</li>
+          <li>Priority support</li>
+          <li>Shape the product roadmap</li>
         </ul>
-        <form class="waitlist-form waitlist-form--pricing" id="waitlist-form-pricing"
-              action="https://buttondown.com/api/emails/embed-subscribe/sanchez_bautista"
-              method="post">
-          <input type="email" name="email" placeholder="you@company.com"
-                 class="waitlist-input" required autocomplete="email">
-          <button type="submit" class="btn-pricing waitlist-submit">Join the waitlist</button>
-        </form>
-        <p class="waitlist-message" id="waitlist-msg-pricing" aria-live="polite"></p>
+        <a href="mailto:info@escribano.work?subject=Beta%20access%20request"
+           class="btn-pricing">Request access →</a>
       </div>
     </div>
   </section>
@@ -348,7 +342,7 @@
     <a href="mailto:info@escribano.work" class="footer-email">info@escribano.work</a>
   </div>
   <div class="footer-right">
-    <a href="#">Privacy Policy</a> · <a href="#">Terms</a> · <a href="mailto:info@escribano.work">Contact</a><br>
+    <a href="/privacy">Privacy</a> · <a href="/impressum">Impressum</a> · <a href="mailto:info@escribano.work">Contact</a><br>
     Made with care in Europe · No VC funding · © {{ now.Year }} Escribano
   </div>
 </footer>

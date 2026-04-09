@@ -1,17 +1,15 @@
 # Escribano
 
-Record your screen. Get a structured summary of what you did.
+An always-on macOS recorder that turns your work into structured summaries.
+Captures your screen continuously, runs a local vision-language model to understand
+what you're doing, and generates standups, session cards, or narrative summaries on demand.
 
-> **Platform:** macOS (Apple Silicon) required. Linux/Windows on the roadmap.
-> **Minimum:** 16GB unified memory (32GB recommended for best quality)
+> **Download**: [GitHub Releases](https://github.com/eduardosanzb/escribano/releases/latest) — macOS Apple Silicon (M1+), 16 GB RAM minimum
+> **Platform**: macOS only · Everything runs locally · No cloud, no API keys
 
 ---
 
-## What you put in
-
-A screen recording. Could be 20 minutes, could be 3 hours. You didn't take notes.
-
-## What you get back (~9 minutes later)
+## What you get back
 
 ```markdown
 # Session Card - Feb 25, 2026
@@ -93,19 +91,54 @@ Good for retrospectives or blog drafts.
 
 ---
 
-## Benchmarks
+## How the app works
 
-### Architecture Benefits (MLX Migration)
+Escribano runs as a native macOS menu bar application. Three concurrent processes share a
+single Python bridge (MLX-VLM over a Unix socket):
 
-| Improvement | Impact |
-|-------------|--------|
-| **Zero dependencies** | No external daemons required |
-| **Unified backend** | VLM + LLM use same MLX infrastructure |
-| **Native Metal** | Optimized for Apple Silicon |
-| **Memory efficient** | Sequential model loading (no OOM) |
-| **Auto-detection** | RAM-based model selection |
+1. **Capture** — ScreenCaptureKit captures frames at ~1s intervals. Perceptual hashing (pHash)
+   deduplicates visually identical frames. Accepted frames are written to a local SQLite database.
+2. **Analysis** — A Swift actor polls new frames and sends them in batches to a local VLM
+   (Qwen3-VL via MLX). Each frame gets a description: activity type, apps visible, what you're doing.
+3. **Aggregation** — A second actor groups observations into TopicBlocks using a local LLM. When
+   you ask for an artifact, Escribano generates it from your recent TopicBlocks.
 
-### Production Run (March 2026)
+Everything runs on your machine. No data leaves your device.
+
+---
+
+## TypeScript pipeline (this repo)
+
+This repository contains the TypeScript processing pipeline that powers Escribano's VLM and LLM
+analysis. The Swift app calls it via a Python bridge (Unix socket + NDJSON protocol). You can
+also use it directly for batch processing of video recordings.
+
+### Quick start (batch)
+
+```bash
+# Prerequisites
+brew install whisper-cpp ffmpeg
+pip install mlx-vlm mlx-lm
+
+# Process a recording
+npx escribano --file "~/Desktop/Screen Recording.mov"
+```
+
+### Hardware requirements
+
+Performance varies by hardware:
+
+| Hardware | RAM | VLM Speed | LLM Model | LLM Speed | Total (1min video) |
+|----------|-----|-----------|-----------|-----------|-------------------|
+| **M4 Max** | 128GB | 0.7s/frame | Qwen3.5-27B | 53s avg | **~2.2 min** |
+| **M1/M2/M3 Pro** | 16-32GB | 1.5-3s/frame | Qwen3.5-9B | 80-120s | ~5-8 min |
+| **M1/M2 Air** | 16GB | 7-9s/frame | Qwen3.5-9B | 150-250s | ~12-15 min |
+
+**Minimum viable**: 16GB unified memory (slower but functional)
+
+**Recommended**: 32GB+ for comfortable use, 64GB+ for best quality
+
+### Production benchmarks (March 2026)
 
 Processed **17 real screen recordings** with MLX backend:
 
@@ -124,164 +157,9 @@ Processed **17 real screen recordings** with MLX backend:
 
 Everything runs locally. No API keys. Nothing leaves your machine.
 
-### Hardware Tiers (March 2026)
-
-Performance varies by hardware:
-
-| Hardware | RAM | VLM Speed | LLM Model | LLM Speed | Total (1min video) |
-|----------|-----|-----------|-----------|-----------|-------------------|
-| **M4 Max** | 128GB | 0.7s/frame | Qwen3.5-27B | 53s avg | **~2.2 min** |
-| **M1/M2/M3 Pro** | 16-32GB | 1.5-3s/frame | Qwen3.5-9B | 80-120s | ~5-8 min |
-| **M1/M2 Air** | 16GB | 7-9s/frame | Qwen3.5-9B | 150-250s | ~12-15 min |
-
-**Minimum viable**: 16GB unified memory (slower but functional)
-
-**Recommended**: 32GB+ for comfortable use, 64GB+ for best quality
-
 ---
 
-## Why this exists
-
-Most screen recording tools just give you a video file. If you want to remember what you did, you have to watch it back.
-
-Escribano watches it for you. It extracts frames, runs them through a vision-language model, transcribes any audio, and writes up what happened — broken into topics, with timestamps and time per activity.
-
-Built for developers: understands the difference between debugging, coding, reading docs, and scrolling Slack. Doesn't just OCR text (which produces garbage when every screen has "function" and "const" on it).
-
----
-
-## How it works
-
-Two modes, same output.
-
-### Mode 1: Process a recording (batch)
-
-```
-Screen recording (video file)
-     │
-     ├──► Audio: Silero VAD → Whisper → transcripts
-     │
-     └──► Video: FFmpeg frames → scene detection → adaptive sampling
-                                              │
-                                              ▼
-                                    VLM inference (MLX-VLM, Qwen3-VL-2B)
-                                              │
-                                              ▼
-                                    "Debugging in terminal"
-                                    "Reading docs in Chrome"
-                                    "Coding in VS Code"
-     │
-     ▼
-Activity segmentation → temporal audio alignment → TopicBlocks
-     │
-     ▼
-LLM summary (MLX-LM, auto-detected) → Markdown artifact
-```
-
-### Mode 2: Always-on recorder
-
-```
-Your screen (live, all displays)
-     │
-     ▼
-ScreenCaptureKit (Swift) → 1s interval → pHash dedup → frames DB
-     │                                   (skips identical frames)
-     ▼
-Swift FrameAnalyzer → Python bridge (VLM, Unix socket) → observations DB
-     │
-     ▼
-Swift SessionAggregator → Python bridge (LLM, same socket) → topic_blocks DB
-     │
-     ▼
-LLM summary → Markdown artifact (on-demand via `escribano generate`)
-```
-
-Never forget to hit record. The recorder runs as a background agent — capturing frames, analyzing them via VLM, and grouping into TopicBlocks via LLM semantic grouping. All three tasks run concurrently in a single Swift process, sharing a Python bridge over a Unix socket.
-
-Uses VLM-first visual understanding, not OCR + text clustering. OCR fails for developer work because all code screens produce similar tokens. VLMs understand the *activity*, not just the text.
-
----
-
-## Quick Start
-
-### Prerequisites
-
-```bash
-# macOS (Homebrew)
-brew install whisper-cpp ffmpeg
-
-# MLX for inference (Apple Silicon) - auto-installed on first run
-# Or pre-install with:
-pip install mlx-vlm mlx-lm
-```
-
-That's it. No external daemons required. MLX-VLM and MLX-LM run in-process.
-
-### (Optional) Ollama Backend
-
-If you prefer Ollama, set `ESCRIBANO_LLM_BACKEND=ollama`:
-
-```bash
-brew install ollama
-ollama pull qwen3:8b  # or qwen3.5:27b for 64GB+ RAM
-```
-
-### Run
-
-```bash
-# Check prerequisites
-npx escribano doctor
-
-# Process a recording
-npx escribano --file "~/Desktop/Screen Recording.mov"
-```
-
-### Local Development
-
-```bash
-git clone https://github.com/eduardosanzb/escribano.git
-cd escribano
-pnpm install
-pnpm escribano --file "~/Desktop/Screen Recording.mov"
-```
-
-Output: `~/.escribano/artifacts/`
-
----
-
-## Always-On Recorder
-
-Never forget to hit record. Install the background capture agent once and it runs automatically on every login.
-
-```bash
-# Requires: Xcode Command Line Tools (swift must be in PATH)
-xcode-select --install  # if not already installed
-
-# Build and install the capture agent
-npx escribano recorder install
-
-# Check agent status
-npx escribano recorder status
-```
-
-On first run, macOS will ask for Screen Recording permission. Grant it — the agent only captures frames when your screen changes (pHash dedup skips identical frames).
-
-### What it does
-
-- Captures all displays at 1-second intervals
-- Skips identical frames using perceptual hashing (pHash) — typically 80-95% of frames are skipped
-- Stores unique frames to `~/.escribano/frames/` with timestamps
-- Runs as a LaunchAgent — starts on login, restarts on crash
-- Continuously analyzes frames via VLM, groups into TopicBlocks via LLM semantic grouping
-
-### What's next
-
-- Time-range artifact generation (`npx escribano generate --today --format standup`)
-- Apple Developer ID signing (so TCC permission survives binary rebuilds for all users)
-
----
-
-## CLI
+## CLI reference
 
 ### Flags
 
@@ -306,8 +184,6 @@ On first run, macOS will ask for Screen Recording permission. Grant it — the a
 | `doctor` | Check prerequisites and system requirements |
 | `config` | Show current configuration (merged from all sources) |
 | `config --path` | Show path to config file (`~/.escribano/.env`) |
-| `recorder install` | Build and install the always-on capture agent |
-| `recorder status` | Show agent state, pending frames, disk usage |
 
 ### Formats
 
@@ -336,18 +212,6 @@ npx escribano --file recording.mov --mic-audio mic.wav
 npx escribano config
 npx escribano config --path
 ```
-
----
-
-## Supported inputs
-
-| Source | Command |
-|--------|---------|
-| QuickTime recording | `--file video.mov` |
-| Cap recording | Auto-detected in `~/Movies/Cap/` |
-| Any MP4/MOV | `--file /path/to/video.mp4` |
-| External audio | `--mic-audio mic.wav --system-audio system.wav` |
-| Always-on recorder | Auto-detected after `recorder install` |
 
 ---
 
@@ -396,10 +260,10 @@ Full architecture: [docs/architecture.md](docs/architecture.md)
 
 ## Requirements
 
-- **macOS** (Apple Silicon for MLX-VLM)
+- **macOS** (Apple Silicon for MLX inference)
 - **Node.js 20+**
-- **16GB+ RAM** (see model tiers above)
-- **~10GB disk** for models
+- **16 GB+ RAM** (see hardware tiers above)
+- **~10 GB disk** for models
 
 ---
 
@@ -410,10 +274,10 @@ Full architecture: [docs/architecture.md](docs/architecture.md)
 - [x] Activity segmentation
 - [x] Multiple artifact formats
 - [x] Auto-detect best LLM model
-- [x] Always-on recorder — Phase 1 (capture + pHash dedup + LaunchAgent)
+- [x] Always-on recorder — Phase 1 (capture + pHash dedup)
 - [x] Always-on recorder — Phase 2 (VLM analysis via Swift → Python bridge)
-- [x] Always-on recorder — Phase 3a (SessionAggregator: continuous TopicBlock creation from live observations)
-- [ ] Always-on recorder — Phase 3b (time-range artifact generation: `escribano generate --today`)
+- [x] Always-on recorder — Phase 3a (continuous TopicBlock creation)
+- [x] Always-on recorder — Phase 3b (time-range artifact generation via menu bar app)
 - [ ] MCP server for AI assistants
 - [ ] Auto-detect ffmpeg hardware acceleration
 - [ ] OCR on keyframes for code/URLs

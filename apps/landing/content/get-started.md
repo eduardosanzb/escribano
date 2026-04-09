@@ -26,7 +26,7 @@ Escribano will begin capturing your screen in the background. A small icon appea
 
 ---
 
-## Activating a beta key
+## 4. Activate your beta key
 
 If you received a beta invitation, open **Terminal** and run:
 

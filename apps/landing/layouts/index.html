@@ -72,7 +72,7 @@
         </div>
       </div>
     </li>
-    <li><a href="#open-source" class="nav-cta">Try it free</a></li>
+    <li><a href="/get-started" class="nav-cta">Download for macOS</a></li>
   </ul>
 </nav>
 
@@ -84,8 +84,7 @@
       Escribano watches your screen recordings and turns hours of deep work into structured, shareable summaries — so you never start a status update from a blank page again.
     </p>
     <div class="hero-actions">
-      <a href="https://github.com/eduardosanzb/escribano/releases/latest"
-         class="btn-primary" target="_blank" rel="noopener">
+      <a href="/get-started" class="btn-primary">
         Download for macOS
       </a>
       <a href="#open-source" class="btn-ghost">View source <span>→</span></a>
@@ -318,8 +317,7 @@
           <li>All processing runs locally</li>
           <li>macOS Apple Silicon · 16 GB+ RAM</li>
         </ul>
-        <a href="https://github.com/eduardosanzb/escribano/releases/latest"
-           class="btn-pricing" target="_blank" rel="noopener">Download</a>
+        <a href="/get-started" class="btn-pricing">Download</a>
       </div>
       <div class="pricing-card featured">
         <div class="pricing-card-label">Beta</div>
@@ -331,8 +329,11 @@
           <li>Priority support</li>
           <li>Shape the product roadmap</li>
         </ul>
-        <a href="mailto:info@escribano.work?subject=Beta%20access%20request"
-           class="btn-pricing">Request access →</a>
+        <form id="beta-form-pricing" class="waitlist-form waitlist-form--pricing">
+          <input type="email" class="waitlist-input" name="email" placeholder="your@email.com" required>
+          <button type="submit" class="btn-pricing waitlist-submit">Request access →</button>
+        </form>
+        <p id="beta-msg-pricing" class="waitlist-message" style="display:none;"></p>
       </div>
     </div>
   </div>

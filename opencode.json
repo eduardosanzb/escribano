@@ -3,8 +3,6 @@
   "plugin": ["worktree"],
   "instructions": [
     "CLAUDE.md",
-    "BACKLOG.md",
-    ".docs/README.md",
-    "./escribano-ts/opencode.json"
+    "BACKLOG.md"
   ]
 }

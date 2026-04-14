@@ -14,7 +14,7 @@ layout: "single"
 
 ## 1. Install
 
-Open the downloaded `.dmg` and drag **Escribano** to your Applications folder. On first launch, right-click the app icon → **Open**. This step is required because the app is not yet signed with an Apple Developer ID — macOS Gatekeeper will block a double-click.
+Open the downloaded `.dmg` and drag **Escribano** to your Applications folder. On first launch, first try right-click the app icon → **Open**. If macOS still blocks launch or shows no prompt, go to **System Settings → Privacy & Security**, scroll down to Escribano's security warning, click **Open Anyway**, then confirm **Open**. This extra step is required because the app is not yet signed with an Apple Developer ID.
 
 ## 2. Grant Screen Recording
 

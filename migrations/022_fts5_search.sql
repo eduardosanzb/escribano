@@ -21,12 +21,17 @@ BEGIN
     VALUES (NEW.rowid, NEW.vlm_description);
 END;
 
--- Keep FTS index in sync: UPDATE trigger
-CREATE TRIGGER IF NOT EXISTS observations_fts_update AFTER UPDATE OF vlm_description ON observations
-WHEN NEW.vlm_description IS NOT NULL
+-- Keep FTS index in sync: UPDATE triggers
+CREATE TRIGGER IF NOT EXISTS observations_fts_update_delete AFTER UPDATE OF vlm_description ON observations
+WHEN OLD.vlm_description IS NOT NULL
 BEGIN
     INSERT INTO observations_fts(observations_fts, rowid, vlm_description)
     VALUES ('delete', OLD.rowid, OLD.vlm_description);
+END;
+
+CREATE TRIGGER IF NOT EXISTS observations_fts_update_insert AFTER UPDATE OF vlm_description ON observations
+WHEN NEW.vlm_description IS NOT NULL
+BEGIN
     INSERT INTO observations_fts(rowid, vlm_description)
     VALUES (NEW.rowid, NEW.vlm_description);
 END;

@@ -103,7 +103,7 @@ CREATE INDEX idx_artifacts_type ON artifacts(type);
 -- ============================================================================
 -- SCHEMA VERSION (for migrations)
 -- ============================================================================
-CREATE TABLE _schema_version (
+CREATE TABLE IF NOT EXISTS _schema_version (
   version INTEGER PRIMARY KEY,
   applied_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

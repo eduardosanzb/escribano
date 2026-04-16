@@ -823,12 +823,12 @@
           const chipClass = isLoaded ? 'model-chip loaded' : 'model-chip';
           const memoryInfo = m.memory_mb ? ` · ${(m.memory_mb / 1024).toFixed(1)}GB` : '';
           const action = isLoaded
-            ? `<button class="secondary btn-small" onclick="unloadModel('${m.model_id}')">Unload</button>`
-            : `<button class="btn-small" onclick="loadModel('${m.model_id}')" ${m.status === 'loading' ? 'disabled' : ''}>Load</button>`;
+            ? `<button class="secondary btn-small" onclick="unloadModel('${m.id}')">Unload</button>`
+            : `<button class="btn-small" onclick="loadModel('${m.id}')" ${m.status === 'loading' ? 'disabled' : ''}>Load</button>`;
 
           return `
             <div class="${chipClass}">
-              <span style="font-size:0.75rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${m.display_name || m.model_id}">${m.model_id}${memoryInfo}</span>
+              <span style="font-size:0.75rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${m.display_name || m.id}">${m.id}${memoryInfo}</span>
               ${action}
             </div>
           `;

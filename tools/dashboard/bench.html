@@ -47,12 +47,12 @@
         color: var(--pico-primary-inverse);
       }
 
-      /* Main 3-column layout */
       .bench-container {
         display: grid;
-        grid-template-columns: 25% 50% 25%;
+        grid-template-columns: 40% 60%;
         gap: 1rem;
-        min-height: calc(100vh - 120px);
+        height: calc(100vh - 120px);
+        overflow: hidden;
       }
 
       .panel {
@@ -62,6 +62,7 @@
         padding: 1rem;
         display: flex;
         flex-direction: column;
+        overflow: hidden;
       }
 
       .panel-header {
@@ -449,6 +450,181 @@
         width: 100%;
         margin-bottom: 1rem;
       }
+
+      /* Layout */
+      .right-column {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        height: 100%;
+        overflow: hidden;
+      }
+      #left-panel {
+        height: 100%;
+        overflow: hidden;
+      }
+      #left-panel .section {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      #config-panel {
+        flex: 0 0 auto;
+        max-height: 50%;
+        overflow-y: auto;
+      }
+      #results-panel {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      /* Compact model list */
+      .model-list-compact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        max-height: 100px;
+        overflow-y: auto;
+      }
+      .model-chip {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.35rem 0.75rem;
+        background: var(--pico-muted-background-color);
+        border-radius: 999px;
+        font-size: 0.8rem;
+      }
+      .model-chip.loaded {
+        background: var(--pico-primary-background);
+        color: var(--pico-primary-inverse);
+      }
+
+      /* Frame strip */
+      .frame-strip {
+        display: flex;
+        gap: 0.5rem;
+        overflow-x: auto;
+        padding: 0.5rem 0;
+        max-height: 80px;
+      }
+      .frame-strip-thumb {
+        width: 80px;
+        height: 50px;
+        object-fit: cover;
+        border-radius: 4px;
+        cursor: pointer;
+        border: 2px solid transparent;
+        flex-shrink: 0;
+      }
+      .frame-strip-thumb.selected {
+        border-color: #3b82f6;
+        box-shadow: 0 0 4px rgba(59, 130, 246, 0.5);
+      }
+
+      /* Run controls compact */
+      .run-controls-compact {
+        margin-top: auto;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--pico-muted-border-color);
+      }
+      .run-controls-compact .input-row {
+        display: flex;
+        gap: 0.75rem;
+        align-items: flex-end;
+      }
+      .run-controls-compact .form-group {
+        margin-bottom: 0;
+      }
+      .run-controls-compact label {
+        font-size: 0.7rem;
+      }
+      .run-controls-compact input {
+        width: 80px;
+        padding: 0.35rem;
+      }
+
+      /* Results grid */
+      .results-grid {
+        display: grid;
+        grid-template-columns: minmax(100px, auto) repeat(var(--model-count, 1), 1fr);
+        gap: 0.5rem;
+        overflow: auto;
+        flex: 1;
+        min-height: 0;
+      }
+      .results-grid-header {
+        position: sticky;
+        top: 0;
+        background: var(--pico-card-background-color);
+        z-index: 10;
+        padding: 0.5rem;
+        font-weight: 600;
+        font-size: 0.85rem;
+        border-bottom: 2px solid var(--pico-muted-border-color);
+      }
+      .results-grid-cell {
+        padding: 0.5rem;
+        background: var(--pico-muted-background-color);
+        border-radius: 4px;
+        font-size: 0.8rem;
+        min-height: 40px;
+      }
+      .results-grid-cell.output {
+        background: var(--pico-background-color);
+        border: 1px solid var(--pico-muted-border-color);
+      }
+      .results-grid-cell pre {
+        margin: 0;
+        max-height: 120px;
+        overflow: auto;
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .results-grid-cell .meta {
+        font-size: 0.7rem;
+        color: var(--pico-muted-color);
+        margin-top: 0.25rem;
+      }
+
+      /* Loader */
+      .results-loader {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        padding: 2rem;
+        color: var(--pico-muted-color);
+      }
+
+      /* Pagination */
+      .results-pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 1rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--pico-muted-border-color);
+        flex-shrink: 0;
+      }
+
+      /* Run info */
+      .run-info {
+        font-size: 0.8rem;
+        color: var(--pico-muted-color);
+      }
+
+      /* Remove old unused styles */
+      .frame-grid,
+      .frame-thumbnail,
+      .comparison-grid,
+      .comparison-item,
+      .result-card,
+      .results-list {
+        /* These classes may still be used in JS - don't delete yet, just note */
+      }
     </style>
   </head>
   <body>
@@ -466,40 +642,14 @@
       </div>
 
       <div class="bench-container">
-        <!-- Left Panel: Controls -->
+        <!-- Left Panel: Prompt -->
         <div class="panel" id="left-panel">
-          <!-- Models Section -->
-          <div class="section">
-            <div class="section-header">
-              <h3>Models</h3>
-              <button class="btn-small" onclick="showAddModelForm()">Add Model</button>
-            </div>
-            <div id="model-list" class="model-list">
-              <div class="loading">Loading models...</div>
-            </div>
-            <div id="add-model-form" style="display: none; margin-top: 0.5rem;">
-              <div class="form-group">
-                <label>Model ID</label>
-                <input type="text" id="new-model-id" placeholder="mlx-community/Qwen3.5-0.8B-8bit" />
-              </div>
-              <div class="form-group">
-                <label>Display Name (optional)</label>
-                <input type="text" id="new-model-name" placeholder="Qwen 0.8B" />
-              </div>
-              <div class="input-row">
-                <button onclick="addModel()">Add</button>
-                <button class="secondary" onclick="hideAddModelForm()">Cancel</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Prompt Section -->
           <div class="section">
             <div class="section-header">
               <h3>Prompt</h3>
               <span class="mode-indicator" id="prompt-mode">per-frame</span>
             </div>
-            <div class="form-group">
+            <div class="form-group prompt-form-group">
               <label>Select Prompt</label>
               <select id="prompt-select" onchange="loadPrompt()">
                 <option value="">Loading prompts...</option>
@@ -513,86 +663,98 @@
               <button class="btn-small" onclick="savePrompt()">Save as New</button>
             </div>
           </div>
-
-          <!-- Run Controls -->
-          <div class="run-controls">
-            <div class="form-group">
-              <label>Max Tokens</label>
-              <input type="number" id="max-tokens" value="2000" min="100" max="8000" />
-            </div>
-            <div class="form-group">
-              <label>Temperature</label>
-              <input type="number" id="temperature" value="0.3" min="0" max="2" step="0.1" />
-            </div>
-            <button id="run-btn" onclick="runInference()" disabled>
-              <span class="spinner" id="run-spinner"></span>
-              <span id="run-text">Run</span>
-            </button>
-          </div>
         </div>
 
-        <!-- Center Panel: Frame Grid -->
-        <div class="panel" id="center-panel">
-          <div class="panel-header">
-            <h2>Ground Truth Frames</h2>
-            <span id="frame-count">Loading...</span>
+        <!-- Right Column: Config + Results -->
+        <div class="right-column">
+          <!-- Config Panel -->
+          <div class="panel" id="config-panel">
+            <div class="panel-header">
+              <h2>Run Configuration</h2>
+            </div>
+            <!-- Models -->
+            <div class="section">
+              <div class="section-header">
+                <h3>Models</h3>
+                <button class="btn-small" onclick="showAddModelForm()">Add</button>
+              </div>
+              <div id="model-list" class="model-list-compact">
+                <div class="loading">Loading models...</div>
+              </div>
+              <div id="add-model-form" style="display: none; margin-top: 0.5rem;">
+                <div class="form-group">
+                  <label>Model ID</label>
+                  <input type="text" id="new-model-id" placeholder="mlx-community/Qwen3.5-0.8B-8bit" />
+                </div>
+                <div class="form-group">
+                  <label>Display Name (optional)</label>
+                  <input type="text" id="new-model-name" placeholder="Qwen 0.8B" />
+                </div>
+                <div class="input-row">
+                  <button onclick="addModel()">Add</button>
+                  <button class="secondary" onclick="hideAddModelForm()">Cancel</button>
+                </div>
+              </div>
+            </div>
+            <!-- Frames -->
+            <div class="section">
+              <div class="section-header">
+                <h3>Frames</h3>
+                <span id="frame-count-display">0 / 0 selected</span>
+              </div>
+              <div id="frame-strip" class="frame-strip">
+                <!-- thumbnails rendered here -->
+              </div>
+            </div>
+            <!-- Run Controls -->
+            <div class="run-controls-compact">
+              <div class="input-row">
+                <div class="form-group">
+                  <label>Max Tokens</label>
+                  <input type="number" id="max-tokens" value="2000" min="100" max="8000" />
+                </div>
+                <div class="form-group">
+                  <label>Temp</label>
+                  <input type="number" id="temperature" value="0.3" min="0" max="2" step="0.1" />
+                </div>
+                <button id="run-btn" onclick="runInference()" disabled>
+                  <span class="spinner" id="run-spinner"></span>
+                  <span id="run-text">Run</span>
+                </button>
+              </div>
+            </div>
           </div>
-          <div id="frame-grid" class="frame-grid">
-            <div class="loading">Loading frames...</div>
-          </div>
-          <div class="selection-info">
-            <strong id="selection-count">0 frames selected</strong>
-            <span style="color: var(--pico-muted-color); font-size: 0.8rem; margin-left: 0.5rem;">
-              (Shift-click to select range)
-            </span>
-          </div>
-        </div>
 
-        <!-- Right Panel: Results -->
-        <div class="panel" id="right-panel">
-          <div class="panel-header">
-            <h2>Results</h2>
-          </div>
-          <div class="form-group">
-            <label>Run History</label>
-            <select id="history-select" class="history-select" onchange="loadRun()">
-              <option value="">Current run...</option>
-            </select>
-          </div>
-          <div id="results-list" class="results-list">
-            <div class="empty-state">Run inference to see results</div>
+          <!-- Results Panel -->
+          <div class="panel" id="results-panel">
+            <div class="panel-header">
+              <h2>Results</h2>
+              <span id="run-info" class="run-info"></span>
+            </div>
+            <div id="results-loader" class="results-loader" style="display: none;">
+              <div class="spinner active"></div>
+              <span>Running inference...</span>
+            </div>
+            <div id="results-grid" class="results-grid">
+              <div class="empty-state">Select frames and click Run to see results</div>
+            </div>
+            <div id="results-pagination" class="results-pagination" style="display: none;">
+              <button onclick="prevPage()" id="prev-btn" disabled>&larr; Prev</button>
+              <span id="page-info">Page 1 of 1</span>
+              <button onclick="nextPage()" id="next-btn" disabled>Next &rarr;</button>
+            </div>
+            <div class="form-group" style="margin-top: 0.5rem;">
+              <label>Run History</label>
+              <select id="history-select" class="history-select" onchange="loadRun()">
+                <option value="">Current run...</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
     </main>
 
-    <!-- Frame Modal -->
-    <div class="modal" id="frame-modal" onclick="closeModal(event)">
-      <button class="modal-close" onclick="closeModal()">&times;</button>
-      <img id="modal-image" src="" alt="Frame" />
-      <div class="modal-content frame-details" onclick="event.stopPropagation()">
-        <h3 id="modal-frame-id">Frame</h3>
-        <div class="ground-truth-section">
-          <h4>Ground Truth</h4>
-          <div class="gt-item">
-            <label>Description</label>
-            <div id="modal-description"></div>
-          </div>
-          <div class="gt-item">
-            <label>Activity</label>
-            <div id="modal-activity"></div>
-          </div>
-          <div class="gt-item">
-            <label>Apps</label>
-            <div id="modal-apps"></div>
-          </div>
-          <div class="gt-item">
-            <label>Topics</label>
-            <div id="modal-topics"></div>
-          </div>
-        </div>
-      </div>
-    </div>
+
 
     <script>
       // State

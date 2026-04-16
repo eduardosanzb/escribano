@@ -940,9 +940,9 @@
       }
 
       function renderFrames() {
-        const container = document.getElementById('frame-grid');
+        const container = document.getElementById('frame-strip');
         if (frames.length === 0) {
-          container.innerHTML = '<div class="empty-state">No frames available</div>';
+          container.innerHTML = '<span class="empty-state" style="font-size:0.75rem;">No frames</span>';
           return;
         }
 
@@ -951,42 +951,36 @@
           return `
             <img
               src="/api/bench/frames/${f.id}/image"
-              class="frame-thumbnail ${selected}"
+              class="frame-strip-thumb ${selected}"
               data-id="${f.id}"
               data-index="${index}"
               alt="Frame ${f.id}"
-              onclick="handleFrameClick(event, ${f.id}, ${index})"
+              onclick="toggleFrameSelection(${f.id}, ${index})"
+              ondblclick="openFrameModal(${f.id})"
             />
           `;
         }).join('');
+
+        updateFrameCount();
       }
 
-      function handleFrameClick(event, id, index) {
-        if (event.shiftKey && lastSelectedIndex !== -1) {
-          // Range selection
-          const start = Math.min(lastSelectedIndex, index);
-          const end = Math.max(lastSelectedIndex, index);
-          for (let i = start; i <= end; i++) {
-            if (!selectedFrameIds.includes(frames[i].id)) {
-              selectedFrameIds.push(frames[i].id);
-            }
-          }
+      function toggleFrameSelection(id, index) {
+        const idx = selectedFrameIds.indexOf(id);
+        if (idx === -1) {
+          selectedFrameIds.push(id);
         } else {
-          // Toggle selection
-          const idx = selectedFrameIds.indexOf(id);
-          if (idx === -1) {
-            selectedFrameIds.push(id);
-          } else {
-            selectedFrameIds.splice(idx, 1);
-          }
-          lastSelectedIndex = index;
+          selectedFrameIds.splice(idx, 1);
         }
-
         updateSelectionUI();
       }
 
+      function updateFrameCount() {
+        document.getElementById('frame-count-display').textContent =
+          `${selectedFrameIds.length} / ${frames.length} selected`;
+      }
+
       function updateSelectionUI() {
-        document.querySelectorAll('.frame-thumbnail').forEach(img => {
+        document.querySelectorAll('.frame-strip-thumb').forEach(img => {
           const id = Number(img.dataset.id);
           if (selectedFrameIds.includes(id)) {
             img.classList.add('selected');
@@ -994,38 +988,16 @@
             img.classList.remove('selected');
           }
         });
-
-        document.getElementById('selection-count').textContent =
-          `${selectedFrameIds.length} frame${selectedFrameIds.length !== 1 ? 's' : ''} selected`;
-
+        updateFrameCount();
         updateRunButton();
       }
 
-      // Modal
-      function openModal(frame) {
-        const modal = document.getElementById('frame-modal');
-        document.getElementById('modal-image').src = `/api/bench/frames/${frame.id}/image`;
-        document.getElementById('modal-frame-id').textContent = `Frame ${frame.id}`;
-        document.getElementById('modal-description').textContent = frame.ground_truth?.description || 'N/A';
-        document.getElementById('modal-activity').textContent = frame.ground_truth?.activity || 'N/A';
-        document.getElementById('modal-apps').textContent = (frame.ground_truth?.apps || []).join(', ') || 'N/A';
-        document.getElementById('modal-topics').textContent = (frame.ground_truth?.topics || []).join(', ') || 'N/A';
-        modal.classList.add('active');
+      function openFrameModal(id) {
+        const frame = frames.find(f => f.id === id);
+        if (!frame) return;
+        // Simple alert for now - can be enhanced later
+        alert(`Frame ${id}\n\nGround Truth:\n${frame.ground_truth?.description || 'N/A'}`);
       }
-
-      function closeModal(event) {
-        if (event && event.target !== document.getElementById('frame-modal')) return;
-        document.getElementById('frame-modal').classList.remove('active');
-      }
-
-      // Double-click to open modal
-      document.addEventListener('dblclick', (e) => {
-        if (e.target.classList.contains('frame-thumbnail')) {
-          const id = Number(e.target.dataset.id);
-          const frame = frames.find(f => f.id === id);
-          if (frame) openModal(frame);
-        }
-      });
 
       // Run inference
       function updateRunButton() {

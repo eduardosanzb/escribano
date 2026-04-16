@@ -1,7 +1,6 @@
 -- FTS5 full-text search index on observation VLM descriptions.
 -- Uses Porter stemmer for English word stemming, unicode61 for accent folding,
--- tokenchars for preserving identifiers with hyphens/dots/underscores,
--- and prefix indexing for fast prefix queries.
+-- and tokenchars for preserving identifiers with hyphens/dots/underscores.
 CREATE VIRTUAL TABLE IF NOT EXISTS observations_fts USING fts5(
     vlm_description,
     content='observations',
@@ -9,9 +8,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS observations_fts USING fts5(
     tokenize='porter unicode61 tokenchars ''_-.'' '
 );
 
--- Backfill: index all existing observations that have a VLM description.
-INSERT INTO observations_fts(rowid, vlm_description)
-SELECT rowid, vlm_description FROM observations WHERE vlm_description IS NOT NULL;
+-- Backfill/rebuild: populate the FTS index from existing observations.
+-- Using FTS5's rebuild command keeps this migration idempotent if the table
+-- already exists (for example in a dev database from another branch).
+INSERT INTO observations_fts(observations_fts) VALUES ('rebuild');
 
 -- Keep FTS index in sync: INSERT trigger
 CREATE TRIGGER IF NOT EXISTS observations_fts_insert AFTER INSERT ON observations

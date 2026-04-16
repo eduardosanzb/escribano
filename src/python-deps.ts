@@ -11,6 +11,8 @@
 
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { resolve } from 'node:path';
 import {
   ESCRIBANO_HOME,
   ESCRIBANO_VENV,
@@ -32,9 +34,11 @@ export const PYTHON_PACKAGES = {
    * ~2GB with 4-bit quantization
    */
   vlm: [
-    'mlx-vlm[torch]>=0.4.0', // Vision-language model (torch extra required for Qwen2VLImageProcessorFast used by Qwen3.5 image preprocessing)
-    'mlx>=0.14.0', // MLX inference framework
-    'mlx-lm>=0.9.0', // LLM support in MLX (shared with LLM)
+    'mlx-vlm[torch]>=0.4.0', // Vision-language model (torch extra required for Qwen3 image preprocessing)
+    'mlx>=0.14.0',            // MLX inference framework
+    'mlx-lm>=0.9.0',          // LLM support in MLX (shared with LLM)
+    'torch',                  // Explicit: required by Qwen3 model processor (not reliably installed via [torch] extra)
+    'torchvision',            // Explicit: required by Qwen3VLVideoProcessor at model-load time
   ] as const,
 
   /**
@@ -179,8 +183,13 @@ export function ensureEscribanoVenv(): string {
         mkdirSync(ESCRIBANO_HOME, { recursive: true });
       }
 
-      // Create venv using system python3
-      execSync(`python3 -m venv "${ESCRIBANO_VENV}"`, {
+      // Create venv using standalone Python 3.12 if available, else system python3
+      // Prefer the standalone Python 3.12 downloaded by the Swift app (PythonDownloader).
+      // Fall back to system python3 if the standalone is not yet present.
+      const standalonePython = resolve(homedir(), '.escribano', 'python', 'bin', 'python3');
+      const pythonBin = existsSync(standalonePython) ? standalonePython : 'python3';
+      console.log(`[VLM] Using Python for venv creation: ${pythonBin}`);
+      execSync(`"${pythonBin}" -m venv "${ESCRIBANO_VENV}"`, {
         encoding: 'utf-8',
         stdio: 'inherit',
       });
@@ -281,7 +290,7 @@ export function checkPythonPackageInstalled(
 export function checkCorePackagesInstalled(pythonPath?: string): boolean {
   const python = pythonPath || getPythonPath() || 'python3';
 
-  const coreModules = ['mlx_vlm', 'mlx_lm', 'mlx'];
+  const coreModules = ['mlx_vlm', 'mlx_lm', 'mlx', 'torchvision'];
   for (const module of coreModules) {
     if (!checkPythonPackageInstalled(module, python)) {
       return false;
@@ -335,4 +344,26 @@ export function detectPipCommand(): string {
 
   // Fallback: python3 -m pip
   return `python3 -m pip install ${packages}`;
+}
+
+// ============================================================================
+// CLI Entry Point
+// ============================================================================
+
+// When invoked directly as a script (e.g. `pnpm tsx src/python-deps.ts`),
+// ensure the managed venv exists and all packages are installed.
+// This runs as a pre-flight step in `recorder:dev` before the Swift app starts.
+const isMain =
+  process.argv[1]?.endsWith('python-deps.ts') ||
+  process.argv[1]?.endsWith('python-deps.js');
+
+if (isMain) {
+  console.log('[python-deps] Ensuring Escribano Python environment...');
+  try {
+    const pythonPath = ensureEscribanoVenv();
+    console.log(`[python-deps] Environment ready: ${pythonPath}`);
+  } catch (err) {
+    console.error('[python-deps] Setup failed:', err);
+    process.exit(1);
+  }
 }

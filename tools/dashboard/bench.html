@@ -705,38 +705,50 @@
         const startIdx = (resultsPage - 1) * RESULTS_PER_PAGE;
         const pageFrameIds = allFrameIds.slice(startIdx, startIdx + RESULTS_PER_PAGE);
 
-        // Set CSS variable for grid columns
-        container.style.setProperty('--model-count', currentResults.length);
+        // Get model info from the run
+        const run = currentResults[0]?.run;
+        const modelIds = run?.model_ids || [];
+        const modelInfo = run?.models || [];
 
         // Build grid header
         let gridHtml = `<div class="results-grid-header">Frame Image</div>`;
-        currentResults.forEach(({ modelName }) => {
-          gridHtml += `<div class="results-grid-header">${escapeHtml(modelName)}</div>`;
+        modelInfo.forEach(model => {
+          gridHtml += `<div class="results-grid-header">${escapeHtml(model.display_name || model.model_id)}</div>`;
         });
 
-        // Build grid rows
+        // Set CSS variable for grid columns (1 for frame + N for models)
+        container.style.setProperty('--model-count', modelIds.length);
+
+        // Build grid rows - each result entry is one frame with outputs from all models
         pageFrameIds.forEach(frameId => {
+          const frameResult = run?.results?.find(r => r.frame_id === frameId);
           const frame = frames.find(f => f.id === frameId);
           const frameImg = frame
             ? `<img src="/api/bench/frames/${frameId}/image" style="width:100%;max-width:180px;border-radius:4px;cursor:pointer;" onclick="openImageModal('/api/bench/frames/${frameId}/image')" />`
             : `<strong>#${frameId}</strong>`;
           gridHtml += `<div class="results-grid-cell">${frameImg}</div>`;
-          currentResults.forEach(({ run }) => {
-            const result = run.results?.find(r => r.frame_id === frameId);
-          if (result) {
-            const timing = `${result.timing_ms}ms · ${result.tokens_per_sec?.toFixed(1) || '?'} t/s`;
-            // Parse GenerationResult to extract just the text field
-            let displayText = result.raw_output || '(no output)';
-            const textMatch = displayText.match(/text=['"](.+?)['"],\s*(?:token|tokens)/s);
-            if (textMatch) {
-              displayText = textMatch[1].replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\"/g, '"');
-            }
-            gridHtml += `
-              <div class="results-grid-cell output">
-                <pre>${escapeHtml(displayText)}</pre>
-                <div class="meta">${timing}</div>
-              </div>
-            `;
+
+          // Add cell for each model
+          modelIds.forEach(modelId => {
+            const output = frameResult?.outputs?.[modelId];
+            if (output) {
+              if (output.error) {
+                gridHtml += `<div class="results-grid-cell output" style="color: #ef4444;"><pre>Error: ${escapeHtml(output.error)}</pre></div>`;
+              } else {
+                const timing = `${output.timing_ms}ms · ${output.tokens_per_sec?.toFixed(1) || '?'} t/s`;
+                // Parse GenerationResult to extract just the text field
+                let displayText = output.raw_output || '(no output)';
+                const textMatch = displayText.match(/text=['"](.+?)['"],\s*(?:token|tokens)/s);
+                if (textMatch) {
+                  displayText = textMatch[1].replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\"/g, '"');
+                }
+                gridHtml += `
+                  <div class="results-grid-cell output">
+                    <pre>${escapeHtml(displayText)}</pre>
+                    <div class="meta">${timing}</div>
+                  </div>
+                `;
+              }
             } else {
               gridHtml += `<div class="results-grid-cell">—</div>`;
             }
@@ -1042,6 +1054,7 @@
       async function runInference() {
         const loadedModels = models.filter(m => m.status === 'loaded');
         const promptId = document.getElementById('prompt-select').value;
+        const template = document.getElementById('prompt-template').value.trim();
 
         if (loadedModels.length === 0 || selectedFrameIds.length === 0) return;
 
@@ -1055,31 +1068,32 @@
         grid.style.display = 'none';
         document.getElementById('run-btn').disabled = true;
 
-        currentResults = [];
         try {
-          for (const model of loadedModels) {
-            text.textContent = loadedModels.length > 1
-              ? `Running ${model.display_name || model.model_id}…`
-              : 'Running…';
-            const res = await fetch('/api/bench/runs', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model_id: model.id,
-                prompt_id: promptId || null,
-                template: document.getElementById('prompt-template').value.trim(),
-                frame_ids: selectedFrameIds,
-                max_tokens: parseInt(document.getElementById('max-tokens').value),
-                temperature: parseFloat(document.getElementById('temperature').value)
-              })
-            });
-            if (!res.ok) {
-              const error = await res.json().catch(() => ({}));
-              throw new Error(`${model.display_name || model.model_id}: ${error.error || 'HTTP ' + res.status}`);
-            }
-            const run = await res.json();
-            currentResults.push({ modelName: model.display_name || model.model_id, run });
+          text.textContent = `Running ${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} on ${selectedFrameIds.length} frame${selectedFrameIds.length > 1 ? 's' : ''}…`;
+
+          const res = await fetch('/api/bench/runs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model_ids: loadedModels.map(m => m.id),
+              prompt_id: promptId || null,
+              template: template,
+              frame_ids: selectedFrameIds,
+              max_tokens: parseInt(document.getElementById('max-tokens').value),
+              temperature: parseFloat(document.getElementById('temperature').value)
+            })
+          });
+
+          if (!res.ok) {
+            const error = await res.json().catch(() => ({}));
+            throw new Error(error.error || `HTTP ${res.status}`);
           }
+
+          const run = await res.json();
+          currentResults = [{
+            modelName: run.models.map(m => m.display_name || m.model_id).join(', '),
+            run: run
+          }];
 
           resultsPage = 1;
           loader.style.display = 'none';
@@ -1126,12 +1140,11 @@
         try {
           const res = await fetch(`/api/bench/runs/${id}`);
           const run = await res.json();
-          // Find model info
-          const model = models.find(m => m.id === run.model_id) ||
-                       { display_name: run.model_id?.split('/').pop() || 'Unknown' };
+          // Wrap in array format for grid
+          const modelNames = run.models?.map(m => m.display_name || m.model_id) || [run.model_id];
           currentResults = [{
-            modelName: model.display_name || model.model_id || 'Unknown',
-            run
+            modelName: modelNames.join(', '),
+            run: run
           }];
           resultsPage = 1;
           renderResultsGrid();

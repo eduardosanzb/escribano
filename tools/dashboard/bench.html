@@ -993,28 +993,25 @@
                   <strong>Frame ${result.frame_id}</strong>
                   <span class="result-meta">${result.timing_ms}ms · ${result.tokens_per_sec?.toFixed(1) || '?'} t/s</span>
                 </div>
+                <pre style="max-height:180px;overflow:auto;font-size:0.75rem;margin:0.5rem 0;white-space:pre-wrap;word-break:break-word;">${escapeHtml(result.raw_output || '(no output)')}</pre>
                 <div class="comparison-grid">
                   <div class="comparison-item">
-                    <label>Ground Truth Activity</label>
+                    <label>GT Activity</label>
                     <div>${gt.activity || 'N/A'}</div>
                   </div>
                   <div class="comparison-item ${activityMatch ? 'match' : 'mismatch'}">
                     <label>Predicted Activity</label>
-                    <div>${output.activity || 'N/A'}</div>
+                    <div>${output.activity || '—'}</div>
                   </div>
                   <div class="comparison-item">
-                    <label>Ground Truth Apps</label>
+                    <label>GT Apps</label>
                     <div>${(gt.apps || []).join(', ') || 'N/A'}</div>
                   </div>
                   <div class="comparison-item">
                     <label>Predicted Apps</label>
-                    <div>${(output.apps || []).join(', ') || 'N/A'}</div>
+                    <div>${(output.apps || []).join(', ') || '—'}</div>
                   </div>
                 </div>
-                <details>
-                  <summary>Raw Output</summary>
-                  <pre><code>${escapeHtml(result.raw_output || '')}</code></pre>
-                </details>
               </div>
             `;
           } else {

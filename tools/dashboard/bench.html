@@ -244,11 +244,11 @@
       }
 
       textarea {
-        min-height: 300px;
         flex: 1;
+        min-height: 200px;
         resize: vertical;
         font-family: monospace;
-        font-size: 0.85rem;
+        font-size: 0.9rem;
       }
 
       .btn-small {
@@ -338,11 +338,14 @@
       #left-panel {
         height: 100%;
         overflow: hidden;
-      }
-      #left-panel .section {
-        height: 100%;
         display: flex;
         flex-direction: column;
+      }
+      #left-panel .section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
       }
       #config-panel {
         flex: 0 0 auto;
@@ -381,23 +384,23 @@
       /* Frame strip */
       .frame-strip {
         display: flex;
-        gap: 0.5rem;
+        gap: 0.75rem;
         overflow-x: auto;
-        padding: 0.5rem 0;
-        max-height: 80px;
+        padding: 0.75rem 0;
+        max-height: 160px;
       }
       .frame-strip-thumb {
-        width: 80px;
-        height: 50px;
+        width: 200px;
+        height: 125px;
         object-fit: cover;
-        border-radius: 4px;
+        border-radius: 6px;
         cursor: pointer;
-        border: 2px solid transparent;
+        border: 3px solid transparent;
         flex-shrink: 0;
       }
       .frame-strip-thumb.selected {
         border-color: #3b82f6;
-        box-shadow: 0 0 4px rgba(59, 130, 246, 0.5);
+        box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
       }
 
       /* Run controls compact */
@@ -436,17 +439,17 @@
         top: 0;
         background: var(--pico-card-background-color);
         z-index: 10;
-        padding: 0.5rem;
+        padding: 0.75rem;
         font-weight: 600;
-        font-size: 0.85rem;
+        font-size: 0.95rem;
         border-bottom: 2px solid var(--pico-muted-border-color);
       }
       .results-grid-cell {
-        padding: 0.5rem;
+        padding: 0.75rem;
         background: var(--pico-muted-background-color);
-        border-radius: 4px;
-        font-size: 0.8rem;
-        min-height: 40px;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        min-height: 60px;
       }
       .results-grid-cell.output {
         background: var(--pico-background-color);
@@ -454,9 +457,9 @@
       }
       .results-grid-cell pre {
         margin: 0;
-        max-height: 120px;
+        max-height: 200px;
         overflow: auto;
-        font-size: 0.75rem;
+        font-size: 0.85rem;
         white-space: pre-wrap;
         word-break: break-word;
       }

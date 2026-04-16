@@ -1075,7 +1075,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              model_ids: loadedModels.map(m => m.id),
+              model_ids: loadedModels.map(m => m.model_id),
               prompt_id: promptId || null,
               template: template,
               frame_ids: selectedFrameIds,

@@ -922,10 +922,9 @@
             throw new Error(`HTTP ${res.status}`);
           }
           frames = await res.json();
-          document.getElementById('frame-count').textContent = `(${frames.length})`;
           renderFrames();
         } catch (err) {
-          document.getElementById('frame-grid').innerHTML = `<div class="error">Error: ${err.message}</div>`;
+          document.getElementById('frame-strip').innerHTML = `<div class="error" style="padding:0.5rem;">Error: ${err.message}</div>`;
         }
       }
 

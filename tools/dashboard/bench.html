@@ -815,7 +815,7 @@
             : `<button class="btn-small" onclick="loadModel('${m.id}')" ${m.status === 'loading' ? 'disabled' : ''}>Load</button>`;
 
           return `
-            <div class="${chipClass}">
+            <div class="${chipClass}" title="${m.model_id}">
               <span>${m.display_name || m.model_id}${memoryInfo}</span>
               ${action}
             </div>

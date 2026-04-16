@@ -723,11 +723,91 @@
       let runs = [];
       let currentRun = null;
 
+      // Pagination state
+      let resultsPage = 1;
+      const RESULTS_PER_PAGE = 10;
+      let currentResults = []; // { modelName, run }[]
+
       // Default models
       const DEFAULT_MODELS = [
         { model_id: 'mlx-community/Qwen3.5-0.8B-8bit', display_name: 'Qwen 0.8B' },
         { model_id: 'mlx-community/Qwen3.5-2B-6bit', display_name: 'Qwen 2B' }
       ];
+
+      function renderResultsGrid() {
+        const container = document.getElementById('results-grid');
+        const loader = document.getElementById('results-loader');
+        const pagination = document.getElementById('results-pagination');
+
+        if (!currentResults || currentResults.length === 0) {
+          container.innerHTML = '<div class="empty-state">Select frames and click Run to see results</div>';
+          pagination.style.display = 'none';
+          return;
+        }
+
+        // Show run info
+        const promptSelect = document.getElementById('prompt-select');
+        const promptName = promptSelect.selectedOptions[0]?.text || 'Custom';
+        const modelNames = currentResults.map(r => r.modelName).join(', ');
+        document.getElementById('run-info').textContent = `${promptName} · ${modelNames}`;
+
+        // Collect all unique frame IDs across all runs
+        const allFrameIds = [...new Set(currentResults.flatMap(r =>
+          r.run.results?.map(res => res.frame_id) || []
+        ))].sort((a, b) => a - b);
+
+        // Paginate frames
+        const totalPages = Math.ceil(allFrameIds.length / RESULTS_PER_PAGE);
+        resultsPage = Math.min(resultsPage, totalPages);
+        const startIdx = (resultsPage - 1) * RESULTS_PER_PAGE;
+        const pageFrameIds = allFrameIds.slice(startIdx, startIdx + RESULTS_PER_PAGE);
+
+        // Set CSS variable for grid columns
+        container.style.setProperty('--model-count', currentResults.length);
+
+        // Build grid header
+        let gridHtml = `<div class="results-grid-header">Frame</div>`;
+        currentResults.forEach(({ modelName }) => {
+          gridHtml += `<div class="results-grid-header">${escapeHtml(modelName)}</div>`;
+        });
+
+        // Build grid rows
+        pageFrameIds.forEach(frameId => {
+          gridHtml += `<div class="results-grid-cell"><strong>#${frameId}</strong></div>`;
+          currentResults.forEach(({ run }) => {
+            const result = run.results?.find(r => r.frame_id === frameId);
+            if (result) {
+              const timing = `${result.timing_ms}ms · ${result.tokens_per_sec?.toFixed(1) || '?'} t/s`;
+              gridHtml += `
+                <div class="results-grid-cell output">
+                  <pre>${escapeHtml(result.raw_output || '(no output)')}</pre>
+                  <div class="meta">${timing}</div>
+                </div>
+              `;
+            } else {
+              gridHtml += `<div class="results-grid-cell">—</div>`;
+            }
+          });
+        });
+
+        container.innerHTML = gridHtml;
+        pagination.style.display = totalPages > 1 ? 'flex' : 'none';
+        document.getElementById('page-info').textContent = `Page ${resultsPage} of ${totalPages}`;
+        document.getElementById('prev-btn').disabled = resultsPage <= 1;
+        document.getElementById('next-btn').disabled = resultsPage >= totalPages;
+      }
+
+      function prevPage() {
+        if (resultsPage > 1) {
+          resultsPage--;
+          renderResultsGrid();
+        }
+      }
+
+      function nextPage() {
+        resultsPage++;
+        renderResultsGrid();
+      }
 
       // Initialize
       async function init() {
@@ -1015,10 +1095,15 @@
 
         const spinner = document.getElementById('run-spinner');
         const text = document.getElementById('run-text');
+        const loader = document.getElementById('results-loader');
+        const grid = document.getElementById('results-grid');
+
         spinner.classList.add('active');
+        loader.style.display = 'flex';
+        grid.style.display = 'none';
         document.getElementById('run-btn').disabled = true;
 
-        const allRuns = [];
+        currentResults = [];
         try {
           for (const model of loadedModels) {
             text.textContent = loadedModels.length > 1
@@ -1040,145 +1125,23 @@
               throw new Error(`${model.display_name || model.model_id}: ${error.error || 'HTTP ' + res.status}`);
             }
             const run = await res.json();
-            allRuns.push({ modelName: model.display_name || model.model_id, run });
+            currentResults.push({ modelName: model.display_name || model.model_id, run });
           }
-          currentRun = allRuns.length === 1 ? allRuns[0].run : null;
-          renderMultiModelResults(allRuns);
+
+          resultsPage = 1;
+          loader.style.display = 'none';
+          grid.style.display = 'grid';
+          renderResultsGrid();
           await loadRunHistory();
         } catch (err) {
           alert('Run failed: ' + err.message);
+          loader.style.display = 'none';
+          grid.style.display = 'grid';
         } finally {
           spinner.classList.remove('active');
           text.textContent = 'Run';
           updateRunButton();
         }
-      }
-
-      // Results
-      function renderResults(run) {
-        const container = document.getElementById('results-list');
-        if (!run || !run.results || run.results.length === 0) {
-          container.innerHTML = '<div class="empty-state">No results</div>';
-          return;
-        }
-
-        const isPerFrame = run.prompt_mode === 'per-frame';
-
-        container.innerHTML = run.results.map((result, idx) => {
-          if (isPerFrame) {
-            const gt = result.ground_truth || {};
-            const output = result.output || {};
-            const activityMatch = gt.activity && output.activity &&
-              gt.activity.toLowerCase() === output.activity.toLowerCase();
-
-            return `
-              <div class="result-card">
-                <div class="result-header">
-                  <strong>Frame ${result.frame_id}</strong>
-                  <span class="result-meta">${result.timing_ms}ms · ${result.tokens_per_sec?.toFixed(1) || '?'} t/s</span>
-                </div>
-                <pre style="max-height:180px;overflow:auto;font-size:0.75rem;margin:0.5rem 0;white-space:pre-wrap;word-break:break-word;">${escapeHtml(result.raw_output || '(no output)')}</pre>
-                <div class="comparison-grid">
-                  <div class="comparison-item">
-                    <label>GT Activity</label>
-                    <div>${gt.activity || 'N/A'}</div>
-                  </div>
-                  <div class="comparison-item ${activityMatch ? 'match' : 'mismatch'}">
-                    <label>Predicted Activity</label>
-                    <div>${output.activity || '—'}</div>
-                  </div>
-                  <div class="comparison-item">
-                    <label>GT Apps</label>
-                    <div>${(gt.apps || []).join(', ') || 'N/A'}</div>
-                  </div>
-                  <div class="comparison-item">
-                    <label>Predicted Apps</label>
-                    <div>${(output.apps || []).join(', ') || '—'}</div>
-                  </div>
-                </div>
-              </div>
-            `;
-          } else {
-            // Multi-frame mode
-            return `
-              <div class="result-card">
-                <div class="result-header">
-                  <strong>Holistic Output</strong>
-                  <span class="result-meta">${result.timing_ms}ms · ${result.tokens_per_sec?.toFixed(1) || '?'} t/s</span>
-                </div>
-                <div class="gt-item">
-                  <label>Output</label>
-                  <div style="white-space: pre-wrap;">${escapeHtml(result.raw_output || '')}</div>
-                </div>
-              </div>
-            `;
-          }
-        }).join('');
-      }
-
-      function renderMultiModelResults(allRuns) {
-        const container = document.getElementById('results-list');
-        if (!allRuns || allRuns.length === 0) {
-          container.innerHTML = '<div class="empty-state">No results</div>';
-          return;
-        }
-        container.innerHTML = allRuns.map(({ modelName, run }) => {
-          const headerHtml = allRuns.length > 1
-            ? `<div style="font-weight:600;font-size:0.9rem;margin-bottom:0.5rem;padding:0.35rem 0.5rem;background:var(--pico-primary-background);color:var(--pico-primary-inverse);border-radius:4px;">🤖 ${escapeHtml(modelName)}</div>`
-            : '';
-          const isPerFrame = run && run.prompt_mode === 'per-frame';
-          const bodyHtml = (run && run.results && run.results.length > 0)
-            ? run.results.map((result) => {
-                if (isPerFrame) {
-                  const gt = result.ground_truth || {};
-                  const output = result.output || {};
-                  const activityMatch = gt.activity && output.activity &&
-                    gt.activity.toLowerCase() === output.activity.toLowerCase();
-                  return `
-                    <div class="result-card">
-                      <div class="result-header">
-                        <strong>Frame ${result.frame_id}</strong>
-                        <span class="result-meta">${result.timing_ms}ms · ${result.tokens_per_sec?.toFixed(1) || '?'} t/s</span>
-                      </div>
-                      <pre style="max-height:180px;overflow:auto;font-size:0.75rem;margin:0.5rem 0;white-space:pre-wrap;word-break:break-word;">${escapeHtml(result.raw_output || '(no output)')}</pre>
-                      <div class="comparison-grid">
-                        <div class="comparison-item">
-                          <label>GT Activity</label>
-                          <div>${gt.activity || 'N/A'}</div>
-                        </div>
-                        <div class="comparison-item ${activityMatch ? 'match' : 'mismatch'}">
-                          <label>Predicted Activity</label>
-                          <div>${output.activity || '—'}</div>
-                        </div>
-                        <div class="comparison-item">
-                          <label>GT Apps</label>
-                          <div>${(gt.apps || []).join(', ') || 'N/A'}</div>
-                        </div>
-                        <div class="comparison-item">
-                          <label>Predicted Apps</label>
-                          <div>${(output.apps || []).join(', ') || '—'}</div>
-                        </div>
-                      </div>
-                    </div>
-                  `;
-                } else {
-                  return `
-                    <div class="result-card">
-                      <div class="result-header">
-                        <strong>Holistic Output</strong>
-                        <span class="result-meta">${result.timing_ms}ms · ${result.tokens_per_sec?.toFixed(1) || '?'} t/s</span>
-                      </div>
-                      <div class="gt-item">
-                        <label>Output</label>
-                        <div style="white-space: pre-wrap;">${escapeHtml(result.raw_output || '')}</div>
-                      </div>
-                    </div>
-                  `;
-                }
-              }).join('')
-            : '<div class="empty-state" style="font-size:0.8rem;">No results for this model</div>';
-          return headerHtml + bodyHtml;
-        }).join('<hr style="margin:0.75rem 0;opacity:0.3;">');
       }
 
       // Run History
@@ -1202,14 +1165,23 @@
       async function loadRun() {
         const id = document.getElementById('history-select').value;
         if (!id) {
-          renderResults(currentRun);
+          currentResults = [];
+          renderResultsGrid();
           return;
         }
 
         try {
           const res = await fetch(`/api/bench/runs/${id}`);
           const run = await res.json();
-          renderResults(run);
+          // Find model info
+          const model = models.find(m => m.id === run.model_id) ||
+                       { display_name: run.model_id?.split('/').pop() || 'Unknown' };
+          currentResults = [{
+            modelName: model.display_name || model.model_id || 'Unknown',
+            run
+          }];
+          resultsPage = 1;
+          renderResultsGrid();
         } catch (err) {
           console.error('Failed to load run:', err);
         }

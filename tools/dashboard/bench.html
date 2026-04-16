@@ -167,6 +167,20 @@
         object-fit: contain;
       }
 
+      /* Image Modal */
+      #image-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.9);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+      }
+      #image-modal.active {
+        display: flex;
+      }
+
       .modal-content {
         background: var(--pico-card-background-color);
         padding: 1.5rem;
@@ -626,7 +640,10 @@
       </div>
     </main>
 
-
+    <!-- Image Modal -->
+    <div class="modal" id="image-modal" onclick="closeImageModal(event)">
+      <img id="modal-image" src="" alt="Frame" style="max-width: 90%; max-height: 90%; object-fit: contain;" />
+    </div>
 
     <script>
       // State
@@ -636,6 +653,18 @@
       let selectedFrameIds = [];
       let runs = [];
       let currentRun = null;
+
+      // Modal functions
+      function openImageModal(src) {
+        const modal = document.getElementById('image-modal');
+        document.getElementById('modal-image').src = src;
+        modal.classList.add('active');
+      }
+
+      function closeImageModal(event) {
+        if (event && event.target !== document.getElementById('image-modal')) return;
+        document.getElementById('image-modal').classList.remove('active');
+      }
 
       // Pagination state
       let resultsPage = 1;
@@ -689,19 +718,25 @@
         pageFrameIds.forEach(frameId => {
           const frame = frames.find(f => f.id === frameId);
           const frameImg = frame
-            ? `<img src="/api/bench/frames/${frameId}/image" style="width:100%;max-width:180px;border-radius:4px;cursor:pointer;" onclick="window.open('/api/bench/frames/${frameId}/image')" />`
+            ? `<img src="/api/bench/frames/${frameId}/image" style="width:100%;max-width:180px;border-radius:4px;cursor:pointer;" onclick="openImageModal('/api/bench/frames/${frameId}/image')" />`
             : `<strong>#${frameId}</strong>`;
           gridHtml += `<div class="results-grid-cell">${frameImg}</div>`;
           currentResults.forEach(({ run }) => {
             const result = run.results?.find(r => r.frame_id === frameId);
-            if (result) {
-              const timing = `${result.timing_ms}ms · ${result.tokens_per_sec?.toFixed(1) || '?'} t/s`;
-              gridHtml += `
-                <div class="results-grid-cell output">
-                  <pre>${escapeHtml(result.raw_output || '(no output)')}</pre>
-                  <div class="meta">${timing}</div>
-                </div>
-              `;
+          if (result) {
+            const timing = `${result.timing_ms}ms · ${result.tokens_per_sec?.toFixed(1) || '?'} t/s`;
+            // Parse GenerationResult to extract just the text field
+            let displayText = result.raw_output || '(no output)';
+            const textMatch = displayText.match(/text=['"](.+?)['"],\s*(?:token|tokens)/s);
+            if (textMatch) {
+              displayText = textMatch[1].replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\"/g, '"');
+            }
+            gridHtml += `
+              <div class="results-grid-cell output">
+                <pre>${escapeHtml(displayText)}</pre>
+                <div class="meta">${timing}</div>
+              </div>
+            `;
             } else {
               gridHtml += `<div class="results-grid-cell">—</div>`;
             }

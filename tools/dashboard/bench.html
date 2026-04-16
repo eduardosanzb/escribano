@@ -112,58 +112,7 @@
         color: white;
       }
 
-      /* Frame grid */
-      .frame-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        gap: 0.75rem;
-        overflow-y: auto;
-        max-height: calc(100vh - 250px);
-      }
-
-      .frame-thumbnail {
-        aspect-ratio: 16/10;
-        object-fit: cover;
-        border-radius: 4px;
-        cursor: pointer;
-        border: 3px solid transparent;
-        transition: all 0.2s;
-      }
-
-      .frame-thumbnail:hover {
-        transform: scale(1.02);
-      }
-
-      .frame-thumbnail.selected {
-        border: 3px solid #3b82f6;
-        box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
-      }
-
-      /* Selection info */
-      .selection-info {
-        margin-top: 0.5rem;
-        padding: 0.5rem;
-        background: var(--pico-muted-background-color);
-        border-radius: 4px;
-        font-size: 0.85rem;
-      }
-
       /* Results */
-      .results-list {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        overflow-y: auto;
-        max-height: calc(100vh - 200px);
-      }
-
-      .result-card {
-        border: 1px solid var(--pico-muted-border-color);
-        border-radius: 6px;
-        padding: 0.75rem;
-        background: var(--pico-background-color);
-      }
-
       .result-header {
         display: flex;
         justify-content: space-between;
@@ -176,36 +125,6 @@
       .result-meta {
         font-size: 0.75rem;
         color: var(--pico-muted-color);
-      }
-
-      .comparison-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0.5rem;
-        margin-top: 0.5rem;
-      }
-
-      .comparison-item {
-        padding: 0.5rem;
-        background: var(--pico-muted-background-color);
-        border-radius: 4px;
-        font-size: 0.8rem;
-      }
-
-      .comparison-item.match {
-        border-left: 3px solid #22c55e;
-      }
-
-      .comparison-item.mismatch {
-        border-left: 3px solid #ef4444;
-      }
-
-      .comparison-item label {
-        font-weight: 500;
-        font-size: 0.7rem;
-        color: var(--pico-muted-color);
-        display: block;
-        margin-bottom: 0.25rem;
       }
 
       /* Accordion for raw output */
@@ -573,15 +492,7 @@
         color: var(--pico-muted-color);
       }
 
-      /* Remove old unused styles */
-      .frame-grid,
-      .frame-thumbnail,
-      .comparison-grid,
-      .comparison-item,
-      .result-card,
-      .results-list {
-        /* These classes may still be used in JS - don't delete yet, just note */
-      }
+
     </style>
   </head>
   <body>
@@ -719,7 +630,6 @@
       let prompts = [];
       let frames = [];
       let selectedFrameIds = [];
-      let lastSelectedIndex = -1;
       let runs = [];
       let currentRun = null;
 
@@ -1193,10 +1103,6 @@
         div.textContent = text;
         return div.innerHTML;
       }
-
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeModal();
-      });
 
       document.addEventListener('DOMContentLoaded', init);
     </script>

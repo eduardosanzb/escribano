@@ -85,49 +85,6 @@
       }
 
       /* Model section */
-      .model-list {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-        max-height: 250px;
-        overflow-y: auto;
-      }
-
-      .model-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.5rem;
-        background: var(--pico-muted-background-color);
-        border-radius: 4px;
-        font-size: 0.85rem;
-      }
-
-      .model-info {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-      }
-
-      .model-name {
-        font-weight: 500;
-      }
-
-      .model-meta {
-        font-size: 0.75rem;
-        color: var(--pico-muted-color);
-      }
-
-      .model-actions {
-        display: flex;
-        gap: 0.25rem;
-      }
-
-      .model-actions button {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.75rem;
-      }
-
       .badge {
         padding: 0.15rem 0.5rem;
         border-radius: 999px;
@@ -812,35 +769,22 @@
       function renderModels() {
         const container = document.getElementById('model-list');
         if (models.length === 0) {
-          container.innerHTML = '<div class="empty-state">No models registered</div>';
+          container.innerHTML = '<div class="empty-state" style="font-size:0.75rem;">No models</div>';
           return;
         }
 
         container.innerHTML = models.map(m => {
-          const statusClass = {
-            'loaded': 'badge-loaded',
-            'unloaded': 'badge-unloaded',
-            'loading': 'badge-loading',
-            'error': 'badge-error'
-          }[m.status] || 'badge-unloaded';
-
+          const isLoaded = m.status === 'loaded';
+          const chipClass = isLoaded ? 'model-chip loaded' : 'model-chip';
           const memoryInfo = m.memory_mb ? ` · ${(m.memory_mb / 1024).toFixed(1)}GB` : '';
-          const actionBtn = m.status === 'loaded'
+          const action = isLoaded
             ? `<button class="secondary btn-small" onclick="unloadModel('${m.id}')">Unload</button>`
             : `<button class="btn-small" onclick="loadModel('${m.id}')" ${m.status === 'loading' ? 'disabled' : ''}>Load</button>`;
 
           return `
-            <div class="model-item">
-              <div class="model-info">
-                <div class="model-name">${m.display_name || m.model_id}</div>
-                <div class="model-meta">
-                  <span class="badge ${statusClass}">${m.status}</span>
-                  ${memoryInfo}
-                </div>
-              </div>
-              <div class="model-actions">
-                ${actionBtn}
-              </div>
+            <div class="${chipClass}">
+              <span>${m.display_name || m.model_id}${memoryInfo}</span>
+              ${action}
             </div>
           `;
         }).join('');

@@ -1,0 +1,1055 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VLM Bench - Escribano</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+      :root {
+        --pico-font-size: 14px;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--pico-muted-border-color);
+      }
+
+      .header h1 {
+        margin: 0;
+        font-size: 1.5rem;
+      }
+
+      .nav-links {
+        margin-left: auto;
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      .nav-links a {
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        text-decoration: none;
+        font-size: 0.875rem;
+        transition: background 0.2s;
+      }
+
+      .nav-links a:hover {
+        background: var(--pico-muted-background-color);
+      }
+
+      .nav-links a.active {
+        background: var(--pico-primary-background);
+        color: var(--pico-primary-inverse);
+      }
+
+      /* Main 3-column layout */
+      .bench-container {
+        display: grid;
+        grid-template-columns: 25% 50% 25%;
+        gap: 1rem;
+        min-height: calc(100vh - 120px);
+      }
+
+      .panel {
+        background: var(--pico-card-background-color);
+        border: 1px solid var(--pico-muted-border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--pico-muted-border-color);
+      }
+
+      .panel-header h2 {
+        margin: 0;
+        font-size: 1.1rem;
+      }
+
+      .panel-header h3 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      /* Model section */
+      .model-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        max-height: 250px;
+        overflow-y: auto;
+      }
+
+      .model-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem;
+        background: var(--pico-muted-background-color);
+        border-radius: 4px;
+        font-size: 0.85rem;
+      }
+
+      .model-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+
+      .model-name {
+        font-weight: 500;
+      }
+
+      .model-meta {
+        font-size: 0.75rem;
+        color: var(--pico-muted-color);
+      }
+
+      .model-actions {
+        display: flex;
+        gap: 0.25rem;
+      }
+
+      .model-actions button {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+      }
+
+      .badge {
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 500;
+      }
+
+      .badge-loaded {
+        background: #22c55e;
+        color: white;
+      }
+
+      .badge-unloaded {
+        background: #9ca3af;
+        color: white;
+      }
+
+      .badge-loading {
+        background: #eab308;
+        color: white;
+      }
+
+      .badge-error {
+        background: #ef4444;
+        color: white;
+      }
+
+      /* Frame grid */
+      .frame-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 0.75rem;
+        overflow-y: auto;
+        max-height: calc(100vh - 250px);
+      }
+
+      .frame-thumbnail {
+        aspect-ratio: 16/10;
+        object-fit: cover;
+        border-radius: 4px;
+        cursor: pointer;
+        border: 3px solid transparent;
+        transition: all 0.2s;
+      }
+
+      .frame-thumbnail:hover {
+        transform: scale(1.02);
+      }
+
+      .frame-thumbnail.selected {
+        border: 3px solid #3b82f6;
+        box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+      }
+
+      /* Selection info */
+      .selection-info {
+        margin-top: 0.5rem;
+        padding: 0.5rem;
+        background: var(--pico-muted-background-color);
+        border-radius: 4px;
+        font-size: 0.85rem;
+      }
+
+      /* Results */
+      .results-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        overflow-y: auto;
+        max-height: calc(100vh - 200px);
+      }
+
+      .result-card {
+        border: 1px solid var(--pico-muted-border-color);
+        border-radius: 6px;
+        padding: 0.75rem;
+        background: var(--pico-background-color);
+      }
+
+      .result-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--pico-muted-border-color);
+      }
+
+      .result-meta {
+        font-size: 0.75rem;
+        color: var(--pico-muted-color);
+      }
+
+      .comparison-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+      }
+
+      .comparison-item {
+        padding: 0.5rem;
+        background: var(--pico-muted-background-color);
+        border-radius: 4px;
+        font-size: 0.8rem;
+      }
+
+      .comparison-item.match {
+        border-left: 3px solid #22c55e;
+      }
+
+      .comparison-item.mismatch {
+        border-left: 3px solid #ef4444;
+      }
+
+      .comparison-item label {
+        font-weight: 500;
+        font-size: 0.7rem;
+        color: var(--pico-muted-color);
+        display: block;
+        margin-bottom: 0.25rem;
+      }
+
+      /* Accordion for raw output */
+      details {
+        margin-top: 0.5rem;
+      }
+
+      details summary {
+        cursor: pointer;
+        font-size: 0.8rem;
+        color: var(--pico-muted-color);
+      }
+
+      details pre {
+        font-size: 0.75rem;
+        max-height: 200px;
+        overflow: auto;
+      }
+
+      /* Modal */
+      .modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.9);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        padding: 2rem;
+      }
+
+      .modal.active {
+        display: flex;
+      }
+
+      .modal img {
+        max-width: 90%;
+        max-height: 70vh;
+        object-fit: contain;
+      }
+
+      .modal-content {
+        background: var(--pico-card-background-color);
+        padding: 1.5rem;
+        border-radius: 8px;
+        max-width: 90%;
+        max-height: 80vh;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .modal-close {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: none;
+        border: none;
+        color: white;
+        font-size: 1.5rem;
+        cursor: pointer;
+      }
+
+      .frame-details {
+        color: var(--pico-color);
+      }
+
+      .frame-details h3 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.1rem;
+      }
+
+      .ground-truth-section {
+        margin-top: 1rem;
+      }
+
+      .ground-truth-section h4 {
+        margin: 0 0 0.5rem 0;
+        font-size: 0.9rem;
+        color: var(--pico-muted-color);
+      }
+
+      .gt-item {
+        padding: 0.5rem;
+        background: var(--pico-muted-background-color);
+        border-radius: 4px;
+        margin-bottom: 0.5rem;
+        font-size: 0.85rem;
+      }
+
+      .gt-item label {
+        font-weight: 500;
+        font-size: 0.75rem;
+        color: var(--pico-muted-color);
+        display: block;
+        margin-bottom: 0.25rem;
+      }
+
+      /* Form styles */
+      .form-group {
+        margin-bottom: 0.75rem;
+      }
+
+      .form-group label {
+        display: block;
+        font-size: 0.8rem;
+        margin-bottom: 0.25rem;
+        color: var(--pico-muted-color);
+      }
+
+      textarea {
+        min-height: 150px;
+        font-family: monospace;
+        font-size: 0.85rem;
+      }
+
+      .btn-small {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+      }
+
+      .run-controls {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--pico-muted-border-color);
+      }
+
+      .input-row {
+        display: flex;
+        gap: 0.5rem;
+        align-items: flex-end;
+      }
+
+      .input-row input,
+      .input-row select {
+        flex: 1;
+      }
+
+      /* Loading spinner */
+      .spinner {
+        display: none;
+        width: 20px;
+        height: 20px;
+        border: 2px solid var(--pico-muted-border-color);
+        border-top-color: var(--pico-primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      .spinner.active {
+        display: inline-block;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .section {
+        margin-bottom: 1.5rem;
+      }
+
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+      }
+
+      .section-header h3 {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+
+      .mode-indicator {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        background: var(--pico-primary-background);
+        color: var(--pico-primary-inverse);
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 500;
+        text-transform: uppercase;
+      }
+
+      /* History dropdown */
+      .history-select {
+        width: 100%;
+        margin-bottom: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <div class="header">
+        <h1>🧪 VLM Bench</h1>
+        <nav class="nav-links">
+          <a href="/overview.html">Overview</a>
+          <a href="/debug.html">Debug</a>
+          <a href="/stats.html">Stats</a>
+          <a href="/review.html">Review</a>
+          <a href="/observations.html">Observations</a>
+          <a href="/bench.html" class="active">Bench</a>
+        </nav>
+      </div>
+
+      <div class="bench-container">
+        <!-- Left Panel: Controls -->
+        <div class="panel" id="left-panel">
+          <!-- Models Section -->
+          <div class="section">
+            <div class="section-header">
+              <h3>Models</h3>
+              <button class="btn-small" onclick="showAddModelForm()">Add Model</button>
+            </div>
+            <div id="model-list" class="model-list">
+              <div class="loading">Loading models...</div>
+            </div>
+            <div id="add-model-form" style="display: none; margin-top: 0.5rem;">
+              <div class="form-group">
+                <label>Model ID</label>
+                <input type="text" id="new-model-id" placeholder="mlx-community/Qwen3.5-0.8B-8bit" />
+              </div>
+              <div class="form-group">
+                <label>Display Name (optional)</label>
+                <input type="text" id="new-model-name" placeholder="Qwen 0.8B" />
+              </div>
+              <div class="input-row">
+                <button onclick="addModel()">Add</button>
+                <button class="secondary" onclick="hideAddModelForm()">Cancel</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Prompt Section -->
+          <div class="section">
+            <div class="section-header">
+              <h3>Prompt</h3>
+              <span class="mode-indicator" id="prompt-mode">per-frame</span>
+            </div>
+            <div class="form-group">
+              <label>Select Prompt</label>
+              <select id="prompt-select" onchange="loadPrompt()">
+                <option value="">Loading prompts...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <textarea id="prompt-template" placeholder="Enter prompt template..."></textarea>
+            </div>
+            <div class="input-row">
+              <input type="text" id="new-prompt-name" placeholder="New prompt name" />
+              <button class="btn-small" onclick="savePrompt()">Save as New</button>
+            </div>
+          </div>
+
+          <!-- Run Controls -->
+          <div class="run-controls">
+            <div class="form-group">
+              <label>Max Tokens</label>
+              <input type="number" id="max-tokens" value="2000" min="100" max="8000" />
+            </div>
+            <div class="form-group">
+              <label>Temperature</label>
+              <input type="number" id="temperature" value="0.3" min="0" max="2" step="0.1" />
+            </div>
+            <button id="run-btn" onclick="runInference()" disabled>
+              <span class="spinner" id="run-spinner"></span>
+              <span id="run-text">Run</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Center Panel: Frame Grid -->
+        <div class="panel" id="center-panel">
+          <div class="panel-header">
+            <h2>Ground Truth Frames</h2>
+            <span id="frame-count">Loading...</span>
+          </div>
+          <div id="frame-grid" class="frame-grid">
+            <div class="loading">Loading frames...</div>
+          </div>
+          <div class="selection-info">
+            <strong id="selection-count">0 frames selected</strong>
+            <span style="color: var(--pico-muted-color); font-size: 0.8rem; margin-left: 0.5rem;">
+              (Shift-click to select range)
+            </span>
+          </div>
+        </div>
+
+        <!-- Right Panel: Results -->
+        <div class="panel" id="right-panel">
+          <div class="panel-header">
+            <h2>Results</h2>
+          </div>
+          <div class="form-group">
+            <label>Run History</label>
+            <select id="history-select" class="history-select" onchange="loadRun()">
+              <option value="">Current run...</option>
+            </select>
+          </div>
+          <div id="results-list" class="results-list">
+            <div class="empty-state">Run inference to see results</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Frame Modal -->
+    <div class="modal" id="frame-modal" onclick="closeModal(event)">
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+      <img id="modal-image" src="" alt="Frame" />
+      <div class="modal-content frame-details" onclick="event.stopPropagation()">
+        <h3 id="modal-frame-id">Frame</h3>
+        <div class="ground-truth-section">
+          <h4>Ground Truth</h4>
+          <div class="gt-item">
+            <label>Description</label>
+            <div id="modal-description"></div>
+          </div>
+          <div class="gt-item">
+            <label>Activity</label>
+            <div id="modal-activity"></div>
+          </div>
+          <div class="gt-item">
+            <label>Apps</label>
+            <div id="modal-apps"></div>
+          </div>
+          <div class="gt-item">
+            <label>Topics</label>
+            <div id="modal-topics"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // State
+      let models = [];
+      let prompts = [];
+      let frames = [];
+      let selectedFrameIds = [];
+      let lastSelectedIndex = -1;
+      let runs = [];
+      let currentRun = null;
+
+      // Default models
+      const DEFAULT_MODELS = [
+        { model_id: 'mlx-community/Qwen3.5-0.8B-8bit', display_name: 'Qwen 0.8B' },
+        { model_id: 'mlx-community/Qwen3.5-2B-6bit', display_name: 'Qwen 2B' }
+      ];
+
+      // Initialize
+      async function init() {
+        await Promise.all([
+          loadModels(),
+          loadPrompts(),
+          loadFrames(),
+          loadRunHistory()
+        ]);
+        updateRunButton();
+      }
+
+      // Models
+      async function loadModels() {
+        try {
+          const res = await fetch('/api/bench/models');
+          models = await res.json();
+
+          // If no models, add defaults
+          if (models.length === 0) {
+            for (const m of DEFAULT_MODELS) {
+              await fetch('/api/bench/models', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(m)
+              });
+            }
+            // Reload
+            const res2 = await fetch('/api/bench/models');
+            models = await res2.json();
+          }
+
+          renderModels();
+        } catch (err) {
+          document.getElementById('model-list').innerHTML = `<div class="error">Error: ${err.message}</div>`;
+        }
+      }
+
+      function renderModels() {
+        const container = document.getElementById('model-list');
+        if (models.length === 0) {
+          container.innerHTML = '<div class="empty-state">No models registered</div>';
+          return;
+        }
+
+        container.innerHTML = models.map(m => {
+          const statusClass = {
+            'loaded': 'badge-loaded',
+            'unloaded': 'badge-unloaded',
+            'loading': 'badge-loading',
+            'error': 'badge-error'
+          }[m.status] || 'badge-unloaded';
+
+          const memoryInfo = m.memory_gb ? ` · ${m.memory_gb.toFixed(1)}GB` : '';
+          const actionBtn = m.status === 'loaded'
+            ? `<button class="secondary btn-small" onclick="unloadModel('${m.id}')">Unload</button>`
+            : `<button class="btn-small" onclick="loadModel('${m.id}')" ${m.status === 'loading' ? 'disabled' : ''}>Load</button>`;
+
+          return `
+            <div class="model-item">
+              <div class="model-info">
+                <div class="model-name">${m.display_name || m.model_id}</div>
+                <div class="model-meta">
+                  <span class="badge ${statusClass}">${m.status}</span>
+                  ${memoryInfo}
+                </div>
+              </div>
+              <div class="model-actions">
+                ${actionBtn}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        updateRunButton();
+      }
+
+      async function loadModel(id) {
+        try {
+          await fetch(`/api/bench/models/${id}/load`, { method: 'POST' });
+          await loadModels();
+        } catch (err) {
+          alert('Failed to load model: ' + err.message);
+        }
+      }
+
+      async function unloadModel(id) {
+        try {
+          await fetch(`/api/bench/models/${id}/unload`, { method: 'POST' });
+          await loadModels();
+        } catch (err) {
+          alert('Failed to unload model: ' + err.message);
+        }
+      }
+
+      function showAddModelForm() {
+        document.getElementById('add-model-form').style.display = 'block';
+      }
+
+      function hideAddModelForm() {
+        document.getElementById('add-model-form').style.display = 'none';
+        document.getElementById('new-model-id').value = '';
+        document.getElementById('new-model-name').value = '';
+      }
+
+      async function addModel() {
+        const modelId = document.getElementById('new-model-id').value.trim();
+        const displayName = document.getElementById('new-model-name').value.trim();
+
+        if (!modelId) {
+          alert('Model ID is required');
+          return;
+        }
+
+        try {
+          await fetch('/api/bench/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model_id: modelId,
+              display_name: displayName || undefined
+            })
+          });
+          hideAddModelForm();
+          await loadModels();
+        } catch (err) {
+          alert('Failed to add model: ' + err.message);
+        }
+      }
+
+      // Prompts
+      async function loadPrompts() {
+        try {
+          const res = await fetch('/api/bench/prompts');
+          prompts = await res.json();
+          renderPromptSelect();
+
+          // Select first prompt by default
+          if (prompts.length > 0) {
+            document.getElementById('prompt-select').value = prompts[0].id;
+            loadPrompt();
+          }
+        } catch (err) {
+          console.error('Failed to load prompts:', err);
+        }
+      }
+
+      function renderPromptSelect() {
+        const select = document.getElementById('prompt-select');
+        select.innerHTML = prompts.map(p =>
+          `<option value="${p.id}">${p.name}</option>`
+        ).join('');
+      }
+
+      async function loadPrompt() {
+        const id = document.getElementById('prompt-select').value;
+        if (!id) return;
+
+        try {
+          const res = await fetch(`/api/bench/prompts/${id}`);
+          const prompt = await res.json();
+          document.getElementById('prompt-template').value = prompt.template;
+          document.getElementById('prompt-mode').textContent = prompt.mode || 'per-frame';
+        } catch (err) {
+          console.error('Failed to load prompt:', err);
+        }
+      }
+
+      async function savePrompt() {
+        const name = document.getElementById('new-prompt-name').value.trim();
+        const template = document.getElementById('prompt-template').value.trim();
+        const mode = document.getElementById('prompt-mode').textContent;
+
+        if (!name || !template) {
+          alert('Name and template are required');
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/bench/prompts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, template, mode })
+          });
+          const newPrompt = await res.json();
+          await loadPrompts();
+          document.getElementById('prompt-select').value = newPrompt.id;
+          document.getElementById('new-prompt-name').value = '';
+        } catch (err) {
+          alert('Failed to save prompt: ' + err.message);
+        }
+      }
+
+      // Frames
+      async function loadFrames() {
+        try {
+          const res = await fetch('/api/bench/frames');
+          frames = await res.json();
+          document.getElementById('frame-count').textContent = `(${frames.length})`;
+          renderFrames();
+        } catch (err) {
+          document.getElementById('frame-grid').innerHTML = `<div class="error">Error: ${err.message}</div>`;
+        }
+      }
+
+      function renderFrames() {
+        const container = document.getElementById('frame-grid');
+        if (frames.length === 0) {
+          container.innerHTML = '<div class="empty-state">No frames available</div>';
+          return;
+        }
+
+        container.innerHTML = frames.map((f, index) => {
+          const selected = selectedFrameIds.includes(f.id) ? 'selected' : '';
+          return `
+            <img
+              src="/api/bench/frames/${f.id}/image"
+              class="frame-thumbnail ${selected}"
+              data-id="${f.id}"
+              data-index="${index}"
+              alt="Frame ${f.id}"
+              onclick="handleFrameClick(event, '${f.id}', ${index})"
+            />
+          `;
+        }).join('');
+      }
+
+      function handleFrameClick(event, id, index) {
+        if (event.shiftKey && lastSelectedIndex !== -1) {
+          // Range selection
+          const start = Math.min(lastSelectedIndex, index);
+          const end = Math.max(lastSelectedIndex, index);
+          for (let i = start; i <= end; i++) {
+            if (!selectedFrameIds.includes(frames[i].id)) {
+              selectedFrameIds.push(frames[i].id);
+            }
+          }
+        } else {
+          // Toggle selection
+          const idx = selectedFrameIds.indexOf(id);
+          if (idx === -1) {
+            selectedFrameIds.push(id);
+          } else {
+            selectedFrameIds.splice(idx, 1);
+          }
+          lastSelectedIndex = index;
+        }
+
+        updateSelectionUI();
+      }
+
+      function updateSelectionUI() {
+        document.querySelectorAll('.frame-thumbnail').forEach(img => {
+          const id = img.dataset.id;
+          if (selectedFrameIds.includes(id)) {
+            img.classList.add('selected');
+          } else {
+            img.classList.remove('selected');
+          }
+        });
+
+        document.getElementById('selection-count').textContent =
+          `${selectedFrameIds.length} frame${selectedFrameIds.length !== 1 ? 's' : ''} selected`;
+
+        updateRunButton();
+      }
+
+      // Modal
+      function openModal(frame) {
+        const modal = document.getElementById('frame-modal');
+        document.getElementById('modal-image').src = `/api/bench/frames/${frame.id}/image`;
+        document.getElementById('modal-frame-id').textContent = `Frame ${frame.id}`;
+        document.getElementById('modal-description').textContent = frame.ground_truth?.description || 'N/A';
+        document.getElementById('modal-activity').textContent = frame.ground_truth?.activity || 'N/A';
+        document.getElementById('modal-apps').textContent = (frame.ground_truth?.apps || []).join(', ') || 'N/A';
+        document.getElementById('modal-topics').textContent = (frame.ground_truth?.topics || []).join(', ') || 'N/A';
+        modal.classList.add('active');
+      }
+
+      function closeModal(event) {
+        if (event && event.target !== document.getElementById('frame-modal')) return;
+        document.getElementById('frame-modal').classList.remove('active');
+      }
+
+      // Double-click to open modal
+      document.addEventListener('dblclick', (e) => {
+        if (e.target.classList.contains('frame-thumbnail')) {
+          const id = e.target.dataset.id;
+          const frame = frames.find(f => f.id === id);
+          if (frame) openModal(frame);
+        }
+      });
+
+      // Run inference
+      function updateRunButton() {
+        const loadedModel = models.some(m => m.status === 'loaded');
+        const hasSelection = selectedFrameIds.length > 0;
+        const btn = document.getElementById('run-btn');
+        btn.disabled = !loadedModel || !hasSelection;
+      }
+
+      async function runInference() {
+        const modelId = models.find(m => m.status === 'loaded')?.id;
+        const promptId = document.getElementById('prompt-select').value;
+
+        if (!modelId || selectedFrameIds.length === 0) return;
+
+        const spinner = document.getElementById('run-spinner');
+        const text = document.getElementById('run-text');
+        spinner.classList.add('active');
+        text.textContent = 'Running...';
+        document.getElementById('run-btn').disabled = true;
+
+        try {
+          const res = await fetch('/api/bench/runs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model_id: modelId,
+              prompt_id: promptId,
+              frame_ids: selectedFrameIds,
+              max_tokens: parseInt(document.getElementById('max-tokens').value),
+              temperature: parseFloat(document.getElementById('temperature').value)
+            })
+          });
+
+          currentRun = await res.json();
+          renderResults(currentRun);
+          await loadRunHistory();
+        } catch (err) {
+          alert('Run failed: ' + err.message);
+        } finally {
+          spinner.classList.remove('active');
+          text.textContent = 'Run';
+          updateRunButton();
+        }
+      }
+
+      // Results
+      function renderResults(run) {
+        const container = document.getElementById('results-list');
+        if (!run || !run.results || run.results.length === 0) {
+          container.innerHTML = '<div class="empty-state">No results</div>';
+          return;
+        }
+
+        const isPerFrame = run.prompt_mode === 'per-frame';
+
+        container.innerHTML = run.results.map((result, idx) => {
+          if (isPerFrame) {
+            const gt = result.ground_truth || {};
+            const output = result.output || {};
+            const activityMatch = gt.activity && output.activity &&
+              gt.activity.toLowerCase() === output.activity.toLowerCase();
+
+            return `
+              <div class="result-card">
+                <div class="result-header">
+                  <strong>Frame ${result.frame_id}</strong>
+                  <span class="result-meta">${result.timing_ms}ms · ${result.tokens_per_sec?.toFixed(1) || '?'} t/s</span>
+                </div>
+                <div class="comparison-grid">
+                  <div class="comparison-item">
+                    <label>Ground Truth Activity</label>
+                    <div>${gt.activity || 'N/A'}</div>
+                  </div>
+                  <div class="comparison-item ${activityMatch ? 'match' : 'mismatch'}">
+                    <label>Predicted Activity</label>
+                    <div>${output.activity || 'N/A'}</div>
+                  </div>
+                  <div class="comparison-item">
+                    <label>Ground Truth Apps</label>
+                    <div>${(gt.apps || []).join(', ') || 'N/A'}</div>
+                  </div>
+                  <div class="comparison-item">
+                    <label>Predicted Apps</label>
+                    <div>${(output.apps || []).join(', ') || 'N/A'}</div>
+                  </div>
+                </div>
+                <details>
+                  <summary>Raw Output</summary>
+                  <pre><code>${escapeHtml(result.raw_output || '')}</code></pre>
+                </details>
+              </div>
+            `;
+          } else {
+            // Multi-frame mode
+            return `
+              <div class="result-card">
+                <div class="result-header">
+                  <strong>Holistic Output</strong>
+                  <span class="result-meta">${result.timing_ms}ms · ${result.tokens_per_sec?.toFixed(1) || '?'} t/s</span>
+                </div>
+                <div class="gt-item">
+                  <label>Output</label>
+                  <div style="white-space: pre-wrap;">${escapeHtml(result.raw_output || '')}</div>
+                </div>
+              </div>
+            `;
+          }
+        }).join('');
+      }
+
+      // Run History
+      async function loadRunHistory() {
+        try {
+          const res = await fetch('/api/bench/runs?limit=20');
+          runs = await res.json();
+
+          const select = document.getElementById('history-select');
+          select.innerHTML = '<option value="">Current run...</option>' +
+            runs.map(r => {
+              const date = new Date(r.created_at).toLocaleString();
+              const modelName = r.model_name || r.model_id;
+              return `<option value="${r.id}">${date} · ${modelName}</option>`;
+            }).join('');
+        } catch (err) {
+          console.error('Failed to load run history:', err);
+        }
+      }
+
+      async function loadRun() {
+        const id = document.getElementById('history-select').value;
+        if (!id) {
+          renderResults(currentRun);
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/bench/runs/${id}`);
+          const run = await res.json();
+          renderResults(run);
+        } catch (err) {
+          console.error('Failed to load run:', err);
+        }
+      }
+
+      // Utils
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeModal();
+      });
+
+      document.addEventListener('DOMContentLoaded', init);
+    </script>
+  </body>
+</html>

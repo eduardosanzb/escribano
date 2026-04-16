@@ -680,14 +680,18 @@
         container.style.setProperty('--model-count', currentResults.length);
 
         // Build grid header
-        let gridHtml = `<div class="results-grid-header">Frame</div>`;
+        let gridHtml = `<div class="results-grid-header">Frame Image</div>`;
         currentResults.forEach(({ modelName }) => {
           gridHtml += `<div class="results-grid-header">${escapeHtml(modelName)}</div>`;
         });
 
         // Build grid rows
         pageFrameIds.forEach(frameId => {
-          gridHtml += `<div class="results-grid-cell"><strong>#${frameId}</strong></div>`;
+          const frame = frames.find(f => f.id === frameId);
+          const frameImg = frame
+            ? `<img src="/api/bench/frames/${frameId}/image" style="width:100%;max-width:180px;border-radius:4px;cursor:pointer;" onclick="window.open('/api/bench/frames/${frameId}/image')" />`
+            : `<strong>#${frameId}</strong>`;
+          gridHtml += `<div class="results-grid-cell">${frameImg}</div>`;
           currentResults.forEach(({ run }) => {
             const result = run.results?.find(r => r.frame_id === frameId);
             if (result) {
@@ -1027,7 +1031,8 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 model_id: model.id,
-                prompt_id: promptId,
+                prompt_id: promptId || null,
+                template: document.getElementById('prompt-template').value.trim(),
                 frame_ids: selectedFrameIds,
                 max_tokens: parseInt(document.getElementById('max-tokens').value),
                 temperature: parseFloat(document.getElementById('temperature').value)

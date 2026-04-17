@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VLM Bench - Escribano</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
       :root {
         --pico-font-size: 14px;
@@ -449,11 +450,12 @@
       .results-grid {
         display: grid;
         grid-template-columns: minmax(100px, auto) repeat(var(--model-count, 1), 1fr);
+        grid-template-rows: auto;
+        grid-auto-rows: 1fr;
         gap: 0.5rem;
         overflow: auto;
         flex: 1;
         min-height: 0;
-        align-content: start;
       }
       .results-grid-header {
         position: sticky;
@@ -475,17 +477,39 @@
       .results-grid-cell.output {
         background: var(--pico-background-color);
         border: 1px solid var(--pico-muted-border-color);
-      }
-      .results-grid-cell pre {
-        margin: 0;
-        max-height: 400px;
         overflow: auto;
-        font-size: 1rem;
-        font-family: inherit;
-        white-space: pre-wrap;
-        word-break: break-word;
-        line-height: 1.6;
+        display: flex;
+        flex-direction: column;
       }
+      .results-grid-cell.output > *:not(.meta) {
+        flex: 1;
+      }
+      .results-grid-cell.output p,
+      .results-grid-cell.output li,
+      .results-grid-cell.output h1,
+      .results-grid-cell.output h2,
+      .results-grid-cell.output h3 {
+        font-size: 1.05rem;
+        line-height: 1.7;
+      }
+      .results-grid-cell.output p { margin: 0.35rem 0; }
+      .results-grid-cell.output ul,
+      .results-grid-cell.output ol { padding-left: 1.5rem; margin: 0.35rem 0; }
+      .results-grid-cell.output code {
+        font-size: 0.9em;
+        background: var(--pico-muted-background-color);
+        padding: 0.1rem 0.3rem;
+        border-radius: 3px;
+      }
+      .results-grid-cell.output pre {
+        margin: 0.5rem 0;
+        padding: 0.75rem;
+        background: var(--pico-muted-background-color);
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 0.9rem;
+      }
+      .results-grid-cell.output pre code { background: none; padding: 0; }
       .results-grid-cell .meta {
         font-size: 0.7rem;
         color: var(--pico-muted-color);
@@ -764,7 +788,7 @@
                 }
                 gridHtml += `
                   <div class="results-grid-cell output">
-                    <pre>${escapeHtml(displayText)}</pre>
+                    ${marked.parse(displayText)}
                     <div class="meta">${timing}</div>
                   </div>
                 `;

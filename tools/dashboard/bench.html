@@ -5,556 +5,155 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VLM Bench - Escribano</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-      :root {
-        --pico-font-size: 14px;
-      }
-
-      main.container {
-        max-width: 100% !important;
-        padding-left: 1.5rem;
-        padding-right: 1.5rem;
-      }
+      :root { --pico-font-size: 14px; }
+      main.container { max-width: 100% !important; padding: 0 1.5rem; }
 
       .header {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        margin-bottom: 1rem;
-        padding-bottom: 1rem;
+        display: flex; align-items: center; gap: 1rem;
+        margin-bottom: 1rem; padding-bottom: 1rem;
         border-bottom: 1px solid var(--pico-muted-border-color);
       }
-
-      .header h1 {
-        margin: 0;
-        font-size: 1.5rem;
-      }
-
-      .nav-links {
-        margin-left: auto;
-        display: flex;
-        gap: 0.5rem;
-      }
-
+      .header h1 { margin: 0; font-size: 1.5rem; }
+      .nav-links { margin-left: auto; display: flex; gap: 0.5rem; }
       .nav-links a {
-        padding: 0.5rem 1rem;
-        border-radius: 4px;
-        text-decoration: none;
-        font-size: 0.875rem;
-        transition: background 0.2s;
+        padding: 0.5rem 1rem; border-radius: 4px; text-decoration: none;
+        font-size: 0.875rem; transition: background 0.2s;
       }
+      .nav-links a:hover { background: var(--pico-muted-background-color); }
+      .nav-links a.active { background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
 
-      .nav-links a:hover {
-        background: var(--pico-muted-background-color);
-      }
-
-      .nav-links a.active {
-        background: var(--pico-primary-background);
-        color: var(--pico-primary-inverse);
-      }
-
-      .bench-container {
-        display: grid;
-        grid-template-columns: 40% 60%;
-        gap: 1rem;
-        height: calc(100vh - 120px);
-        overflow: hidden;
+      .bench-layout {
+        display: grid; grid-template-columns: 35% 1fr;
+        gap: 1rem; height: calc(100vh - 100px); overflow: hidden;
       }
 
       .panel {
         background: var(--pico-card-background-color);
         border: 1px solid var(--pico-muted-border-color);
-        border-radius: 8px;
-        padding: 1rem;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
+        border-radius: 8px; padding: 1rem;
+        display: flex; flex-direction: column; overflow: hidden;
+      }
+      .panel-title {
+        font-size: 0.85rem; font-weight: 600; margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem; border-bottom: 1px solid var(--pico-muted-border-color);
       }
 
-      .panel-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 1px solid var(--pico-muted-border-color);
-      }
+      /* Left: prompt */
+      #left-panel { height: 100%; }
+      #prompt-template { flex: 1; min-height: 120px; resize: vertical; font-family: monospace; font-size: 0.85rem; }
+      .form-group { margin-bottom: 0.75rem; }
+      .form-group label { display: block; font-size: 0.8rem; margin-bottom: 0.25rem; color: var(--pico-muted-color); }
+      .input-row { display: flex; gap: 0.5rem; align-items: flex-end; }
+      .btn-small { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
 
-      .panel-header h2 {
-        margin: 0;
-        font-size: 1.1rem;
-      }
+      /* Right column */
+      .right-col { display: flex; flex-direction: column; gap: 1rem; height: 100%; overflow: hidden; }
 
-      .panel-header h3 {
-        margin: 0;
-        font-size: 1rem;
+      /* Config strip */
+      .config-strip {
+        display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap;
+        padding-bottom: 0.75rem; border-bottom: 1px solid var(--pico-muted-border-color);
       }
+      .config-strip .field { display: flex; flex-direction: column; gap: 0.25rem; }
+      .config-strip label { font-size: 0.7rem; color: var(--pico-muted-color); }
+      .config-strip input { width: 80px; padding: 0.3rem; font-size: 0.85rem; }
 
-      /* Model section */
-      .badge {
-        padding: 0.15rem 0.5rem;
-        border-radius: 999px;
-        font-size: 0.7rem;
-        font-weight: 500;
-      }
-
-      .badge-loaded {
-        background: #22c55e;
-        color: white;
-      }
-
-      .badge-unloaded {
-        background: #9ca3af;
-        color: white;
-      }
-
-      .badge-loading {
-        background: #eab308;
-        color: white;
-      }
-
-      .badge-error {
-        background: #ef4444;
-        color: white;
-      }
-
-      /* Results */
-      .result-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.5rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 1px solid var(--pico-muted-border-color);
-      }
-
-      .result-meta {
-        font-size: 0.75rem;
-        color: var(--pico-muted-color);
-      }
-
-      /* Accordion for raw output */
-      details {
-        margin-top: 0.5rem;
-      }
-
-      details summary {
-        cursor: pointer;
-        font-size: 0.8rem;
-        color: var(--pico-muted-color);
-      }
-
-      details pre {
-        font-size: 0.75rem;
-        max-height: 200px;
-        overflow: auto;
-      }
-
-      /* Modal */
-      .modal {
-        display: none;
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.9);
-        z-index: 1000;
-        justify-content: center;
-        align-items: center;
-        flex-direction: column;
-        padding: 2rem;
-      }
-
-      .modal.active {
-        display: flex;
-      }
-
-      .modal img {
-        max-width: 90%;
-        max-height: 70vh;
-        object-fit: contain;
-      }
-
-      /* Image Modal */
-      #image-modal {
-        display: none;
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.9);
-        z-index: 1000;
-        justify-content: center;
-        align-items: center;
-      }
-      #image-modal.active {
-        display: flex;
-      }
-
-      .modal-content {
-        background: var(--pico-card-background-color);
-        padding: 1.5rem;
-        border-radius: 8px;
-        max-width: 90%;
-        max-height: 80vh;
-        overflow: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-      }
-
-      .modal-close {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        background: none;
-        border: none;
-        color: white;
-        font-size: 1.5rem;
-        cursor: pointer;
-      }
-
-      .frame-details {
-        color: var(--pico-color);
-      }
-
-      .frame-details h3 {
-        margin: 0 0 0.5rem 0;
-        font-size: 1.1rem;
-      }
-
-      .ground-truth-section {
-        margin-top: 1rem;
-      }
-
-      .ground-truth-section h4 {
-        margin: 0 0 0.5rem 0;
-        font-size: 0.9rem;
-        color: var(--pico-muted-color);
-      }
-
-      .gt-item {
-        padding: 0.5rem;
-        background: var(--pico-muted-background-color);
-        border-radius: 4px;
-        margin-bottom: 0.5rem;
-        font-size: 0.85rem;
-      }
-
-      .gt-item label {
-        font-weight: 500;
-        font-size: 0.75rem;
-        color: var(--pico-muted-color);
-        display: block;
-        margin-bottom: 0.25rem;
-      }
-
-      /* Form styles */
-      .form-group {
-        margin-bottom: 0.75rem;
-      }
-
-      .prompt-form-group {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-      }
-
-      .form-group label {
-        display: block;
-        font-size: 0.8rem;
-        margin-bottom: 0.25rem;
-        color: var(--pico-muted-color);
-      }
-
-      textarea {
-        flex: 1;
-        min-height: 200px;
-        resize: vertical;
-        font-family: monospace;
-        font-size: 0.9rem;
-      }
-
-      .btn-small {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.75rem;
-      }
-
-      .run-controls {
-        margin-top: 1rem;
-        padding-top: 1rem;
-        border-top: 1px solid var(--pico-muted-border-color);
-      }
-
-      .input-row {
-        display: flex;
-        gap: 0.5rem;
-        align-items: flex-end;
-      }
-
-      .input-row input,
-      .input-row select {
-        flex: 1;
-      }
-
-      /* Loading spinner */
-      .spinner {
-        display: none;
-        width: 20px;
-        height: 20px;
-        border: 2px solid var(--pico-muted-border-color);
-        border-top-color: var(--pico-primary);
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-      }
-
-      .spinner.active {
-        display: inline-block;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .section {
-        margin-bottom: 1.5rem;
-      }
-
-      .section-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.5rem;
-      }
-
-      .section-header h3 {
-        margin: 0;
-        font-size: 0.95rem;
-      }
-
-      .mode-indicator {
-        display: inline-block;
-        padding: 0.25rem 0.5rem;
-        background: var(--pico-primary-background);
-        color: var(--pico-primary-inverse);
-        border-radius: 4px;
-        font-size: 0.7rem;
-        font-weight: 500;
-        text-transform: uppercase;
-      }
-
-      /* History dropdown */
-      .history-select {
-        width: 100%;
-        margin-bottom: 1rem;
-      }
-
-      /* Layout */
-      .right-column {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        height: 100%;
-        overflow: hidden;
-      }
-      #left-panel {
-        height: 100%;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-      }
-      #left-panel .section {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        min-height: 0;
-      }
-      #config-panel {
-        flex: 0 0 auto;
-        max-height: 50%;
-        overflow-y: auto;
-      }
-      #results-panel {
-        flex: 1 1 auto;
-        min-height: 0;
-        overflow: hidden;
-      }
-
-      /* Compact model list */
-      .model-list-compact {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        max-height: 100px;
-        overflow-y: auto;
-      }
+      /* Model chips */
+      .model-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
       .model-chip {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.35rem 0.75rem;
-        background: var(--pico-muted-background-color);
-        border-radius: 999px;
-        font-size: 0.8rem;
+        display: flex; align-items: center; gap: 0.4rem;
+        padding: 0.3rem 0.65rem; border-radius: 999px;
+        font-size: 0.8rem; background: var(--pico-muted-background-color);
       }
-      .model-list-compact .model-chip.loaded {
-        background: #22c55e;
-        color: white;
-        border: 2px solid #16a34a;
-      }
+      .model-chip.loaded { background: #22c55e; color: white; border: 2px solid #16a34a; }
 
       /* Frame strip */
-      .frame-strip {
-        display: flex;
-        gap: 0.75rem;
-        overflow-x: auto;
-        padding: 0.75rem 0;
-        max-height: 160px;
+      .frame-strip { display: flex; gap: 0.5rem; overflow-x: auto; padding: 0.5rem 0; max-height: 130px; }
+      .frame-strip img {
+        width: 160px; height: 100px; object-fit: cover; border-radius: 4px;
+        cursor: pointer; border: 3px solid transparent; flex-shrink: 0;
       }
-      .frame-strip-thumb {
-        width: 200px;
-        height: 125px;
-        object-fit: cover;
-        border-radius: 6px;
-        cursor: pointer;
-        border: 3px solid transparent;
-        flex-shrink: 0;
-      }
-      .frame-strip-thumb.selected {
-        border-color: #3b82f6;
-        box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
-      }
+      .frame-strip img.selected { border-color: #3b82f6; box-shadow: 0 0 8px rgba(59,130,246,0.5); }
 
-      /* Run controls compact */
-      .run-controls-compact {
-        margin-top: auto;
-        padding-top: 0.75rem;
-        border-top: 1px solid var(--pico-muted-border-color);
-      }
-      .run-controls-compact .input-row {
-        display: flex;
-        gap: 0.75rem;
-        align-items: flex-end;
-      }
-      .run-controls-compact .form-group {
-        margin-bottom: 0;
-      }
-      .run-controls-compact label {
-        font-size: 0.7rem;
-      }
-      .run-controls-compact input {
-        width: 80px;
-        padding: 0.35rem;
-      }
-
-      /* Results grid */
-      .results-grid {
+      /* Results — one output block per model, full height */
+      #results-panel { flex: 1; min-height: 0; overflow: hidden; }
+      .outputs-container {
         display: grid;
-        grid-template-columns: minmax(100px, auto) repeat(var(--model-count, 1), 1fr);
-        grid-template-rows: auto;
-        grid-auto-rows: 1fr;
-        gap: 0.5rem;
-        overflow: auto;
-        flex: 1;
-        min-height: 0;
+        grid-template-columns: repeat(var(--model-count, 1), 1fr);
+        gap: 1rem; flex: 1; min-height: 0; overflow: auto;
       }
-      .results-grid-header {
-        position: sticky;
-        top: 0;
-        background: var(--pico-card-background-color);
-        z-index: 10;
-        padding: 0.75rem;
-        font-weight: 600;
-        font-size: 0.95rem;
-        border-bottom: 2px solid var(--pico-muted-border-color);
-      }
-      .results-grid-cell {
-        padding: 0.75rem;
-        background: var(--pico-muted-background-color);
-        border-radius: 6px;
-        font-size: 1rem;
-        min-height: 60px;
-      }
-      .results-grid-cell.output {
+      .output-block {
+        display: flex; flex-direction: column;
         background: var(--pico-background-color);
         border: 1px solid var(--pico-muted-border-color);
-        overflow: auto;
-        display: flex;
-        flex-direction: column;
+        border-radius: 6px; padding: 1rem;
       }
-      .results-grid-cell.output > *:not(.meta) {
-        flex: 1;
+      .output-block h3 {
+        margin: 0 0 0.5rem; font-size: 0.9rem; font-weight: 600;
+        padding-bottom: 0.5rem; border-bottom: 1px solid var(--pico-muted-border-color);
       }
-      .results-grid-cell.output p,
-      .results-grid-cell.output li,
-      .results-grid-cell.output h1,
-      .results-grid-cell.output h2,
-      .results-grid-cell.output h3 {
-        font-size: 1.05rem;
-        line-height: 1.7;
+      .output-text {
+        flex: 1; font-size: 1.05rem; line-height: 1.7;
+        white-space: pre-wrap; word-break: break-word;
+        font-family: inherit;
       }
-      .results-grid-cell.output p { margin: 0.35rem 0; }
-      .results-grid-cell.output ul,
-      .results-grid-cell.output ol { padding-left: 1.5rem; margin: 0.35rem 0; }
-      .results-grid-cell.output code {
-        font-size: 0.9em;
-        background: var(--pico-muted-background-color);
-        padding: 0.1rem 0.3rem;
-        border-radius: 3px;
-      }
-      .results-grid-cell.output pre {
-        margin: 0.5rem 0;
-        padding: 0.75rem;
-        background: var(--pico-muted-background-color);
-        border-radius: 4px;
-        overflow-x: auto;
-        font-size: 0.9rem;
-      }
-      .results-grid-cell.output pre code { background: none; padding: 0; }
-      .results-grid-cell .meta {
-        font-size: 0.7rem;
-        color: var(--pico-muted-color);
-        margin-top: 0.25rem;
-      }
-
-      .results-grid-cell.empty {
-        background: transparent;
-        border: 1px dashed var(--pico-muted-border-color);
-        min-height: auto;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--pico-muted-color);
-        font-size: 0.85rem;
-      }
-
-      /* Loader */
-      .results-loader {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.75rem;
-        padding: 2rem;
-        color: var(--pico-muted-color);
-      }
-
-      /* Pagination */
-      .results-pagination {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 1rem;
-        padding-top: 0.5rem;
+      .output-meta {
+        font-size: 0.75rem; color: var(--pico-muted-color);
+        margin-top: 0.5rem; padding-top: 0.5rem;
         border-top: 1px solid var(--pico-muted-border-color);
-        flex-shrink: 0;
+        flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;
+      }
+      .copy-btn {
+        padding: 0.15rem 0.5rem; font-size: 0.7rem; border-radius: 3px;
+        cursor: pointer; background: var(--pico-muted-background-color);
+        border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color);
+      }
+      .copy-btn:hover { background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
+
+      /* Frames sent row */
+      .frames-sent {
+        display: flex; gap: 0.5rem; padding: 0.5rem 0;
+        border-bottom: 1px solid var(--pico-muted-border-color);
+        margin-bottom: 0.75rem; overflow-x: auto;
+      }
+      .frames-sent img {
+        height: 120px; border-radius: 4px; object-fit: cover;
+        cursor: pointer; flex-shrink: 0;
       }
 
-      /* Run info */
-      .run-info {
-        font-size: 0.8rem;
-        color: var(--pico-muted-color);
+      /* Spinner */
+      .spinner {
+        display: none; width: 18px; height: 18px;
+        border: 2px solid var(--pico-muted-border-color);
+        border-top-color: var(--pico-primary); border-radius: 50%;
+        animation: spin 1s linear infinite;
       }
+      .spinner.active { display: inline-block; }
+      @keyframes spin { to { transform: rotate(360deg); } }
 
+      .loading-overlay {
+        display: none; align-items: center; justify-content: center;
+        gap: 0.75rem; padding: 3rem; color: var(--pico-muted-color);
+      }
+      .loading-overlay.active { display: flex; }
 
+      /* History */
+      .history-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+      .history-row select { flex: 1; }
+
+      /* Add model form */
+      #add-model-form { display: none; margin-top: 0.5rem; }
+      #add-model-form .input-row { margin-top: 0.25rem; }
+
+      /* Image modal */
+      .modal-bg {
+        display: none; position: fixed; inset: 0;
+        background: rgba(0,0,0,0.9); z-index: 1000;
+        justify-content: center; align-items: center;
+      }
+      .modal-bg.active { display: flex; }
+      .modal-bg img { max-width: 90%; max-height: 90%; object-fit: contain; }
     </style>
   </head>
   <body>
@@ -571,112 +170,74 @@
         </nav>
       </div>
 
-      <div class="bench-container">
-        <!-- Left Panel: Prompt -->
+      <div class="bench-layout">
+        <!-- Left: Prompt -->
         <div class="panel" id="left-panel">
-          <div class="section">
-            <div class="section-header">
-              <h3>Prompt</h3>
-              <span class="mode-indicator" id="prompt-mode">per-frame</span>
-            </div>
-            <div class="form-group">
-              <label>Select Prompt</label>
-              <select id="prompt-select" onchange="loadPrompt()">
-                <option value="">Loading prompts...</option>
-              </select>
-            </div>
-            <div class="form-group prompt-form-group">
-              <textarea id="prompt-template" placeholder="Enter prompt template..."></textarea>
-            </div>
-            <div class="input-row">
-              <input type="text" id="new-prompt-name" placeholder="New prompt name" />
-              <button class="btn-small" onclick="savePrompt()">Save as New</button>
-            </div>
+          <div class="panel-title">Prompt</div>
+          <div class="form-group">
+            <select id="prompt-select" onchange="loadPrompt()"></select>
+          </div>
+          <div class="form-group" style="flex:1;display:flex;flex-direction:column;">
+            <textarea id="prompt-template" placeholder="Enter prompt..."></textarea>
+          </div>
+          <div class="input-row">
+            <input type="text" id="new-prompt-name" placeholder="New prompt name" />
+            <button class="btn-small" onclick="savePrompt()">Save</button>
           </div>
         </div>
 
-        <!-- Right Column: Config + Results -->
-        <div class="right-column">
-          <!-- Config Panel -->
-          <div class="panel" id="config-panel">
-            <div class="panel-header">
-              <h2>Run Configuration</h2>
-            </div>
-            <!-- Models -->
-            <div class="section">
-              <div class="section-header">
-                <h3>Models</h3>
-                <button class="btn-small" onclick="showAddModelForm()">Add</button>
-              </div>
-              <div id="model-list" class="model-list-compact">
-                <div class="loading">Loading models...</div>
-              </div>
-              <div id="add-model-form" style="display: none; margin-top: 0.5rem;">
-                <div class="form-group">
-                  <label>Model ID</label>
-                  <input type="text" id="new-model-id" placeholder="mlx-community/Qwen3.5-0.8B-8bit" />
-                </div>
-                <div class="form-group">
-                  <label>Display Name (optional)</label>
-                  <input type="text" id="new-model-name" placeholder="Qwen 0.8B" />
-                </div>
-                <div class="input-row">
-                  <button onclick="addModel()">Add</button>
-                  <button class="secondary" onclick="hideAddModelForm()">Cancel</button>
+        <!-- Right: Config + Results -->
+        <div class="right-col">
+          <!-- Config strip -->
+          <div class="panel" style="flex:0 0 auto;">
+            <div class="config-strip">
+              <div>
+                <div class="model-chips" id="model-chips"></div>
+                <div id="add-model-form">
+                  <div class="input-row" style="margin-top:0.5rem;">
+                    <input type="text" id="new-model-id" placeholder="mlx-community/..." style="flex:1;font-size:0.85rem;" />
+                    <input type="text" id="new-model-name" placeholder="Name" style="width:90px;font-size:0.85rem;" />
+                    <button class="btn-small" onclick="addModel()">Add</button>
+                    <button class="btn-small secondary" onclick="document.getElementById('add-model-form').style.display='none'">✕</button>
+                  </div>
                 </div>
               </div>
-            </div>
-            <!-- Frames -->
-            <div class="section">
-              <div class="section-header">
-                <h3>Frames</h3>
-                <span id="frame-count-display">0 / 0 selected</span>
+              <div class="field">
+                <label>Tokens</label>
+                <input type="number" id="max-tokens" value="2000" min="100" max="8000" />
               </div>
-              <div id="frame-strip" class="frame-strip">
-                <!-- thumbnails rendered here -->
+              <div class="field">
+                <label>Temp</label>
+                <input type="number" id="temperature" value="0.3" min="0" max="2" step="0.1" />
               </div>
-            </div>
-            <!-- Run Controls -->
-            <div class="run-controls-compact">
-              <div class="input-row">
-                <div class="form-group">
-                  <label>Max Tokens</label>
-                  <input type="number" id="max-tokens" value="2000" min="100" max="8000" />
-                </div>
-                <div class="form-group">
-                  <label>Temp</label>
-                  <input type="number" id="temperature" value="0.3" min="0" max="2" step="0.1" />
-                </div>
+              <div class="field" style="align-self:flex-end;">
                 <button id="run-btn" onclick="runInference()" disabled>
                   <span class="spinner" id="run-spinner"></span>
                   <span id="run-text">Run</span>
                 </button>
               </div>
+              <div class="field" style="align-self:flex-end;">
+                <button class="btn-small secondary" onclick="document.getElementById('add-model-form').style.display='block'">+ Model</button>
+              </div>
             </div>
+            <div class="frame-strip" id="frame-strip"></div>
+            <div style="font-size:0.75rem;color:var(--pico-muted-color);" id="frame-count">0 selected</div>
           </div>
 
-          <!-- Results Panel -->
+          <!-- Results -->
           <div class="panel" id="results-panel">
-            <div class="panel-header">
-              <h2>Results</h2>
-              <span id="run-info" class="run-info"></span>
-            </div>
-            <div id="results-loader" class="results-loader" style="display: none;">
+            <div class="loading-overlay" id="loader">
               <div class="spinner active"></div>
-              <span>Running inference...</span>
+              <span id="loader-text">Running…</span>
             </div>
-            <div id="results-grid" class="results-grid">
-              <div class="empty-state">Select frames and click Run to see results</div>
+            <div class="outputs-container" id="outputs" style="--model-count:1;">
+              <div style="color:var(--pico-muted-color);font-size:0.9rem;grid-column:1/-1;">
+                Select frames and click Run
+              </div>
             </div>
-            <div id="results-pagination" class="results-pagination" style="display: none;">
-              <button onclick="prevPage()" id="prev-btn" disabled>&larr; Prev</button>
-              <span id="page-info">Page 1 of 1</span>
-              <button onclick="nextPage()" id="next-btn" disabled>Next &rarr;</button>
-            </div>
-            <div class="form-group" style="margin-top: 0.5rem;">
-              <label>Run History</label>
-              <select id="history-select" class="history-select" onchange="loadRun()">
-                <option value="">Current run...</option>
+            <div class="history-row">
+              <select id="history-select" onchange="loadRun()">
+                <option value="">Current run…</option>
               </select>
             </div>
           </div>
@@ -684,527 +245,293 @@
       </div>
     </main>
 
-    <!-- Image Modal -->
-    <div class="modal" id="image-modal" onclick="closeImageModal(event)">
-      <img id="modal-image" src="" alt="Frame" style="max-width: 90%; max-height: 90%; object-fit: contain;" />
+    <!-- Image modal -->
+    <div class="modal-bg" id="image-modal" onclick="if(event.target===this)this.classList.remove('active')">
+      <img id="modal-img" src="" alt="Frame" />
     </div>
 
     <script>
-      // State
-      let models = [];
-      let prompts = [];
-      let frames = [];
-      let selectedFrameIds = [];
-      let runs = [];
-      let currentRun = null;
+      let models = [], prompts = [], frames = [], selectedFrameIds = [];
 
-      // Modal functions
-      function openImageModal(src) {
-        const modal = document.getElementById('image-modal');
-        document.getElementById('modal-image').src = src;
-        modal.classList.add('active');
-      }
-
-      function closeImageModal(event) {
-        if (event && event.target !== document.getElementById('image-modal')) return;
-        document.getElementById('image-modal').classList.remove('active');
-      }
-
-      // Pagination state
-      let resultsPage = 1;
-      const RESULTS_PER_PAGE = 10;
-      let currentResults = []; // { modelName, run }[]
-
-      // Default models
       const DEFAULT_MODELS = [
-        { model_id: 'mlx-community/Qwen3.5-0.8B-8bit', display_name: 'Qwen 0.8B' },
-        { model_id: 'mlx-community/Qwen3.5-2B-6bit', display_name: 'Qwen 2B' }
+        { model_id: "mlx-community/Qwen3.5-0.8B-8bit", display_name: "Qwen 0.8B" },
+        { model_id: "mlx-community/Qwen3.5-2B-6bit", display_name: "Qwen 2B" },
       ];
 
-      function renderResultsGrid() {
-        const container = document.getElementById('results-grid');
-        const loader = document.getElementById('results-loader');
-        const pagination = document.getElementById('results-pagination');
-
-        if (!currentResults || currentResults.length === 0) {
-          container.innerHTML = '<div class="empty-state">Select frames and click Run to see results</div>';
-          pagination.style.display = 'none';
-          return;
-        }
-
-        // Show run info
-        const promptSelect = document.getElementById('prompt-select');
-        const promptName = promptSelect.selectedOptions[0]?.text || 'Custom';
-        const modelNames = currentResults.map(r => r.modelName).join(', ');
-        document.getElementById('run-info').textContent = `${promptName} · ${modelNames}`;
-
-        // Collect all unique frame IDs across all runs
-        const allFrameIds = [...new Set(currentResults.flatMap(r =>
-          r.run.results?.map(res => res.frame_id) || []
-        ))].sort((a, b) => a - b);
-
-        // Paginate frames
-        const totalPages = Math.ceil(allFrameIds.length / RESULTS_PER_PAGE);
-        resultsPage = Math.min(resultsPage, totalPages);
-        const startIdx = (resultsPage - 1) * RESULTS_PER_PAGE;
-        const pageFrameIds = allFrameIds.slice(startIdx, startIdx + RESULTS_PER_PAGE);
-
-        // Get model info from the run
-        const run = currentResults[0]?.run;
-        const modelIds = run?.model_ids || [];
-        const modelInfo = run?.models || [];
-
-        // Build grid header
-        let gridHtml = `<div class="results-grid-header">Frame Image</div>`;
-        modelInfo.forEach(model => {
-          gridHtml += `<div class="results-grid-header">${escapeHtml(model.display_name || model.model_id)}</div>`;
-        });
-
-        // Set CSS variable for grid columns (1 for frame + N for models)
-        container.style.setProperty('--model-count', modelIds.length);
-
-        // Build grid rows - each result entry is one frame with outputs from all models
-        pageFrameIds.forEach(frameId => {
-          const frameResult = run?.results?.find(r => r.frame_id === frameId);
-          const frame = frames.find(f => f.id === frameId);
-          const frameImg = frame
-            ? `<img src="/api/bench/frames/${frameId}/image" style="width:100%;max-width:180px;border-radius:4px;cursor:pointer;" onclick="openImageModal('/api/bench/frames/${frameId}/image')" />`
-            : `<strong>#${frameId}</strong>`;
-          gridHtml += `<div class="results-grid-cell">${frameImg}</div>`;
-
-          // Add cell for each model
-          modelIds.forEach(modelId => {
-            const output = frameResult?.outputs?.[modelId];
-            if (output) {
-              if (output.error) {
-                gridHtml += `<div class="results-grid-cell output" style="color: #ef4444;"><pre>Error: ${escapeHtml(output.error)}</pre></div>`;
-              } else {
-                const timing = `${output.timing_ms}ms · ${output.tokens_per_sec?.toFixed(1) || '?'} t/s`;
-                // Parse GenerationResult to extract just the text field
-                let displayText = output.raw_output || '(no output)';
-                const textMatch = displayText.match(/text=['"](.+?)['"],\s*(?:token|tokens)/s);
-                if (textMatch) {
-                  displayText = textMatch[1].replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\"/g, '"');
-                }
-                gridHtml += `
-                  <div class="results-grid-cell output">
-                    ${marked.parse(displayText)}
-                    <div class="meta">${timing}</div>
-                  </div>
-                `;
-              }
-            } else {
-              gridHtml += `<div class="results-grid-cell empty">—</div>`;
-            }
-          });
-        });
-
-        container.innerHTML = gridHtml;
-        pagination.style.display = totalPages > 1 ? 'flex' : 'none';
-        document.getElementById('page-info').textContent = `Page ${resultsPage} of ${totalPages}`;
-        document.getElementById('prev-btn').disabled = resultsPage <= 1;
-        document.getElementById('next-btn').disabled = resultsPage >= totalPages;
-      }
-
-      function prevPage() {
-        if (resultsPage > 1) {
-          resultsPage--;
-          renderResultsGrid();
-        }
-      }
-
-      function nextPage() {
-        resultsPage++;
-        renderResultsGrid();
-      }
-
-      // Initialize
+      // ── Init ───────────────────────────────────────
       async function init() {
-        await Promise.all([
-          loadModels(),
-          loadPrompts(),
-          loadFrames(),
-          loadRunHistory()
-        ]);
+        await Promise.all([loadModels(), loadPrompts(), loadFrames(), loadRunHistory()]);
         updateRunButton();
       }
 
-      // Models
+      // ── Models ─────────────────────────────────────
       async function loadModels() {
         try {
-          const res = await fetch('/api/bench/models');
+          const res = await fetch("/api/bench/models");
           models = await res.json();
-
-          // If no models, add defaults
           if (models.length === 0) {
             for (const m of DEFAULT_MODELS) {
-              await fetch('/api/bench/models', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(m)
+              await fetch("/api/bench/models", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m),
               });
             }
-            // Reload
-            const res2 = await fetch('/api/bench/models');
-            models = await res2.json();
+            models = await (await fetch("/api/bench/models")).json();
           }
-
           renderModels();
-        } catch (err) {
-          document.getElementById('model-list').innerHTML = `<div class="error">Error: ${err.message}</div>`;
-        }
+        } catch (e) { document.getElementById("model-chips").textContent = "Error: " + e.message; }
       }
 
       function renderModels() {
-        const container = document.getElementById('model-list');
-        if (models.length === 0) {
-          container.innerHTML = '<div class="empty-state" style="font-size:0.75rem;">No models</div>';
-          return;
-        }
-
-        container.innerHTML = models.map(m => {
-          const isLoaded = m.status === 'loaded';
-          const chipClass = isLoaded ? 'model-chip loaded' : 'model-chip';
-          const memoryInfo = m.memory_mb ? ` · ${(m.memory_mb / 1024).toFixed(1)}GB` : '';
-          const action = isLoaded
-            ? `<button class="secondary btn-small" onclick="unloadModel('${m.id}')">Unload</button>`
-            : `<button class="btn-small" onclick="loadModel('${m.id}')" ${m.status === 'loading' ? 'disabled' : ''}>Load</button>`;
-
-          return `
-            <div class="${chipClass}">
-              <span style="font-size:0.75rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${m.display_name || m.id}">${m.id}${memoryInfo}</span>
-              ${action}
-            </div>
-          `;
-        }).join('');
-
+        const el = document.getElementById("model-chips");
+        el.innerHTML = models.map(m => {
+          const loaded = m.status === "loaded";
+          return `<div class="model-chip${loaded ? " loaded" : ""}">
+            <span>${m.display_name || m.id}${m.memory_mb ? " · " + (m.memory_mb/1024).toFixed(1) + "GB" : ""}</span>
+            <button class="btn-small${loaded ? " secondary" : ""}" onclick="${loaded ? "unloadModel" : "loadModel"}('${m.id}')" ${m.status === "loading" ? "disabled" : ""}>${loaded ? "Unload" : "Load"}</button>
+          </div>`;
+        }).join("");
         updateRunButton();
       }
 
       async function loadModel(id) {
         try {
-          const res = await fetch('/api/bench/models/load', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_id: id })
+          const res = await fetch("/api/bench/models/load", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model_id: id }),
           });
-          if (!res.ok) {
-            const error = await res.json().catch(() => ({}));
-            throw new Error(error.error || `HTTP ${res.status}`);
-          }
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "HTTP " + res.status);
           await loadModels();
-        } catch (err) {
-          alert('Failed to load model: ' + err.message);
-        }
+        } catch (e) { alert("Load failed: " + e.message); }
       }
 
       async function unloadModel(id) {
         try {
-          const res = await fetch('/api/bench/models/unload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_id: id })
+          await fetch("/api/bench/models/unload", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model_id: id }),
           });
-          if (!res.ok) {
-            const error = await res.json().catch(() => ({}));
-            throw new Error(error.error || `HTTP ${res.status}`);
-          }
           await loadModels();
-        } catch (err) {
-          alert('Failed to unload model: ' + err.message);
-        }
-      }
-
-      function showAddModelForm() {
-        document.getElementById('add-model-form').style.display = 'block';
-      }
-
-      function hideAddModelForm() {
-        document.getElementById('add-model-form').style.display = 'none';
-        document.getElementById('new-model-id').value = '';
-        document.getElementById('new-model-name').value = '';
+        } catch (e) { alert("Unload failed: " + e.message); }
       }
 
       async function addModel() {
-        const modelId = document.getElementById('new-model-id').value.trim();
-        const displayName = document.getElementById('new-model-name').value.trim();
-
-        if (!modelId) {
-          alert('Model ID is required');
-          return;
-        }
-
-        try {
-          await fetch('/api/bench/models', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model_id: modelId,
-              display_name: displayName || undefined
-            })
-          });
-          hideAddModelForm();
-          await loadModels();
-        } catch (err) {
-          alert('Failed to add model: ' + err.message);
-        }
+        const id = document.getElementById("new-model-id").value.trim();
+        const name = document.getElementById("new-model-name").value.trim();
+        if (!id) return alert("Model ID required");
+        await fetch("/api/bench/models", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model_id: id, display_name: name || undefined }),
+        });
+        document.getElementById("new-model-id").value = "";
+        document.getElementById("new-model-name").value = "";
+        document.getElementById("add-model-form").style.display = "none";
+        await loadModels();
       }
 
-      // Prompts
+      // ── Prompts ────────────────────────────────────
       async function loadPrompts() {
-        try {
-          const res = await fetch('/api/bench/prompts');
-          prompts = await res.json();
-          renderPromptSelect();
-
-          // Select first prompt by default
-          if (prompts.length > 0) {
-            document.getElementById('prompt-select').value = prompts[0].id;
-            loadPrompt();
-          }
-        } catch (err) {
-          console.error('Failed to load prompts:', err);
-        }
-      }
-
-      function renderPromptSelect() {
-        const select = document.getElementById('prompt-select');
-        select.innerHTML = prompts.map(p =>
-          `<option value="${p.id}">${p.name}</option>`
-        ).join('');
+        prompts = await (await fetch("/api/bench/prompts")).json();
+        const sel = document.getElementById("prompt-select");
+        sel.innerHTML = prompts.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+        if (prompts.length > 0) { sel.value = prompts[0].id; loadPrompt(); }
       }
 
       async function loadPrompt() {
-        const id = document.getElementById('prompt-select').value;
+        const id = document.getElementById("prompt-select").value;
         if (!id) return;
-
-        try {
-          const res = await fetch(`/api/bench/prompts/${id}`);
-          const prompt = await res.json();
-          document.getElementById('prompt-template').value = prompt.template;
-          document.getElementById('prompt-mode').textContent = prompt.mode || 'per-frame';
-        } catch (err) {
-          console.error('Failed to load prompt:', err);
-        }
+        const p = await (await fetch(`/api/bench/prompts/${id}`)).json();
+        document.getElementById("prompt-template").value = p.template;
       }
 
       async function savePrompt() {
-        const name = document.getElementById('new-prompt-name').value.trim();
-        const template = document.getElementById('prompt-template').value.trim();
-        const mode = document.getElementById('prompt-mode').textContent;
-
-        if (!name || !template) {
-          alert('Name and template are required');
-          return;
-        }
-
-        try {
-          const res = await fetch('/api/bench/prompts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, template, mode })
-          });
-          const newPrompt = await res.json();
-          await loadPrompts();
-          document.getElementById('prompt-select').value = newPrompt.id;
-          document.getElementById('new-prompt-name').value = '';
-        } catch (err) {
-          alert('Failed to save prompt: ' + err.message);
-        }
+        const name = document.getElementById("new-prompt-name").value.trim();
+        const template = document.getElementById("prompt-template").value.trim();
+        if (!template) return alert("Template required");
+        const p = await (await fetch("/api/bench/prompts", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name || "Untitled", template, mode: "multiple" }),
+        })).json();
+        await loadPrompts();
+        document.getElementById("prompt-select").value = p.id;
+        document.getElementById("new-prompt-name").value = "";
       }
 
-      // Frames
+      // ── Frames ─────────────────────────────────────
       async function loadFrames() {
-        try {
-          const res = await fetch('/api/bench/frames');
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
-          }
-          frames = await res.json();
-          renderFrames();
-        } catch (err) {
-          document.getElementById('frame-strip').innerHTML = `<div class="error" style="padding:0.5rem;">Error: ${err.message}</div>`;
-        }
-      }
-
-      function renderFrames() {
-        const container = document.getElementById('frame-strip');
-        if (frames.length === 0) {
-          container.innerHTML = '<span class="empty-state" style="font-size:0.75rem;">No frames</span>';
-          return;
-        }
-
-        container.innerHTML = frames.map((f, index) => {
-          const selected = selectedFrameIds.includes(f.id) ? 'selected' : '';
-          return `
-            <img
-              src="/api/bench/frames/${f.id}/image"
-              class="frame-strip-thumb ${selected}"
-              data-id="${f.id}"
-              data-index="${index}"
-              alt="Frame ${f.id}"
-              onclick="toggleFrameSelection(${f.id}, ${index})"
-              ondblclick="openFrameModal(${f.id})"
-            />
-          `;
-        }).join('');
-
+        frames = await (await fetch("/api/bench/frames")).json();
+        const el = document.getElementById("frame-strip");
+        el.innerHTML = frames.map(f =>
+          `<img src="/api/bench/frames/${f.id}/image" data-id="${f.id}" onclick="toggleFrame(${f.id})" ondblclick="document.getElementById('modal-img').src='/api/bench/frames/${f.id}/image';document.getElementById('image-modal').classList.add('active')" />`
+        ).join("");
         updateFrameCount();
       }
 
-      function toggleFrameSelection(id, index) {
+      function toggleFrame(id) {
         const idx = selectedFrameIds.indexOf(id);
-        if (idx === -1) {
-          selectedFrameIds.push(id);
-        } else {
-          selectedFrameIds.splice(idx, 1);
-        }
-        updateSelectionUI();
-      }
-
-      function updateFrameCount() {
-        document.getElementById('frame-count-display').textContent =
-          `${selectedFrameIds.length} / ${frames.length} selected`;
-      }
-
-      function updateSelectionUI() {
-        document.querySelectorAll('.frame-strip-thumb').forEach(img => {
-          const id = Number(img.dataset.id);
-          if (selectedFrameIds.includes(id)) {
-            img.classList.add('selected');
-          } else {
-            img.classList.remove('selected');
-          }
+        if (idx === -1) selectedFrameIds.push(id); else selectedFrameIds.splice(idx, 1);
+        document.querySelectorAll("#frame-strip img").forEach(img => {
+          img.classList.toggle("selected", selectedFrameIds.includes(Number(img.dataset.id)));
         });
         updateFrameCount();
         updateRunButton();
       }
 
-      function openFrameModal(id) {
-        const frame = frames.find(f => f.id === id);
-        if (!frame) return;
-        // Simple alert for now - can be enhanced later
-        alert(`Frame ${id}\n\nGround Truth:\n${frame.ground_truth?.description || 'N/A'}`);
+      function updateFrameCount() {
+        document.getElementById("frame-count").textContent = `${selectedFrameIds.length} / ${frames.length} selected`;
       }
 
-      // Run inference
+      // ── Run ────────────────────────────────────────
       function updateRunButton() {
-        const loadedModel = models.some(m => m.status === 'loaded');
-        const hasSelection = selectedFrameIds.length > 0;
-        const btn = document.getElementById('run-btn');
-        btn.disabled = !loadedModel || !hasSelection;
+        const hasLoaded = models.some(m => m.status === "loaded");
+        const hasFrames = selectedFrameIds.length > 0;
+        document.getElementById("run-btn").disabled = !hasLoaded || !hasFrames;
       }
 
       async function runInference() {
-        const loadedModels = models.filter(m => m.status === 'loaded');
-        const promptId = document.getElementById('prompt-select').value;
-        const template = document.getElementById('prompt-template').value.trim();
+        const loaded = models.filter(m => m.status === "loaded");
+        const template = document.getElementById("prompt-template").value.trim();
+        if (!loaded.length || !selectedFrameIds.length) return;
 
-        if (loadedModels.length === 0 || selectedFrameIds.length === 0) return;
+        const spinner = document.getElementById("run-spinner");
+        const loader = document.getElementById("loader");
+        const outputs = document.getElementById("outputs");
 
-        const spinner = document.getElementById('run-spinner');
-        const text = document.getElementById('run-text');
-        const loader = document.getElementById('results-loader');
-        const grid = document.getElementById('results-grid');
-
-        spinner.classList.add('active');
-        loader.style.display = 'flex';
-        grid.style.display = 'none';
-        document.getElementById('run-btn').disabled = true;
+        spinner.classList.add("active");
+        loader.classList.add("active");
+        outputs.style.display = "none";
+        document.getElementById("run-btn").disabled = true;
+        document.getElementById("loader-text").textContent =
+          `Running ${loaded.length} model${loaded.length > 1 ? "s" : ""} on ${selectedFrameIds.length} frame${selectedFrameIds.length > 1 ? "s" : ""}…`;
 
         try {
-          text.textContent = `Running ${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} on ${selectedFrameIds.length} frame${selectedFrameIds.length > 1 ? 's' : ''}…`;
-
-          const res = await fetch('/api/bench/runs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          // Sort frame IDs chronologically (by id = insertion order)
+          const sortedFrameIds = [...selectedFrameIds].sort((a, b) => a - b);
+          const res = await fetch("/api/bench/runs", {
+            method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model_ids: loadedModels.map(m => m.id),
-              prompt_id: promptId || null,
-              template: template,
-              frame_ids: selectedFrameIds,
-              max_tokens: parseInt(document.getElementById('max-tokens').value),
-              temperature: parseFloat(document.getElementById('temperature').value)
-            })
+              model_ids: loaded.map(m => m.id),
+              prompt_id: document.getElementById("prompt-select").value || null,
+              template,
+              frame_ids: sortedFrameIds,
+              max_tokens: parseInt(document.getElementById("max-tokens").value),
+              temperature: parseFloat(document.getElementById("temperature").value),
+            }),
           });
-
-          if (!res.ok) {
-            const error = await res.json().catch(() => ({}));
-            throw new Error(error.error || `HTTP ${res.status}`);
-          }
-
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "HTTP " + res.status);
           const run = await res.json();
-          currentResults = [{
-            modelName: run.models.map(m => m.display_name || m.model_id).join(', '),
-            run: run
-          }];
-
-          resultsPage = 1;
-          loader.style.display = 'none';
-          grid.style.display = 'grid';
-          renderResultsGrid();
+          renderOutputs(run);
           await loadRunHistory();
-        } catch (err) {
-          alert('Run failed: ' + err.message);
-          loader.style.display = 'none';
-          grid.style.display = 'grid';
+        } catch (e) {
+          alert("Run failed: " + e.message);
         } finally {
-          spinner.classList.remove('active');
-          text.textContent = 'Run';
+          spinner.classList.remove("active");
+          loader.classList.remove("active");
+          outputs.style.display = "";
+          document.getElementById("run-text").textContent = "Run";
           updateRunButton();
         }
       }
 
-      // Run History
+      // ── Render outputs ─────────────────────────────
+      function extractText(raw) {
+        if (!raw || raw === "(no result)") return "(no output)";
+        // Try to pull just the text field out of GenerationResult(text='...', token=...)
+        const m = raw.match(/text=['"](.+?)['"]\s*,\s*token\b/s);
+        if (m) return m[1].replace(/\\n/g, "\n").replace(/\\'/g, "'").replace(/\\"/g, '"');
+        // If it looks like GenerationResult garbage, try a looser match
+        const m2 = raw.match(/text=['"](.+?)['"]/s);
+        if (m2) return m2[1].replace(/\\n/g, "\n").replace(/\\'/g, "'").replace(/\\"/g, '"');
+        // Otherwise just return the raw string — it's probably clean text already
+        return raw;
+      }
+
+      function renderOutputs(run) {
+        const el = document.getElementById("outputs");
+        const modelIds = run.model_ids || [];
+        const modelsInfo = run.models || [];
+        const results = run.results || [];
+
+        // Collect frame IDs that were sent, sorted chronologically
+        const sentFrameIds = [];
+        results.forEach(r => {
+          const ids = r.frame_ids || (r.frame_id != null ? [r.frame_id] : []);
+          ids.forEach(id => { if (!sentFrameIds.includes(id)) sentFrameIds.push(id); });
+        });
+        sentFrameIds.sort((a, b) => a - b);
+
+        // Frames row
+        let html = '<div class="frames-sent">';
+        sentFrameIds.forEach(fid => {
+          html += `<img src="/api/bench/frames/${fid}/image" onclick="document.getElementById('modal-img').src='/api/bench/frames/${fid}/image';document.getElementById('image-modal').classList.add('active')" />`;
+        });
+        html += '</div>';
+
+        // Model outputs — side by side
+        html += `<div style="display:grid;grid-template-columns:repeat(${modelIds.length},1fr);gap:1rem;flex:1;min-height:0;overflow:auto;">`;
+
+        modelIds.forEach(mid => {
+          const info = modelsInfo.find(m => m.model_id === mid) || {};
+          const name = info.display_name || mid;
+          let text = "";
+          let timing = "";
+
+          const parts = [];
+          results.forEach(r => {
+            const out = r.outputs?.[mid];
+            if (!out) return;
+            if (out.error) { parts.push("ERROR: " + out.error); return; }
+            if (out.raw_output) parts.push(extractText(out.raw_output));
+            if (!timing && out.timing_ms) {
+              const tps = out.tokens_per_sec ? ` · ${out.tokens_per_sec.toFixed(1)} t/s` : "";
+              timing = `${out.timing_ms}ms${tps}`;
+            }
+          });
+
+          text = parts.join("\n\n") || "(no output)";
+          const textId = "output-text-" + mid.replace(/[^a-zA-Z0-9]/g, "_");
+          html += `<div class="output-block">
+            <h3>${esc(name)}</h3>
+            <div class="output-text" id="${textId}">${esc(text)}</div>
+            ${timing ? `<div class="output-meta"><span>${timing}</span><button class="copy-btn" onclick="copyText('${textId}')">Copy</button></div>` : ""}
+          </div>`;
+        });
+
+        html += '</div>';
+        el.innerHTML = html;
+      }
+
+      // ── History ────────────────────────────────────
       async function loadRunHistory() {
         try {
-          const res = await fetch('/api/bench/runs?limit=20');
-          runs = await res.json();
-
-          const select = document.getElementById('history-select');
-          select.innerHTML = '<option value="">Current run...</option>' +
+          const runs = await (await fetch("/api/bench/runs?limit=20")).json();
+          const sel = document.getElementById("history-select");
+          sel.innerHTML = '<option value="">Current run…</option>' +
             runs.map(r => {
-              const date = new Date(r.created_at).toLocaleString();
-              const modelName = r.model_name || r.model_id;
-              return `<option value="${r.id}">${date} · ${modelName}</option>`;
-            }).join('');
-        } catch (err) {
-          console.error('Failed to load run history:', err);
-        }
+              const d = new Date(r.created_at).toLocaleString();
+              const name = r.model_names ? r.model_names.join(", ") : (r.model_name || r.model_id);
+              return `<option value="${r.id}">${d} · ${name}</option>`;
+            }).join("");
+        } catch (e) {}
       }
 
       async function loadRun() {
-        const id = document.getElementById('history-select').value;
-        if (!id) {
-          currentResults = [];
-          renderResultsGrid();
-          return;
-        }
-
-        try {
-          const res = await fetch(`/api/bench/runs/${id}`);
-          const run = await res.json();
-          // Wrap in array format for grid
-          const modelNames = run.models?.map(m => m.display_name || m.model_id) || [run.model_id];
-          currentResults = [{
-            modelName: modelNames.join(', '),
-            run: run
-          }];
-          resultsPage = 1;
-          renderResultsGrid();
-        } catch (err) {
-          console.error('Failed to load run:', err);
-        }
+        const id = document.getElementById("history-select").value;
+        if (!id) { document.getElementById("outputs").innerHTML = '<div style="color:var(--pico-muted-color);">Select frames and click Run</div>'; return; }
+        const run = await (await fetch(`/api/bench/runs/${id}`)).json();
+        renderOutputs(run);
       }
 
-      // Utils
-      function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+      // ── Util ───────────────────────────────────────
+      function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+      function copyText(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        navigator.clipboard.writeText(el.textContent).then(() => {
+          const btn = el.parentElement.querySelector(".copy-btn");
+          if (btn) { btn.textContent = "Copied!"; setTimeout(() => btn.textContent = "Copy", 1500); }
+        });
       }
 
-      document.addEventListener('DOMContentLoaded', init);
+      document.addEventListener("DOMContentLoaded", init);
     </script>
   </body>
 </html>

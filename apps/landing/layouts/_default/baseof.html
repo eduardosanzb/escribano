@@ -190,7 +190,7 @@
           if (response.ok || response.status === 0 || response.type === 'opaqueredirect') {
             // Success
             form.style.display = 'none';
-            messageEl.textContent = "You're on the list! We'll notify you when cloud launches.";
+            messageEl.textContent = "You're on the list! We'll reach out when your beta slot opens.";
             messageEl.classList.add('success');
           } else {
             throw new Error('Submission failed');
@@ -208,6 +208,190 @@
     // Initialize both forms
     initWaitlistForm('waitlist-form-hero', 'waitlist-msg-hero');
     initWaitlistForm('waitlist-form-pricing', 'waitlist-msg-pricing');
+  </script>
+
+  <script>
+    // ── Use-case terminal scenes ─────────────────────────────
+    // Line types: user (green prompt), cmd (terracotta $), out (dim), ok (olive ✓), k=v (key highlight)
+    const SCENES = {
+      'hero-query': {
+        loop: true,
+        lines: [
+          { type: 'user', text: 'What was I debugging yesterday around 3pm?' },
+          { type: 'out',  text: '' },
+          { type: 'tool', text: 'escribano search "error" --since 26h' },
+          { type: 'ok',   text: '4 observations found' },
+          { type: 'out',  text: '' },
+          { type: 'out',  text: '14:32  VS Code    middleware/auth.ts — 401 refresh' },
+          { type: 'out',  text: '14:47  Terminal   git commit "fix: refresh token"' },
+          { type: 'out',  text: '15:02  Browser    Stack Overflow — JWT expiry' },
+          { type: 'out',  text: '' },
+          { type: 'ai',   text: 'Yesterday at 14:32 you were debugging a JWT refresh bug in middleware/auth.ts. The fix landed at 14:47.' },
+        ],
+      },
+      'agent-memory': {
+        loop: true,
+        lines: [
+          { type: 'user', text: 'What did I work on yesterday around 3pm?' },
+          { type: 'tool', text: 'escribano recent --since 26h --json' },
+          { type: 'ok',   text: '3 activity clusters found' },
+          { type: 'out',  text: '' },
+          { type: 'out',  text: '15:12  VS Code       Debugging JWT refresh bug' },
+          { type: 'out',  text: '16:40  GitHub        Reviewing PR #214' },
+          { type: 'out',  text: '18:05  Notion        Drafting release notes' },
+          { type: 'out',  text: '' },
+          { type: 'ai',   text: 'Yesterday ~15:12 you were debugging a JWT refresh token bug in middleware/auth.ts. Fix landed at 15:47.' },
+        ],
+      },
+      'forensic': {
+        loop: true,
+        lines: [
+          { type: 'cmd',  text: 'escribano search "ECONNREFUSED" --since 7d' },
+          { type: 'out',  text: '' },
+          { type: 'json', text: '{' },
+          { type: 'json', text: '  "timestamp": "Tue 14:02",' },
+          { type: 'json', text: '  "app":       "Terminal",' },
+          { type: 'json', text: '  "text":      "postgres connection refused — port 5432"' },
+          { type: 'json', text: '}' },
+        ],
+      },
+      'pipeline': {
+        loop: true,
+        lines: [
+          { type: 'cmd',  text: 'escribano entities --kind framework --since 24h \\' },
+          { type: 'cmd',  text: '  | jq -r \'.entities[].value\' | sort -u' },
+          { type: 'out',  text: '' },
+          { type: 'out',  text: 'drizzle' },
+          { type: 'out',  text: 'next.js' },
+          { type: 'out',  text: 'react' },
+          { type: 'out',  text: 'swift' },
+        ],
+      },
+    };
+
+    const TYPE_SPEED = 42;      // ms per character for typed lines
+    const LINE_PAUSE = 420;     // ms between lines
+    const LOOP_PAUSE = 4500;    // ms before restarting a scene
+
+    const typedTypes = new Set(['user', 'cmd']);
+
+    function appendLine(screen, line) {
+      const el = document.createElement('div');
+      el.className = 'use-line use-line--' + line.type;
+      screen.appendChild(el);
+      return el;
+    }
+
+    function prefixFor(type) {
+      switch (type) {
+        case 'user': return '<span class="use-sigil use-sigil--user">&gt;</span> ';
+        case 'cmd':  return '<span class="use-sigil use-sigil--cmd">$</span> ';
+        case 'tool': return '<span class="use-sigil use-sigil--tool">·</span> ';
+        case 'ok':   return '<span class="use-sigil use-sigil--ok">✓</span> ';
+        case 'ai':   return '<span class="use-sigil use-sigil--ai">↳</span> ';
+        default: return '';
+      }
+    }
+
+    function delay(ms) {
+      return new Promise(r => setTimeout(r, ms));
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function typeInto(el, text) {
+      for (let i = 0; i < text.length; i++) {
+        el.innerHTML += escapeHtml(text.charAt(i));
+        await delay(TYPE_SPEED);
+      }
+    }
+
+    async function runScene(screen, scene, stateRef) {
+      while (!stateRef.cancelled) {
+        screen.innerHTML = '';
+        for (const line of scene.lines) {
+          if (stateRef.cancelled) return;
+          const el = appendLine(screen, line);
+          el.innerHTML = prefixFor(line.type);
+          if (typedTypes.has(line.type)) {
+            const caret = document.createElement('span');
+            caret.className = 'use-caret';
+            el.appendChild(caret);
+            for (let i = 0; i < line.text.length; i++) {
+              if (stateRef.cancelled) return;
+              caret.insertAdjacentText('beforebegin', line.text.charAt(i));
+              await delay(TYPE_SPEED);
+            }
+            caret.remove();
+          } else {
+            el.innerHTML += escapeHtml(line.text);
+          }
+          await delay(LINE_PAUSE);
+        }
+        if (!scene.loop) return;
+        await delay(LOOP_PAUSE);
+      }
+    }
+
+    function initUseTerminals() {
+      const terms = document.querySelectorAll('.use-term');
+      const states = new WeakMap();
+
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          const term = e.target;
+          const key = term.dataset.scene;
+          const scene = SCENES[key];
+          if (!scene) continue;
+          const screen = term.querySelector('[data-screen]');
+          if (!screen) continue;
+
+          if (e.isIntersecting) {
+            const existing = states.get(term);
+            if (existing && !existing.cancelled) continue; // already running
+            const state = { cancelled: false };
+            states.set(term, state);
+            runScene(screen, scene, state);
+          } else {
+            const existing = states.get(term);
+            if (existing) existing.cancelled = true;
+          }
+        }
+      }, { threshold: 0.35 });
+
+      terms.forEach(t => io.observe(t));
+
+      // Pause all on tab hidden to save cycles
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          terms.forEach(t => {
+            const s = states.get(t);
+            if (s) s.cancelled = true;
+          });
+        } else {
+          terms.forEach(t => {
+            const rect = t.getBoundingClientRect();
+            const onScreen = rect.top < window.innerHeight && rect.bottom > 0;
+            if (!onScreen) return;
+            const key = t.dataset.scene;
+            const scene = SCENES[key];
+            const screen = t.querySelector('[data-screen]');
+            if (!scene || !screen) return;
+            const state = { cancelled: false };
+            states.set(t, state);
+            runScene(screen, scene, state);
+          });
+        }
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initUseTerminals);
+    } else {
+      initUseTerminals();
+    }
   </script>
 </body>
 </html>

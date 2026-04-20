@@ -6,8 +6,9 @@
   <a href="#" class="nav-logo">Escrib<span>a</span>no</a>
   <ul class="nav-links">
     <li><a href="#how">How it works</a></li>
+    <li><a href="#privacy">Privacy</a></li>
     <li><a href="/blog/">Blog</a></li>
-    <li><a href="#pricing">Pricing</a></li>
+    <li><a href="#beta">Beta</a></li>
     <li>
       <a href="https://github.com/eduardosanzb/escribano" target="_blank" rel="noopener" aria-label="GitHub" title="View on GitHub">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -72,16 +73,16 @@
         </div>
       </div>
     </li>
-    <li><a href="#open-source" class="nav-cta">Try it free</a></li>
+    <li><a href="#beta" class="nav-cta">Request beta</a></li>
   </ul>
 </nav>
 
 <section class="hero">
   <div class="hero-left">
-    <div class="eyebrow">AI Scribe for Deep Work</div>
-    <h1>Your work,<br><em>remembered</em><br>and understood.</h1>
+    <div class="eyebrow">Local evidence layer</div>
+    <h1>Your work,<br><em>queryable</em><br>by any agent.</h1>
     <p class="hero-body">
-      Escribano watches your screen recordings and turns hours of deep work into structured, shareable summaries — so you never start a status update from a blank page again.
+      Escribano runs on your Mac and quietly captures what's on screen. A vision model understands it. A CLI lets your agents — or you — search, filter, and cite the evidence. Nothing leaves your machine.
     </p>
     <div class="hero-actions">
       <form class="waitlist-form" id="waitlist-form-hero"
@@ -89,66 +90,30 @@
             method="post">
         <input type="email" name="email" placeholder="you@company.com"
                class="waitlist-input" required autocomplete="email">
-        <button type="submit" class="btn-primary waitlist-submit">Join the waitlist</button>
+        <button type="submit" class="btn-primary waitlist-submit">Request beta access</button>
       </form>
       <p class="waitlist-message" id="waitlist-msg-hero" aria-live="polite"></p>
-      <a href="#open-source" class="btn-ghost">Try it free <span>→</span></a>
+      <a href="#how" class="btn-ghost">See how it works <span>→</span></a>
     </div>
     <div class="indie-badge">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
       </svg>
-      Independently built · No VC funding · GDPR compliant · Data stays in Europe
+      Local-only · No telemetry · GDPR compliant · Built in Europe
     </div>
   </div>
 
   <div class="hero-right">
-    <div class="artifact-card">
-      <div class="artifact-header">
-        <div>
-          <div class="artifact-title">Wednesday session</div>
-          <div class="artifact-date">25 February 2026 · 3h 12m</div>
-        </div>
-        <div class="artifact-stamp">Auto-generated</div>
+    <div class="use-term use-term--hero" data-scene="hero-query">
+      <div class="use-term-header">
+        <span class="use-term-dot"></span>
+        <span class="use-term-dot"></span>
+        <span class="use-term-dot"></span>
+        <span class="use-term-title">escribano · query</span>
       </div>
-
-      <div class="artifact-blocks">
-        <div class="block">
-          <div class="block-bar research"></div>
-          <div class="block-content">
-            <div class="block-label">Research</div>
-            <div class="block-text">Reviewed Q4 competitor landscape and pricing benchmarks across three markets.</div>
-            <div class="block-time">52 min</div>
-          </div>
-        </div>
-        <div class="block">
-          <div class="block-bar meeting"></div>
-          <div class="block-content">
-            <div class="block-label">Client meeting</div>
-            <div class="block-text">Discovery call with Müller &amp; Partners — agreed on pilot scope for March.</div>
-            <div class="block-time">45 min</div>
-          </div>
-        </div>
-        <div class="block">
-          <div class="block-bar drafting"></div>
-          <div class="block-content">
-            <div class="block-label">Drafting</div>
-            <div class="block-text">Drafted executive summary and revised intro section of the proposal doc.</div>
-            <div class="block-time">38 min</div>
-          </div>
-        </div>
-        <div class="block">
-          <div class="block-bar review"></div>
-          <div class="block-content">
-            <div class="block-label">Review</div>
-            <div class="block-text">Annotated team's slide deck and left async comments for tomorrow.</div>
-            <div class="block-time">22 min</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="artifact-summary">
-        "A focused afternoon — proposal work progressed significantly, and the Müller call opened a concrete next step."
+      <div class="use-term-body" data-screen></div>
+      <div class="use-term-footnote">
+        <span class="q-dot"></span> PII filtered · screenshots hidden (use <code>--images</code> to opt in)
       </div>
     </div>
   </div>
@@ -157,83 +122,145 @@
 <section class="how" id="how">
   <div class="how-inner">
     <div class="section-label">How it works</div>
-    <h2>Three steps from recording to clarity.</h2>
+    <h2>Capture. Understand. Query.</h2>
     <div class="steps">
+
       <div class="step fade-up">
         <div class="step-num">01</div>
-        <h3>Record your session</h3>
-        <p>Use any screen recording tool you already have. Escribano works with whatever you capture — no new habits required.</p>
-      </div>
-      <div class="step fade-up" style="transition-delay: 0.15s">
-        <div class="step-num">02</div>
-        <h3>Escribano understands</h3>
-        <p>Our vision pipeline watches what you did — not just what was on screen, but the activity: research, drafting, review, meetings, planning.</p>
-      </div>
-      <div class="step fade-up" style="transition-delay: 0.3s">
-        <div class="step-num">03</div>
-        <h3>Your artifact, ready</h3>
-        <p>A structured, human-readable summary arrives — ready to paste into your standup, status report, or personal work journal.</p>
-      </div>
-    </div>
-  </div>
-</section>
+        <h3>Capture, quietly</h3>
+        <p>A small menu-bar app watches your screen in the background. Repeats are skipped, nothing is uploaded, and you can pause it whenever you want.</p>
 
-<section class="open-source-section" id="open-source">
-  <div class="open-source">
-    <div class="section-label">Available now</div>
-    <h2>Open source. Runs locally.</h2>
-    <p class="open-source-sub">Process your recordings on your own machine. No cloud, no API keys, no data leaves your computer.</p>
-
-    <div class="open-source-grid">
-      <div class="terminal-demo">
-        <div class="terminal-header">
-          <span class="terminal-dot"></span>
-          <span class="terminal-dot"></span>
-          <span class="terminal-dot"></span>
-          <span class="terminal-title">Terminal</span>
-        </div>
-        <div class="terminal-body">
-          <div class="terminal-line"><span class="terminal-prompt">$</span> npx escribano --file session.mov</div>
-          <div class="terminal-output">
-            <div class="terminal-dim">✓ Checking prerequisites...</div>
-            <div class="terminal-dim">✓ Loading VLM model (Qwen3-VL-2B-4bit)</div>
-            <div class="terminal-dim">✓ Extracting frames (adaptive sampling)</div>
-            <div class="terminal-dim">✓ Running VLM inference on 142 frames</div>
-            <div class="terminal-dim">✓ Transcribing audio with whisper.cpp</div>
-            <div class="terminal-dim">✓ Segmenting by activity</div>
-            <div class="terminal-dim">✓ Generating summary artifact</div>
-            <div class="terminal-success"></div>
-            <div class="terminal-highlight">Done! Artifact saved to ~/.escribano/artifacts/</div>
+        <div class="step-mock step-mock--menubar" aria-hidden="true">
+          <div class="mb-chrome">
+            <div class="mb-titlebar">
+              <div class="mb-app">
+                <div class="mb-app-icon">E<span class="mb-status-dot"></span></div>
+                <span>Escribano</span>
+              </div>
+            </div>
+            <div class="mb-panel">
+              <div class="mb-row">
+                <div class="mb-title-row">Escribano</div>
+                <div class="mb-status-row"><span class="mb-pulse"></span> Recording normally</div>
+              </div>
+              <div class="mb-divider"></div>
+              <div class="mb-row mb-row--quiet">
+                <div>Watching <strong>1 display</strong></div>
+                <div>Paused: never</div>
+              </div>
+              <div class="mb-divider"></div>
+              <div class="mb-actions">
+                <div class="mb-action mb-action--primary">Open Escribano…</div>
+                <div class="mb-action"><span class="mb-pause-glyph"></span> Pause recording</div>
+                <div class="mb-action">Start at login</div>
+                <div class="mb-action">Quit</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="open-source-details">
-        <div class="detail-block">
-          <h4>Quick start</h4>
-          <code>npx escribano --file recording.mov</code>
+      <div class="step fade-up" style="transition-delay: 0.15s">
+        <div class="step-num">02</div>
+        <h3>Understand, on-device</h3>
+        <p>Each moment is turned into a short, plain-language description of what you were doing — the tools, the files, the context. All of it stays on your machine.</p>
+
+        <div class="step-mock step-mock--moment" aria-hidden="true">
+          <div class="moment-card">
+            <div class="moment-meta">
+              <span class="moment-time">14:32</span>
+              <span class="moment-dot">·</span>
+              <span class="moment-app">VS Code</span>
+            </div>
+            <div class="moment-text">
+              Debugging a JWT refresh flow in <span class="moment-file">middleware/auth.ts</span> — repeated 401 responses in the inspector.
+            </div>
+            <div class="moment-tags">
+              <span class="moment-tag">authentication</span>
+              <span class="moment-tag">typescript</span>
+              <span class="moment-tag">middleware</span>
+            </div>
+          </div>
+          <div class="moment-card moment-card--faded">
+            <div class="moment-meta">
+              <span class="moment-time">14:47</span>
+              <span class="moment-dot">·</span>
+              <span class="moment-app">Terminal</span>
+            </div>
+            <div class="moment-text">
+              Committed the fix for refresh-token expiry and pushed to the feature branch.
+            </div>
+          </div>
         </div>
-        <div class="detail-block">
-          <h4>Requirements</h4>
-          <ul>
-            <li>macOS Apple Silicon (M1/M2/M3/M4)</li>
-            <li>16GB RAM minimum (32GB recommended)</li>
-            <li>~10GB disk for models</li>
-          </ul>
+      </div>
+
+      <div class="step fade-up" style="transition-delay: 0.3s">
+        <div class="step-num">03</div>
+        <h3>Query, on your terms</h3>
+        <p>Ask your agent — or the command line directly — what you were working on. Escribano returns the evidence, cleanly structured, ready to cite.</p>
+
+        <div class="step-mock step-mock--chat" aria-hidden="true">
+          <div class="chat-bubble chat-bubble--user">
+            What library did I try on Tuesday for rate limiting?
+          </div>
+          <div class="chat-bubble chat-bubble--tool">
+            <span class="chat-tool-dot"></span> Checked Escribano · 3 moments found
+          </div>
+          <div class="chat-bubble chat-bubble--ai">
+            On Tuesday afternoon you opened the <strong>hono-rate-limiter</strong> docs and tried it briefly in <span class="chat-file">server/middleware.ts</span> — then reverted.
+          </div>
         </div>
-        <div class="detail-block">
-          <h4>What you get</h4>
-          <ul>
-            <li>3 artifact formats: card, standup, narrative</li>
-            <li>Activity detection: coding, debugging, research, meetings</li>
-            <li>Audio transcription with whisper.cpp</li>
-            <li>All processing runs locally</li>
-          </ul>
-        </div>
-        <div class="detail-actions">
-          <a href="https://github.com/eduardosanzb/escribano" class="btn-primary" target="_blank" rel="noopener">View on GitHub</a>
-          <a href="https://github.com/eduardosanzb/escribano" class="btn-ghost" target="_blank" rel="noopener">Star the repo <span>★</span></a>
-        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="open-source-section" id="product">
+  <div class="open-source">
+    <div class="section-label">The product</div>
+    <h2>An app for you.<br>A query layer for your agents.</h2>
+    <p class="open-source-sub">A quiet Mac app that captures and understands your work. A clean interface your agents can reach for — or you, when you need to recall.</p>
+
+    <div class="cli-commands">
+      <div class="cli-row fade-up">
+        <span class="cli-cmd cli-cmd--label">Ask what you were doing</span>
+        <span class="cli-desc">Pose a question in plain language. Your agent pulls the moments that answer it — with the times, apps, and files already attached.</span>
+      </div>
+      <div class="cli-row fade-up" style="transition-delay: 0.08s">
+        <span class="cli-cmd cli-cmd--label">See a timeline, not a blur</span>
+        <span class="cli-desc">Look back at any stretch of the day and get a tidy sequence of what actually happened. No scrolling through browser history.</span>
+      </div>
+      <div class="cli-row fade-up" style="transition-delay: 0.16s">
+        <span class="cli-cmd cli-cmd--label">Spot tools and topics</span>
+        <span class="cli-desc">Escribano keeps track of the tools, frameworks, and topics you touched — so "what stack was I in today?" becomes a one-line answer.</span>
+      </div>
+      <div class="cli-row fade-up" style="transition-delay: 0.24s">
+        <span class="cli-cmd cli-cmd--label">Stay in control</span>
+        <span class="cli-desc">Pause anytime. Check what's been captured. Nothing leaves your machine unless you explicitly send it somewhere.</span>
+      </div>
+    </div>
+
+    <div class="open-source-details cli-details">
+      <div class="detail-block">
+        <h4>Works on</h4>
+        <ul>
+          <li>macOS on Apple Silicon</li>
+          <li>Designed for modern Macs (M1 and newer)</li>
+          <li>A menu-bar app — runs quietly in the background</li>
+        </ul>
+      </div>
+      <div class="detail-block">
+        <h4>What you get</h4>
+        <ul>
+          <li>An always-on memory of your work</li>
+          <li>A clean interface for you — and for your agents</li>
+          <li>Private by default · runs fully on your Mac</li>
+        </ul>
+      </div>
+      <div class="detail-actions">
+        <a href="#beta" class="btn-primary">Request beta access</a>
+        <a href="https://github.com/eduardosanzb/escribano" class="btn-ghost" target="_blank" rel="noopener">View on GitHub <span>★</span></a>
       </div>
     </div>
   </div>
@@ -242,109 +269,153 @@
 <section class="personas-section">
   <div class="personas">
     <div class="section-label">Who it's for</div>
-    <h2>For people whose work<br>is hard to explain.</h2>
+    <h2>For people whose agents<br>keep asking "what were you doing?"</h2>
     <div class="persona-grid">
+
       <div class="persona-card fade-up">
-        <div class="persona-icon">✦</div>
-        <div class="persona-role">Team Lead · Manager</div>
-        <h3>The Quiet Orchestrator</h3>
-        <p>You spend your day unblocking people, reviewing work, and making calls that don't produce visible output. Escribano gives your invisible work a voice.</p>
+        <div class="persona-role">Agent · Assistant</div>
+        <h3>Give your coding agent a memory.</h3>
+        <p>Claude Code, Cursor, Aider — they forget the moment the session ends. Point them at Escribano's CLI and they can cite the exact moment a bug appeared, the tool you opened, the file you edited.</p>
+        <div class="use-term" data-scene="agent-memory">
+          <div class="use-term-header">
+            <span class="use-term-dot"></span>
+            <span class="use-term-dot"></span>
+            <span class="use-term-dot"></span>
+            <span class="use-term-title">Claude Code</span>
+          </div>
+          <div class="use-term-body" data-screen></div>
+        </div>
       </div>
+
       <div class="persona-card fade-up" style="transition-delay: 0.1s">
-        <div class="persona-icon">✦</div>
-        <div class="persona-role">Analyst · Consultant · Researcher</div>
-        <h3>The Deep Thinker</h3>
-        <p>Three hours of research, and you have six browser tabs, two insights, and a blank status update. Escribano remembers the journey, not just the destination.</p>
-      </div>
-      <div class="persona-card fade-up" style="transition-delay: 0.2s">
-        <div class="persona-icon">✦</div>
-        <div class="persona-role">Account Manager · Sales</div>
-        <h3>The Relationship Builder</h3>
-        <p>Calls, proposals, follow-ups — your day is relational and fast-moving. Let Escribano handle the documentation so you can stay present with people.</p>
-      </div>
-      <div class="persona-card fade-up" style="transition-delay: 0.3s">
-        <div class="persona-icon">✦</div>
         <div class="persona-role">Developer · Engineer</div>
-        <h3>The Builder</h3>
-        <p>You debug, refactor, review PRs, and lose hours in terminal windows. Escribano understands the difference between coding and debugging — so your standup actually reflects what you shipped.</p>
+        <h3>Forensic recall, on demand.</h3>
+        <p>"What was that library I tried on Tuesday?" "When did the error first show up?" Query your own work like a database, instead of scrolling through browser history.</p>
+        <div class="use-term" data-scene="forensic">
+          <div class="use-term-header">
+            <span class="use-term-dot"></span>
+            <span class="use-term-dot"></span>
+            <span class="use-term-dot"></span>
+            <span class="use-term-title">Terminal</span>
+          </div>
+          <div class="use-term-body" data-screen></div>
+        </div>
       </div>
+
+      <div class="persona-card fade-up" style="transition-delay: 0.2s">
+        <div class="persona-role">Agent builder · Researcher</div>
+        <h3>Wire it into your own stack.</h3>
+        <p>Stable JSON, versioned API, local SQLite. Build the agent surface you actually want — an MCP server, a shell alias, a scheduled digest — on top of a substrate you own.</p>
+        <div class="use-term" data-scene="pipeline">
+          <div class="use-term-header">
+            <span class="use-term-dot"></span>
+            <span class="use-term-dot"></span>
+            <span class="use-term-dot"></span>
+            <span class="use-term-title">zsh</span>
+          </div>
+          <div class="use-term-body" data-screen></div>
+        </div>
+      </div>
+
     </div>
   </div>
 </section>
 
-<section class="manifesto">
-  <div class="section-label">Our belief</div>
-  <blockquote>"Deep work deserves a record. Not surveillance — understanding."</blockquote>
-  <cite>— The Escribano Manifesto</cite>
+<section class="privacy-section" id="privacy">
+  <div class="privacy">
+    <div class="section-label">Privacy</div>
+    <h2>Privacy isn't a section.<br>It's the architecture.</h2>
+    <p class="privacy-lead">
+      A screen-capture tool should earn your trust before it earns anything else. Escribano is engineered so the question "where does my data go?" has a short answer: <em>nowhere.</em>
+    </p>
 
-  <div class="manifesto-points">
-    <div class="manifesto-point">
-      <div class="point-icon">🇪🇺</div>
-      <h4>Built in Europe</h4>
-      <p>Your data stays in Europe. GDPR isn't a checkbox — it's our default.</p>
+    <div class="privacy-grid">
+      <div class="privacy-card fade-up">
+        <div class="privacy-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <rect x="3" y="11" width="18" height="10" rx="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <h4>Local-only processing</h4>
+        <p>Vision model, entity extraction, search index — all on your Mac. No cloud inference, no API keys, no upload. You can unplug the network.</p>
+      </div>
+
+      <div class="privacy-card fade-up" style="transition-delay: 0.08s">
+        <div class="privacy-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M4 4h16v16H4z"/>
+            <path d="M4 10h16"/>
+            <path d="M9 15h6"/>
+          </svg>
+        </div>
+        <h4>PII redacted on output</h4>
+        <p>Emails, API tokens, passwords, and secrets are filtered out of text before it ever leaves the query layer. Default on. No flag to disable.</p>
+      </div>
+
+      <div class="privacy-card fade-up" style="transition-delay: 0.16s">
+        <div class="privacy-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+            <line x1="4" y1="4" x2="20" y2="20"/>
+          </svg>
+        </div>
+        <h4>Screenshots opt-in only</h4>
+        <p>Raw frames never appear in query results unless you pass <code>--images</code>. Agents can't accidentally slurp pixels into their context window.</p>
+      </div>
+
+      <div class="privacy-card fade-up" style="transition-delay: 0.24s">
+        <div class="privacy-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M12 2l9 4v6c0 5-4 9-9 10-5-1-9-5-9-10V6l9-4z"/>
+          </svg>
+        </div>
+        <h4>No training. No telemetry.</h4>
+        <p>We don't collect your data — so we can't train on it. No crash reporter, no analytics, no phone-home. The repo is public. Verify it yourself.</p>
+      </div>
     </div>
-    <div class="manifesto-point">
-      <div class="point-icon">⚖️</div>
-      <h4>No investors</h4>
-      <p>Bootstrapped and profitable-first. We answer to our users, not a board.</p>
-    </div>
-    <div class="manifesto-point">
-      <div class="point-icon">🔒</div>
-      <h4>Private by design</h4>
-      <p>Local processing where possible. No training on your sessions. Ever.</p>
-    </div>
-    <div class="manifesto-point">
-      <div class="point-icon">🌿</div>
-      <h4>Calm technology</h4>
-      <p>No growth loops, no engagement tricks. Just a tool that does its job quietly.</p>
+
+    <div class="privacy-footnote">
+      <span class="q-dot"></span> Built in Europe · GDPR compliant by default · <a href="https://github.com/eduardosanzb/escribano" target="_blank" rel="noopener">read the source</a>
     </div>
   </div>
 </section>
 
-<section class="pricing-section" id="pricing">
-  <div class="pricing">
-    <div class="section-label">Pricing</div>
-    <h2>Simple, honest pricing.</h2>
-    <p class="pricing-sub">No free tier designed to frustrate you into upgrading. One price, all features.</p>
-    <div class="pricing-cards">
-      <div class="pricing-card">
-        <div class="pricing-card-label">Open Source</div>
-        <div class="price">Free</div>
-        <div class="price-period">Forever · self-hosted</div>
-        <ul class="pricing-features">
-          <li>Unlimited sessions</li>
-          <li>3 artifact formats — card, standup, narrative</li>
-          <li>Local processing, no cloud upload</li>
-          <li>macOS Apple Silicon · 16GB+ RAM</li>
-        </ul>
-        <a href="#open-source" class="btn-pricing">Get started</a>
-      </div>
+<section class="pricing-section" id="beta">
+  <div class="pricing pricing--single">
+    <div class="section-label">Beta access</div>
+    <h2>In private beta.</h2>
+    <p class="pricing-sub">We're letting people in gradually while the recorder stabilises. Leave your email — we'll reach out with a download link and setup instructions.</p>
+
+    <div class="pricing-cards pricing-cards--single">
       <div class="pricing-card featured">
-        <div class="pricing-card-label">Cloud · Coming soon</div>
-        <div class="price">Coming soon</div>
-        <div class="price-period">per month · cancel anytime</div>
+        <div class="pricing-card-label">Request access</div>
+        <div class="price">Free beta</div>
+        <div class="price-period">macOS · Apple Silicon · 16GB+ RAM</div>
         <ul class="pricing-features">
-          <li>Cloud processing — no setup required</li>
-          <li>Automatic recording capture</li>
-          <li>Cross-session search &amp; context</li>
-          <li>European infrastructure only</li>
+          <li>Always-on local capture with backpressure</li>
+          <li>VLM descriptions + entity extraction</li>
+          <li>CLI with JSON-first output</li>
+          <li>Private by default — PII filter, image opt-in</li>
         </ul>
         <form class="waitlist-form waitlist-form--pricing" id="waitlist-form-pricing"
               action="https://buttondown.com/api/emails/embed-subscribe/sanchez_bautista"
               method="post">
           <input type="email" name="email" placeholder="you@company.com"
                  class="waitlist-input" required autocomplete="email">
-          <button type="submit" class="btn-pricing waitlist-submit">Join the waitlist</button>
+          <button type="submit" class="btn-pricing waitlist-submit">Request beta access</button>
         </form>
         <p class="waitlist-message" id="waitlist-msg-pricing" aria-live="polite"></p>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
 <footer>
   <div>
     <div class="footer-logo">Escrib<span>a</span>no</div>
-    <div class="footer-tagline">Your AI scribe for deep work</div>
+    <div class="footer-tagline">Local evidence layer for technical work</div>
     <a href="mailto:info@escribano.work" class="footer-email">info@escribano.work</a>
   </div>
   <div class="footer-right">
@@ -355,7 +426,7 @@
 
 <div class="gdpr-strip">
   <div class="gdpr-dot"></div>
-  All data processed in accordance with GDPR. European infrastructure only. We do not train on your sessions.
+  All data processed locally on your device. GDPR compliant by default. We do not train on your sessions.
 </div>
 
 {{ end }}

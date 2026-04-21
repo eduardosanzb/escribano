@@ -91,7 +91,7 @@ describe('checkCorePackagesInstalled', () => {
   it('returns true when all core modules are importable', () => {
     mockExecSync.mockReturnValue('');
     expect(checkCorePackagesInstalled('/path/to/python3')).toBe(true);
-    expect(mockExecSync).toHaveBeenCalledTimes(3); // mlx_vlm, mlx_lm, mlx
+    expect(mockExecSync).toHaveBeenCalledTimes(4); // mlx_vlm, mlx_lm, mlx, torchvision
   });
 
   it('returns false when any core module is missing', () => {
@@ -111,7 +111,9 @@ describe('detectPipCommand', () => {
 
   it('returns uv command when uv is available', () => {
     mockExecSync.mockReturnValue('uv 0.1.0');
-    expect(detectPipCommand()).toBe('uv pip install mlx-vlm[torch] mlx mlx-lm');
+    expect(detectPipCommand()).toBe(
+      'uv pip install mlx-vlm[torch] mlx mlx-lm torch torchvision'
+    );
   });
 
   it('returns pip3 command when pip3 is available', () => {
@@ -120,7 +122,9 @@ describe('detectPipCommand', () => {
         throw new Error('uv not found');
       })
       .mockReturnValue('pip 23.0');
-    expect(detectPipCommand()).toBe('pip3 install mlx-vlm[torch] mlx mlx-lm');
+    expect(detectPipCommand()).toBe(
+      'pip3 install mlx-vlm[torch] mlx mlx-lm torch torchvision'
+    );
   });
 
   it('returns pip command as fallback', () => {
@@ -132,7 +136,9 @@ describe('detectPipCommand', () => {
         throw new Error('pip3 not found');
       })
       .mockReturnValue('pip 23.0');
-    expect(detectPipCommand()).toBe('pip install mlx-vlm[torch] mlx mlx-lm');
+    expect(detectPipCommand()).toBe(
+      'pip install mlx-vlm[torch] mlx mlx-lm torch torchvision'
+    );
   });
 
   it('returns python3 -m pip as final fallback', () => {
@@ -140,7 +146,7 @@ describe('detectPipCommand', () => {
       throw new Error('not found');
     });
     expect(detectPipCommand()).toBe(
-      'python3 -m pip install mlx-vlm[torch] mlx mlx-lm'
+      'python3 -m pip install mlx-vlm[torch] mlx mlx-lm torch torchvision'
     );
   });
 });
@@ -198,7 +204,7 @@ describe('ensureEscribanoVenv', () => {
     expect(mockMkdirSync).toHaveBeenCalled();
     // Should create venv
     expect(mockExecSync).toHaveBeenCalledWith(
-      expect.stringContaining('python3 -m venv'),
+      expect.stringContaining('-m venv'),
       expect.any(Object)
     );
     // Should install packages

@@ -41,9 +41,9 @@
   <link rel="canonical" href="{{ .Permalink }}">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Spectral:ital,wght@0,300;0,400;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="preload" href="/fonts/cormorant-garamond-regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/spectral-regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
 
   {{ $css := resources.Get "css/style.css" | fingerprint }}
   <link rel="stylesheet" href="{{ $css.RelPermalink }}">
@@ -187,7 +187,7 @@
 
           if (response.ok) {
             form.style.display = 'none';
-            messageEl.textContent = "You\u2019re on the list \u2014 we\u2019ll be in touch.";
+            messageEl.textContent = "You\u2019re on the list \u2014 we\u2019ll reach out when your beta slot opens.";
             messageEl.classList.add('success');
             messageEl.style.display = 'block';
           } else {
@@ -205,6 +205,216 @@
     }
 
     initBetaForm('beta-form-pricing', 'beta-msg-pricing');
+    initBetaForm('beta-form-hero', 'beta-msg-hero');
+  </script>
+
+  <script>
+    // ── Use-case terminal scenes ─────────────────────────────
+    // Line types: user (green prompt), cmd (terracotta $), out (dim), ok (olive ✓), k=v (key highlight)
+    const SCENES = {
+      'hero-query': {
+        loop: true,
+        lines: [
+          { type: 'user', text: 'What was I debugging yesterday around 3pm?' },
+          { type: 'out',  text: '' },
+          { type: 'tool', text: 'escribano search "error" --since 26h' },
+          { type: 'ok',   text: '4 observations found' },
+          { type: 'out',  text: '' },
+          { type: 'out',  text: '14:32  VS Code    middleware/auth.ts — 401 refresh' },
+          { type: 'out',  text: '14:47  Terminal   git commit "fix: refresh token"' },
+          { type: 'out',  text: '15:02  Browser    Stack Overflow — JWT expiry' },
+          { type: 'out',  text: '' },
+          { type: 'ai',   text: 'Yesterday at 14:32 you were debugging a JWT refresh bug in middleware/auth.ts. The fix landed at 14:47.' },
+        ],
+      },
+      'agent-memory': {
+        loop: true,
+        lines: [
+          { type: 'user', text: 'What did I work on yesterday around 3pm?' },
+          { type: 'tool', text: 'escribano recent --since 26h --json' },
+          { type: 'ok',   text: '3 activity clusters found' },
+          { type: 'out',  text: '' },
+          { type: 'out',  text: '14:32  VS Code       Debugging JWT refresh bug' },
+          { type: 'out',  text: '14:47  Terminal      git commit "fix: refresh token"' },
+          { type: 'out',  text: '16:40  GitHub        Reviewing PR #214' },
+          { type: 'out',  text: '' },
+          { type: 'ai',   text: 'Yesterday ~14:32 you were debugging a JWT refresh token bug in middleware/auth.ts. Fix landed at 14:47.' },
+        ],
+      },
+      'forensic': {
+        loop: true,
+        lines: [
+          { type: 'cmd',  text: 'escribano search "ECONNREFUSED" --since 7d' },
+          { type: 'out',  text: '' },
+          { type: 'json', text: '{' },
+          { type: 'json', text: '  "timestamp": "Tue 14:02",' },
+          { type: 'json', text: '  "app":       "Terminal",' },
+          { type: 'json', text: '  "text":      "postgres connection refused — port 5432"' },
+          { type: 'json', text: '}' },
+        ],
+      },
+      'pipeline': {
+        loop: true,
+        lines: [
+          { type: 'cmd',  text: 'escribano entities --kind framework --since 24h \\' },
+          { type: 'cmd',  text: '  | jq -r \'.entities[].value\' | sort -u' },
+          { type: 'out',  text: '' },
+          { type: 'out',  text: 'drizzle' },
+          { type: 'out',  text: 'next.js' },
+          { type: 'out',  text: 'react' },
+          { type: 'out',  text: 'swift' },
+        ],
+      },
+    };
+
+    const TYPE_SPEED = 42;      // ms per character for typed lines
+    const LINE_PAUSE = 420;     // ms between lines
+    const LOOP_PAUSE = 4500;    // ms before restarting a scene
+    const STAGGER_MS = 1200;    // ms between neighbouring terminal scenes on screen
+
+    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let reduceMotion = reducedMotionQuery.matches;
+    reducedMotionQuery.addEventListener('change', (e) => { reduceMotion = e.matches; });
+
+    const typedTypes = new Set(['user', 'cmd']);
+
+    function appendLine(screen, line) {
+      const el = document.createElement('div');
+      el.className = 'use-line use-line--' + line.type;
+      screen.appendChild(el);
+      return el;
+    }
+
+    function prefixFor(type) {
+      switch (type) {
+        case 'user': return '<span class="use-sigil use-sigil--user">&gt;</span> ';
+        case 'cmd':  return '<span class="use-sigil use-sigil--cmd">$</span> ';
+        case 'tool': return '<span class="use-sigil use-sigil--tool">·</span> ';
+        case 'ok':   return '<span class="use-sigil use-sigil--ok">✓</span> ';
+        case 'ai':   return '<span class="use-sigil use-sigil--ai">↳</span> ';
+        default: return '';
+      }
+    }
+
+    // Cancellation-aware delay — wakes every 80ms to honour stateRef.cancelled
+    // so long pauses (LOOP_PAUSE) abort promptly when the terminal scrolls off.
+    function cancellableDelay(ms, stateRef) {
+      return new Promise(resolve => {
+        const start = Date.now();
+        const tick = () => {
+          if (stateRef && stateRef.cancelled) return resolve();
+          if (Date.now() - start >= ms) return resolve();
+          setTimeout(tick, 80);
+        };
+        tick();
+      });
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function renderStatic(screen, scene) {
+      screen.innerHTML = '';
+      for (const line of scene.lines) {
+        const el = appendLine(screen, line);
+        el.innerHTML = prefixFor(line.type) + escapeHtml(line.text);
+      }
+    }
+
+    async function runScene(screen, scene, stateRef) {
+      if (reduceMotion) {
+        renderStatic(screen, scene);
+        return;
+      }
+      while (!stateRef.cancelled) {
+        screen.innerHTML = '';
+        for (const line of scene.lines) {
+          if (stateRef.cancelled) return;
+          const el = appendLine(screen, line);
+          el.innerHTML = prefixFor(line.type);
+          if (typedTypes.has(line.type)) {
+            const caret = document.createElement('span');
+            caret.className = 'use-caret';
+            el.appendChild(caret);
+            for (let i = 0; i < line.text.length; i++) {
+              if (stateRef.cancelled) return;
+              caret.insertAdjacentText('beforebegin', line.text.charAt(i));
+              await cancellableDelay(TYPE_SPEED, stateRef);
+            }
+            caret.remove();
+          } else {
+            el.innerHTML += escapeHtml(line.text);
+          }
+          await cancellableDelay(LINE_PAUSE, stateRef);
+        }
+        if (!scene.loop) return;
+        await cancellableDelay(LOOP_PAUSE, stateRef);
+      }
+    }
+
+    async function startScene(term, states) {
+      const key = term.dataset.scene;
+      const scene = SCENES[key];
+      if (!scene) return;
+      const screen = term.querySelector('[data-screen]');
+      if (!screen) return;
+
+      const existing = states.get(term);
+      if (existing && !existing.cancelled) return;
+
+      const order = parseInt(term.dataset.sceneOrder || '0', 10);
+      const state = { cancelled: false };
+      states.set(term, state);
+
+      if (order > 0 && !reduceMotion) {
+        await cancellableDelay(order * STAGGER_MS, state);
+        if (state.cancelled) return;
+      }
+      runScene(screen, scene, state);
+    }
+
+    function initUseTerminals() {
+      const terms = document.querySelectorAll('.use-term');
+      const states = new WeakMap();
+
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          const term = e.target;
+          if (e.isIntersecting) {
+            startScene(term, states);
+          } else {
+            const existing = states.get(term);
+            if (existing) existing.cancelled = true;
+          }
+        }
+      }, { threshold: 0.35 });
+
+      terms.forEach(t => io.observe(t));
+
+      // Pause all on tab hidden to save cycles
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          terms.forEach(t => {
+            const s = states.get(t);
+            if (s) s.cancelled = true;
+          });
+        } else {
+          terms.forEach(t => {
+            const rect = t.getBoundingClientRect();
+            const onScreen = rect.top < window.innerHeight && rect.bottom > 0;
+            if (!onScreen) return;
+            startScene(t, states);
+          });
+        }
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initUseTerminals);
+    } else {
+      initUseTerminals();
+    }
   </script>
 </body>
 </html>

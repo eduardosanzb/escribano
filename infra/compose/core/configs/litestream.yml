@@ -1,6 +1,6 @@
 # Litestream runtime config is committed to git.
-# Storage values come from environment variables passed via --env-file,
-# so the same file works after every clone or rebuild with no on-server edits.
+# Object storage values are env-driven (via --env-file): bucket/endpoint/path/credentials.
+# No on-server edits are required; update environment values instead.
 dbs:
   - path: ${LITESTREAM_DB_PATH}
     replicas:

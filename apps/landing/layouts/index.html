@@ -9,9 +9,9 @@
     <li><a href="#privacy">Privacy</a></li>
     <li><a href="/blog/">Blog</a></li>
     <li><a href="#beta">Beta</a></li>
-    <li>
+    <li class="nav-github">
       <a href="https://github.com/eduardosanzb/escribano" target="_blank" rel="noopener" aria-label="GitHub" title="View on GitHub">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
           <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
         </svg>
       </a>
@@ -85,14 +85,12 @@
       Escribano runs on your Mac and quietly captures what's on screen. A vision model understands it. A CLI lets your agents — or you — search, filter, and cite the evidence. Nothing leaves your machine.
     </p>
     <div class="hero-actions">
-      <form class="waitlist-form" id="waitlist-form-hero"
-            action="https://buttondown.com/api/emails/embed-subscribe/sanchez_bautista"
-            method="post">
+      <form id="beta-form-hero" class="waitlist-form">
         <input type="email" name="email" placeholder="you@company.com"
                class="waitlist-input" required autocomplete="email">
         <button type="submit" class="btn-primary waitlist-submit">Request beta access</button>
       </form>
-      <p class="waitlist-message" id="waitlist-msg-hero" aria-live="polite"></p>
+      <p id="beta-msg-hero" class="waitlist-message" style="display:none;" aria-live="polite"></p>
       <a href="#how" class="btn-ghost">See how it works <span>→</span></a>
     </div>
     <div class="indie-badge">
@@ -104,16 +102,16 @@
   </div>
 
   <div class="hero-right">
-    <div class="use-term use-term--hero" data-scene="hero-query">
+    <div class="use-term use-term--hero" data-scene="hero-query" aria-hidden="true">
       <div class="use-term-header">
         <span class="use-term-dot"></span>
         <span class="use-term-dot"></span>
         <span class="use-term-dot"></span>
-        <span class="use-term-title">escribano · query</span>
+        <span class="use-term-title">escribano</span>
       </div>
       <div class="use-term-body" data-screen></div>
       <div class="use-term-footnote">
-        <span class="q-dot"></span> PII filtered · screenshots hidden (use <code>--images</code> to opt in)
+        <span class="q-dot"></span> <span class="nowrap">PII filtered</span> · <span class="nowrap">screenshots hidden</span> <span class="footnote-opt">(opt-in with <code>--images</code>)</span>
       </div>
     </div>
   </div>
@@ -241,24 +239,9 @@
       </div>
     </div>
 
-    <div class="open-source-details cli-details">
-      <div class="detail-block">
-        <h4>Works on</h4>
-        <ul>
-          <li>macOS on Apple Silicon</li>
-          <li>Designed for modern Macs (M1 and newer)</li>
-          <li>A menu-bar app — runs quietly in the background</li>
-        </ul>
-      </div>
-      <div class="detail-block">
-        <h4>What you get</h4>
-        <ul>
-          <li>An always-on memory of your work</li>
-          <li>A clean interface for you — and for your agents</li>
-          <li>Private by default · runs fully on your Mac</li>
-        </ul>
-      </div>
-      <div class="detail-actions">
+    <div class="product-footer">
+      <div class="product-footer-meta">macOS · Apple Silicon · runs on your Mac, private by default</div>
+      <div class="product-footer-actions">
         <a href="#beta" class="btn-primary">Request beta access</a>
         <a href="https://github.com/eduardosanzb/escribano" class="btn-ghost" target="_blank" rel="noopener">View on GitHub <span>★</span></a>
       </div>
@@ -276,7 +259,7 @@
         <div class="persona-role">Agent · Assistant</div>
         <h3>Give your coding agent a memory.</h3>
         <p>Claude Code, Cursor, Aider — they forget the moment the session ends. Point them at Escribano's CLI and they can cite the exact moment a bug appeared, the tool you opened, the file you edited.</p>
-        <div class="use-term" data-scene="agent-memory">
+        <div class="use-term" data-scene="agent-memory" data-scene-order="0" aria-hidden="true">
           <div class="use-term-header">
             <span class="use-term-dot"></span>
             <span class="use-term-dot"></span>
@@ -291,7 +274,7 @@
         <div class="persona-role">Developer · Engineer</div>
         <h3>Forensic recall, on demand.</h3>
         <p>"What was that library I tried on Tuesday?" "When did the error first show up?" Query your own work like a database, instead of scrolling through browser history.</p>
-        <div class="use-term" data-scene="forensic">
+        <div class="use-term" data-scene="forensic" data-scene-order="1" aria-hidden="true">
           <div class="use-term-header">
             <span class="use-term-dot"></span>
             <span class="use-term-dot"></span>
@@ -306,7 +289,7 @@
         <div class="persona-role">Agent builder · Researcher</div>
         <h3>Wire it into your own stack.</h3>
         <p>Stable JSON, versioned API, local SQLite. Build the agent surface you actually want — an MCP server, a shell alias, a scheduled digest — on top of a substrate you own.</p>
-        <div class="use-term" data-scene="pipeline">
+        <div class="use-term" data-scene="pipeline" data-scene-order="2" aria-hidden="true">
           <div class="use-term-header">
             <span class="use-term-dot"></span>
             <span class="use-term-dot"></span>
@@ -332,7 +315,7 @@
     <div class="privacy-grid">
       <div class="privacy-card fade-up">
         <div class="privacy-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" focusable="false">
             <rect x="3" y="11" width="18" height="10" rx="2"/>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
@@ -343,7 +326,7 @@
 
       <div class="privacy-card fade-up" style="transition-delay: 0.08s">
         <div class="privacy-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" focusable="false">
             <path d="M4 4h16v16H4z"/>
             <path d="M4 10h16"/>
             <path d="M9 15h6"/>
@@ -355,7 +338,7 @@
 
       <div class="privacy-card fade-up" style="transition-delay: 0.16s">
         <div class="privacy-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" focusable="false">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
             <circle cx="12" cy="12" r="3"/>
             <line x1="4" y1="4" x2="20" y2="20"/>
@@ -367,7 +350,7 @@
 
       <div class="privacy-card fade-up" style="transition-delay: 0.24s">
         <div class="privacy-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" focusable="false">
             <path d="M12 2l9 4v6c0 5-4 9-9 10-5-1-9-5-9-10V6l9-4z"/>
           </svg>
         </div>
@@ -385,8 +368,8 @@
 <section class="pricing-section" id="beta">
   <div class="pricing pricing--single">
     <div class="section-label">Beta access</div>
-    <h2>In private beta.</h2>
-    <p class="pricing-sub">We're letting people in gradually while the recorder stabilises. Leave your email — we'll reach out with a download link and setup instructions.</p>
+    <h2>In private beta.<br><em>Help shape the roadmap.</em></h2>
+    <p class="pricing-sub">Early beta users get a direct line to what we build next. Join while the recorder stabilises, tell us where it breaks, vote on what matters.</p>
 
     <div class="pricing-cards pricing-cards--single">
       <div class="pricing-card featured">
@@ -394,19 +377,17 @@
         <div class="price">Free beta</div>
         <div class="price-period">macOS · Apple Silicon · 16GB+ RAM</div>
         <ul class="pricing-features">
-          <li>Always-on local capture with backpressure</li>
-          <li>VLM descriptions + entity extraction</li>
-          <li>CLI with JSON-first output</li>
-          <li>Private by default — PII filter, image opt-in</li>
+          <li>Direct feedback channel with the team</li>
+          <li>Vote on roadmap priorities</li>
+          <li>Early access to new agent integrations</li>
         </ul>
-        <form class="waitlist-form waitlist-form--pricing" id="waitlist-form-pricing"
-              action="https://buttondown.com/api/emails/embed-subscribe/sanchez_bautista"
-              method="post">
+        <form id="beta-form-pricing" class="waitlist-form waitlist-form--pricing">
           <input type="email" name="email" placeholder="you@company.com"
                  class="waitlist-input" required autocomplete="email">
           <button type="submit" class="btn-pricing waitlist-submit">Request beta access</button>
         </form>
-        <p class="waitlist-message" id="waitlist-msg-pricing" aria-live="polite"></p>
+        <p id="beta-msg-pricing" class="waitlist-message" style="display:none;" aria-live="polite"></p>
+        <p class="pricing-footnote">Beta users get to vote on what we build next.</p>
       </div>
     </div>
   </div>

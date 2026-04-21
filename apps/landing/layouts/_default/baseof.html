@@ -41,9 +41,9 @@
   <link rel="canonical" href="{{ .Permalink }}">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Spectral:ital,wght@0,300;0,400;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="preload" href="/fonts/cormorant-garamond-regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/spectral-regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
 
   {{ $css := resources.Get "css/style.css" | fingerprint }}
   <link rel="stylesheet" href="{{ $css.RelPermalink }}">
@@ -160,54 +160,52 @@
   </script>
 
   <script>
-    // Waitlist form handler for Buttondown
-    function initWaitlistForm(formId, messageId) {
+    // Beta access form handler — POSTs email to PocketBase
+    function initBetaForm(formId, messageId) {
       const form = document.getElementById(formId);
       const messageEl = document.getElementById(messageId);
       if (!form) return;
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
         const submitBtn = form.querySelector('.waitlist-submit');
         const originalText = submitBtn.textContent;
         const emailInput = form.querySelector('input[type="email"]');
-        
-        // Disable button and show loading state
+
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Joining...';
-        messageEl.textContent = '';
+        submitBtn.textContent = 'Sending...';
+        messageEl.style.display = 'none';
         messageEl.classList.remove('error', 'success');
 
         try {
-          const formData = new FormData(form);
-          const response = await fetch(form.action, {
+          const response = await fetch('https://admin.raus.cloud/api/collections/beta_requests/records', {
             method: 'POST',
-            body: formData,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailInput.value })
           });
 
-          // Buttondown redirects on success, so we check if request succeeded
-          if (response.ok || response.status === 0 || response.type === 'opaqueredirect') {
-            // Success
+          if (response.ok) {
             form.style.display = 'none';
-            messageEl.textContent = "You're on the list! We'll reach out when your beta slot opens.";
+            messageEl.textContent = "You\u2019re on the list \u2014 we\u2019ll reach out when your beta slot opens.";
             messageEl.classList.add('success');
+            messageEl.style.display = 'block';
           } else {
-            throw new Error('Submission failed');
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data?.message || 'Submission failed');
           }
         } catch (error) {
-          // Error
           submitBtn.disabled = false;
           submitBtn.textContent = originalText;
-          messageEl.textContent = 'Something went wrong. Try again or email info@escribano.work';
+          messageEl.textContent = 'Something went wrong. Email info@escribano.work directly.';
           messageEl.classList.add('error');
+          messageEl.style.display = 'block';
         }
       });
     }
 
-    // Initialize both forms
-    initWaitlistForm('waitlist-form-hero', 'waitlist-msg-hero');
-    initWaitlistForm('waitlist-form-pricing', 'waitlist-msg-pricing');
+    initBetaForm('beta-form-pricing', 'beta-msg-pricing');
+    initBetaForm('beta-form-hero', 'beta-msg-hero');
   </script>
 
   <script>
@@ -236,11 +234,11 @@
           { type: 'tool', text: 'escribano recent --since 26h --json' },
           { type: 'ok',   text: '3 activity clusters found' },
           { type: 'out',  text: '' },
-          { type: 'out',  text: '15:12  VS Code       Debugging JWT refresh bug' },
+          { type: 'out',  text: '14:32  VS Code       Debugging JWT refresh bug' },
+          { type: 'out',  text: '14:47  Terminal      git commit "fix: refresh token"' },
           { type: 'out',  text: '16:40  GitHub        Reviewing PR #214' },
-          { type: 'out',  text: '18:05  Notion        Drafting release notes' },
           { type: 'out',  text: '' },
-          { type: 'ai',   text: 'Yesterday ~15:12 you were debugging a JWT refresh token bug in middleware/auth.ts. Fix landed at 15:47.' },
+          { type: 'ai',   text: 'Yesterday ~14:32 you were debugging a JWT refresh token bug in middleware/auth.ts. Fix landed at 14:47.' },
         ],
       },
       'forensic': {
@@ -272,6 +270,11 @@
     const TYPE_SPEED = 42;      // ms per character for typed lines
     const LINE_PAUSE = 420;     // ms between lines
     const LOOP_PAUSE = 4500;    // ms before restarting a scene
+    const STAGGER_MS = 1200;    // ms between neighbouring terminal scenes on screen
+
+    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let reduceMotion = reducedMotionQuery.matches;
+    reducedMotionQuery.addEventListener('change', (e) => { reduceMotion = e.matches; });
 
     const typedTypes = new Set(['user', 'cmd']);
 
@@ -293,22 +296,37 @@
       }
     }
 
-    function delay(ms) {
-      return new Promise(r => setTimeout(r, ms));
+    // Cancellation-aware delay — wakes every 80ms to honour stateRef.cancelled
+    // so long pauses (LOOP_PAUSE) abort promptly when the terminal scrolls off.
+    function cancellableDelay(ms, stateRef) {
+      return new Promise(resolve => {
+        const start = Date.now();
+        const tick = () => {
+          if (stateRef && stateRef.cancelled) return resolve();
+          if (Date.now() - start >= ms) return resolve();
+          setTimeout(tick, 80);
+        };
+        tick();
+      });
     }
 
     function escapeHtml(s) {
       return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
-    async function typeInto(el, text) {
-      for (let i = 0; i < text.length; i++) {
-        el.innerHTML += escapeHtml(text.charAt(i));
-        await delay(TYPE_SPEED);
+    function renderStatic(screen, scene) {
+      screen.innerHTML = '';
+      for (const line of scene.lines) {
+        const el = appendLine(screen, line);
+        el.innerHTML = prefixFor(line.type) + escapeHtml(line.text);
       }
     }
 
     async function runScene(screen, scene, stateRef) {
+      if (reduceMotion) {
+        renderStatic(screen, scene);
+        return;
+      }
       while (!stateRef.cancelled) {
         screen.innerHTML = '';
         for (const line of scene.lines) {
@@ -322,17 +340,38 @@
             for (let i = 0; i < line.text.length; i++) {
               if (stateRef.cancelled) return;
               caret.insertAdjacentText('beforebegin', line.text.charAt(i));
-              await delay(TYPE_SPEED);
+              await cancellableDelay(TYPE_SPEED, stateRef);
             }
             caret.remove();
           } else {
             el.innerHTML += escapeHtml(line.text);
           }
-          await delay(LINE_PAUSE);
+          await cancellableDelay(LINE_PAUSE, stateRef);
         }
         if (!scene.loop) return;
-        await delay(LOOP_PAUSE);
+        await cancellableDelay(LOOP_PAUSE, stateRef);
       }
+    }
+
+    async function startScene(term, states) {
+      const key = term.dataset.scene;
+      const scene = SCENES[key];
+      if (!scene) return;
+      const screen = term.querySelector('[data-screen]');
+      if (!screen) return;
+
+      const existing = states.get(term);
+      if (existing && !existing.cancelled) return;
+
+      const order = parseInt(term.dataset.sceneOrder || '0', 10);
+      const state = { cancelled: false };
+      states.set(term, state);
+
+      if (order > 0 && !reduceMotion) {
+        await cancellableDelay(order * STAGGER_MS, state);
+        if (state.cancelled) return;
+      }
+      runScene(screen, scene, state);
     }
 
     function initUseTerminals() {
@@ -342,18 +381,8 @@
       const io = new IntersectionObserver((entries) => {
         for (const e of entries) {
           const term = e.target;
-          const key = term.dataset.scene;
-          const scene = SCENES[key];
-          if (!scene) continue;
-          const screen = term.querySelector('[data-screen]');
-          if (!screen) continue;
-
           if (e.isIntersecting) {
-            const existing = states.get(term);
-            if (existing && !existing.cancelled) continue; // already running
-            const state = { cancelled: false };
-            states.set(term, state);
-            runScene(screen, scene, state);
+            startScene(term, states);
           } else {
             const existing = states.get(term);
             if (existing) existing.cancelled = true;
@@ -375,13 +404,7 @@
             const rect = t.getBoundingClientRect();
             const onScreen = rect.top < window.innerHeight && rect.bottom > 0;
             if (!onScreen) return;
-            const key = t.dataset.scene;
-            const scene = SCENES[key];
-            const screen = t.querySelector('[data-screen]');
-            if (!scene || !screen) return;
-            const state = { cancelled: false };
-            states.set(t, state);
-            runScene(screen, scene, state);
+            startScene(t, states);
           });
         }
       });

@@ -306,3 +306,84 @@ Different artifact formats require fundamentally different data preparation path
 
 The narrative format needs **chronological segment detail**, while card/standup need 
 **thematic grouping**.
+
+## Artifact Generation Cancellation (Apr 2026)
+
+### Investigation Summary
+
+User request: "Add cancellation support to Python bridge for artifact generation."
+
+### Architecture Findings
+
+**Communication Protocol:**
+- **Transport**: Unix domain socket (`/tmp/escribano-recorder-vlm.sock`)
+- **Protocol**: NDJSON (one JSON object per line)
+- **Message Format**: `{"id": <number>, "method": "<method>", "params": {...}}`
+
+**Generation Flow:**
+```
+Swift UI → ViewModel → GenerateArtifact → InferenceQueue → PythonBridgeAdapter → Unix Socket → mlx_bridge.py → MLX generate()
+```
+
+Artifact generation makes **2 sequential LLM calls**:
+1. Subject grouping (maxTokens: 4000)
+2. Artifact prose (maxTokens: 2000)
+
+### Core Problem
+
+**The MLX library's `generate()` function does NOT support mid-generation cancellation.**
+
+Evidence from `mlx_bridge.py`:
+```python
+signal.signal(signal.SIGALRM, timeout_handler)
+signal.alarm(300)  # 5 min timeout - ONLY cancellation mechanism
+try:
+    output = generate(llm_model, llm_tokenizer, prompt=prompt, ...)
+```
+
+The `generate()` function:
+- Runs synchronously and blocks until completion
+- No `cancellation_callback` or `should_stop` flag
+- No streaming/token-by-token interruption hooks
+- Python bridge is single-threaded — can't process messages while blocked
+
+### Options Evaluated
+
+| Option | Feasibility | Trade-offs |
+|--------|-------------|------------|
+| **Out-of-band signal** | ❌ | Python blocked on `generate()`, can't process messages |
+| **Cooperative cancellation** | ❌ | Requires forking/modifying upstream `mlx-lm` library |
+| **Process termination** | ✅ Works | Kills ALL inference (frame analysis too), 30-120s model reload |
+| **Socket disconnect** | ⚠️ Partial | Python keeps running, wastes GPU, unstable state |
+
+### Decision: Don't Implement
+
+**Reasons:**
+1. **Technical limitation**: MLX lacks cancellation support
+2. **Cost vs benefit**: Process termination is too destructive
+3. **UX penalty**: 30-120 second model reload is worse than waiting
+4. **Architecture impact**: Would disrupt frame analysis pipeline
+
+### Alternative UX Improvements (Implementable)
+
+1. **Progress indication** — Show which step is running (grouping vs prose)
+2. **Estimated time** — Display approximate completion based on token count
+3. **Background generation** — Allow closing window while generation continues
+4. **Queue visibility** — Show if artifact generation is waiting behind frame analysis
+
+### Future Possibility
+
+If MLX adds cancellation support:
+- Swift `WorkQueue` already uses `withTaskCancellationHandler`
+- Clean propagation path exists, just needs bridge-level hook
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `escribano-ts/scripts/mlx_bridge.py` | Python bridge server (766 lines) |
+| `apps/recorder/Sources/PythonBridge.vlm.adapter.swift` | Swift bridge adapter (527 lines) |
+| `apps/recorder/Sources/WorkQueue.swift` | Inference queue with cancellation support (351 lines) |
+| `apps/recorder/Sources/GenerateArtifact.swift` | Artifact generation use case (226 lines) |
+| `apps/recorder/Sources/EscribanoWindowViewModel.swift` | View model for UI (140 lines) |
+| `apps/recorder/Sources/GenerateView.swift` | Generation UI (70 lines) |

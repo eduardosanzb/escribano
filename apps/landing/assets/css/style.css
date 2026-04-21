@@ -1,3 +1,47 @@
+/* Self-hosted fonts (see static/fonts/) */
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: normal;
+  font-weight: 300 600;
+  font-display: swap;
+  src: url('/fonts/cormorant-garamond-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: italic;
+  font-weight: 300 400;
+  font-display: swap;
+  src: url('/fonts/cormorant-garamond-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/fonts/spectral-light.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/spectral-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: italic;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/fonts/spectral-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 300 500;
+  font-display: swap;
+  src: url('/fonts/dm-sans.woff2') format('woff2');
+}
+
 :root {
   --ink: #1a1612;
   --ink-soft: #3d3530;
@@ -96,7 +140,7 @@ nav {
 
 .nav-logo {
   font-family: var(--serif);
-  font-size: 1.5rem;
+  font-size: 2rem;
   font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--ink);
@@ -278,6 +322,14 @@ nav {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   padding-top: 6rem;
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 1400px) {
+  .hero h1 { font-size: clamp(3rem, 4.5vw, 4.5rem); }
+  .hero-body { font-size: 1.05rem; }
 }
 
 .hero-left {
@@ -424,125 +476,6 @@ h1 em {
   pointer-events: none;
 }
 
-.artifact-card {
-  background: var(--cream);
-  border: 1px solid var(--parchment-deep);
-  border-radius: 4px;
-  padding: 2.5rem;
-  max-width: 420px;
-  width: 100%;
-  box-shadow: 0 8px 40px rgba(26,22,18,0.08), 0 1px 3px rgba(26,22,18,0.06);
-  position: relative;
-  animation: floatCard 6s ease-in-out infinite;
-}
-
-@keyframes floatCard {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
-}
-
-.artifact-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1.75rem;
-  padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--parchment-deep);
-}
-
-.artifact-title {
-  font-family: var(--serif);
-  font-size: 1.1rem;
-  font-weight: 500;
-  color: var(--ink);
-}
-
-.artifact-date {
-  font-family: var(--sans);
-  font-size: 0.7rem;
-  color: var(--ink-muted);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-top: 0.2rem;
-}
-
-.artifact-stamp {
-  background: var(--parchment-warm);
-  border: 1px solid var(--parchment-deep);
-  border-radius: 2px;
-  padding: 0.25rem 0.6rem;
-  font-family: var(--sans);
-  font-size: 0.65rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--olive);
-}
-
-.artifact-blocks {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-bottom: 1.75rem;
-}
-
-.block {
-  display: flex;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.block-bar {
-  width: 3px;
-  min-height: 2.5rem;
-  border-radius: 2px;
-  flex-shrink: 0;
-  margin-top: 0.2rem;
-}
-
-.block-bar.research { background: var(--olive); }
-.block-bar.meeting { background: var(--gold); }
-.block-bar.writing { background: var(--terracotta); }
-.block-bar.drafting { background: var(--terracotta); }
-.block-bar.review { background: #7a8fa6; }
-
-.block-label {
-  font-family: var(--sans);
-  font-size: 0.68rem;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-muted);
-  margin-bottom: 0.2rem;
-}
-
-.block-text {
-  font-family: var(--serif-body);
-  font-size: 0.88rem;
-  font-weight: 300;
-  color: var(--ink-soft);
-  line-height: 1.5;
-}
-
-.block-time {
-  font-family: var(--sans);
-  font-size: 0.68rem;
-  color: var(--ink-muted);
-  margin-top: 0.15rem;
-}
-
-.artifact-summary {
-  background: var(--parchment);
-  border-radius: 2px;
-  padding: 1rem 1.25rem;
-  font-family: var(--serif);
-  font-size: 0.95rem;
-  font-style: italic;
-  color: var(--ink-soft);
-  line-height: 1.6;
-  border-left: 2px solid var(--terracotta);
-}
-
 section { padding: 7rem 4rem; }
 
 .section-label {
@@ -591,10 +524,10 @@ section { padding: 7rem 4rem; }
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 3rem;
   position: relative;
-  align-items: start;
+  align-items: stretch;
 }
 
-.step { min-width: 0; }
+.step { min-width: 0; display: flex; flex-direction: column; }
 
 .step-num {
   font-family: var(--serif);
@@ -726,6 +659,11 @@ section { padding: 7rem 4rem; }
   text-transform: uppercase;
   color: var(--ink-muted);
   font-style: normal;
+}
+
+.manifesto-inner {
+  max-width: 1100px;
+  margin: 0 auto;
 }
 
 .manifesto-points {
@@ -1018,7 +956,7 @@ footer {
   .hero {
     grid-template-columns: 1fr;
     min-height: auto;
-    padding-top: 5rem;
+    padding-top: 8rem;
   }
   .hero-left { padding: 2.5rem 1.5rem 2rem; }
   .hero-left::after { display: none; }
@@ -1028,8 +966,6 @@ footer {
   .btn-primary { width: 100%; text-align: center; }
   .indie-badge { margin-top: 2rem; padding-top: 1.5rem; font-size: 0.7rem; flex-wrap: wrap; line-height: 1.6; }
   .hero-right { padding: 2rem 1.5rem 3rem; }
-  .artifact-card { padding: 1.75rem 1.25rem; animation: none; }
-  .artifact-header { flex-direction: column; gap: 0.75rem; align-items: flex-start; }
   section { padding: 4rem 1.5rem; }
   .how-inner { max-width: 100%; }
   .how h2 { font-size: 2rem; margin-bottom: 2.5rem; }
@@ -1582,7 +1518,7 @@ footer {
 
 /* Mobile nav - show GitHub link */
 @media (max-width: 768px) {
-  .nav-links li:nth-child(4) { display: block; }
+  .nav-links li.nav-github { display: block; }
 }
 
 /* Waitlist Form Styles */
@@ -1656,20 +1592,31 @@ footer {
   font-weight: 500;
 }
 
-/* Mobile: stack form vertically */
+/* Mobile: keep hero form side-by-side, stack only very narrow */
 @media (max-width: 768px) {
   .waitlist-form {
+    flex-direction: row;
+    gap: 0.5rem;
+  }
+  .waitlist-input { flex: 1 1 auto; min-width: 0; }
+  .waitlist-submit { flex: 0 0 auto; white-space: nowrap; }
+
+  /* Pricing form stays stacked (it's inside a single card) */
+  .waitlist-form--pricing {
     flex-direction: column;
     gap: 1rem;
   }
+  .waitlist-form--pricing .waitlist-input,
+  .waitlist-form--pricing .waitlist-submit { width: 100%; }
+}
 
-  .waitlist-input {
-    width: 100%;
+@media (max-width: 420px) {
+  .waitlist-form:not(.waitlist-form--pricing) {
+    flex-direction: column;
+    gap: 0.75rem;
   }
-
-  .waitlist-submit {
-    width: 100%;
-  }
+  .waitlist-form:not(.waitlist-form--pricing) .waitlist-input,
+  .waitlist-form:not(.waitlist-form--pricing) .waitlist-submit { width: 100%; }
 }
 
 /* ──────────────────────────────────────────────
@@ -2017,12 +1964,18 @@ footer {
    Use-case animated terminals (per persona card)
    ────────────────────────────────────────────── */
 .persona-card .use-term {
-  margin-top: 1.75rem;
+  margin-top: auto;
   background: #0e0f14;
   border-radius: 6px;
   overflow: hidden;
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
   box-shadow: 0 6px 20px rgba(26,22,18,0.12);
+  display: flex;
+  flex-direction: column;
+}
+
+.persona-card .use-term .use-term-body {
+  flex: 1 1 auto;
 }
 
 :root.dark-mode .persona-card .use-term {
@@ -2059,7 +2012,7 @@ footer {
 
 .use-term-body {
   padding: 0.7rem 0.9rem 0.9rem;
-  min-height: 240px;
+  height: 260px;
   font-size: 0.66rem;
   line-height: 1.6;
   color: rgba(245,240,232,0.82);
@@ -2117,18 +2070,21 @@ footer {
   padding: 2.25rem 2rem;
   min-width: 0;         /* allow grid track to clip long content */
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .persona-card h3 { margin-top: 0.6rem; }
+.persona-card p { margin-bottom: 1.5rem; }
 
 @media (max-width: 900px) {
-  .use-term-body { min-height: 160px; }
+  .use-term-body { height: 200px; }
 }
 
 /* Hero variant — larger, standalone (not inside a persona card) */
 .use-term--hero {
   margin: 0;
   width: 100%;
-  max-width: 560px;
+  max-width: 720px;
   background: var(--ink);
   border-radius: 8px;
   overflow: hidden;
@@ -2166,6 +2122,12 @@ footer {
   min-height: 360px;
   font-size: 0.78rem;
   line-height: 1.6;
+}
+
+/* Wide screens — give the terminal a bit more room */
+@media (min-width: 1200px) {
+  .use-term--hero { max-width: 780px; }
+  .use-term--hero .use-term-body { min-height: 380px; font-size: 0.8rem; }
 }
 
 .use-term-footnote {
@@ -2537,4 +2499,87 @@ footer {
 @media (max-width: 900px) {
   .steps { grid-template-columns: 1fr; gap: 2.5rem; }
   .step-mock { max-width: 420px; }
+}
+
+/* ──────────────────────────────────────────────
+   Small utilities (footnote spans, nowrap)
+   ────────────────────────────────────────────── */
+.nowrap { white-space: nowrap; }
+.footnote-opt { white-space: nowrap; margin-left: 0.15rem; }
+
+/* ──────────────────────────────────────────────
+   Product section footer (consolidated)
+   ────────────────────────────────────────────── */
+.product-footer {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--parchment-deep);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.product-footer-meta {
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  letter-spacing: 0.01em;
+}
+
+.product-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .product-footer { flex-direction: column; align-items: flex-start; }
+}
+
+/* Pricing footnote (beta voting) */
+.pricing-footnote {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  margin-top: 1rem;
+  text-align: center;
+  font-style: italic;
+}
+
+/* ──────────────────────────────────────────────
+   How it works — vertical column dividers
+   ────────────────────────────────────────────── */
+.steps { position: relative; }
+@media (min-width: 901px) {
+  .steps > .step + .step {
+    border-left: 1px solid var(--parchment-deep);
+    padding-left: 3rem;
+  }
+  .steps > .step:not(:last-child) {
+    padding-right: 3rem;
+  }
+}
+
+/* ──────────────────────────────────────────────
+   Mobile hero: title → terminal (smaller) → body → CTAs → badge → eyebrow
+   Flatten .hero-left via display:contents so children can be reordered
+   ────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .hero { display: flex; flex-direction: column; }
+  .hero-left { display: contents; }
+  .hero-left h1          { order: 1; margin-top: 0; }
+  .hero-right            { order: 2; padding: 1.25rem 0; }
+  .hero-left .hero-body  { order: 3; }
+  .hero-left .hero-actions { order: 4; }
+  .hero-left .indie-badge  { order: 5; }
+  .hero-left .eyebrow    { order: 6; margin-top: 2rem; opacity: 0.7; }
+
+  .use-term--hero { max-width: 100%; }
+  .use-term--hero .use-term-body { min-height: 180px; font-size: 0.7rem; }
+  .use-term--hero .use-term-header { padding: 0.55rem 0.8rem; }
+  .use-term-footnote { flex-wrap: wrap; row-gap: 0.25rem; padding: 0.6rem 0.9rem; font-size: 0.65rem; }
+  .use-term-footnote .footnote-opt { margin-left: 0; }
 }

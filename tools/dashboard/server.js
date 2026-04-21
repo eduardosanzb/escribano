@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, basename } from 'node:path';
 import { homedir } from 'node:os';
+import { request as httpRequest } from 'node:http';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -12,6 +13,29 @@ const DB_PATH = join(homedir(), '.escribano', 'escribano.db');
 const ARTIFACTS_DIR = join(homedir(), '.escribano', 'artifacts');
 const ESCRIBANO_DIR = join(homedir(), '.escribano');
 const PORT = 3456;
+
+// Simple proxy for bench server
+const BENCH_PORT = 4567;
+
+function proxyToBench(req, res) {
+  const path = req.url.replace('/api/bench', '/api');
+  const options = {
+    hostname: 'localhost',
+    port: BENCH_PORT,
+    path: path,
+    method: req.method,
+    headers: { ...req.headers, host: `localhost:${BENCH_PORT}` }
+  };
+  const proxy = httpRequest(options, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    proxyRes.pipe(res);
+  });
+  proxy.on('error', (err) => {
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Bench server not available', detail: err.message }));
+  });
+  req.pipe(proxy);
+}
 
 const app = express();
 let db;
@@ -33,6 +57,11 @@ app.use('/api', (req, res, next) => {
     'Surrogate-Control': 'no-store'
   });
   next();
+});
+
+// Bench server proxy
+app.all('/api/bench/{*path}', (req, res) => {
+  proxyToBench(req, res);
 });
 
 app.use(express.static(__dirname));

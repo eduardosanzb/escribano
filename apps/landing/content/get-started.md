@@ -44,32 +44,52 @@ layout: "single"
 
 <h2 class="install-step-title">First launch</h2>
 <div class="install-note install-note--warn">
-  <strong>Heads up:</strong> the app isn't signed with an Apple Developer ID yet, so macOS will block it on first launch. Here's how to get past that:
+  <strong>Heads up:</strong> the app isn't signed with an Apple Developer ID yet, so macOS will block it. Three clicks to get past it:
 </div>
 
-<div class="install-branch">
+<ol class="install-substeps">
 
-<div class="install-path-box">
-  <div class="install-path-label">Usually works</div>
-  <p class="install-path-step">
-    In <strong>Finder → Applications</strong>, hold <span class="install-kbd">⌃ Ctrl</span> and click the <strong>Escribano</strong> app.
-  </p>
-  <p class="install-path-step">Pick <span class="install-btn-mock">Open</span> from the context menu, then confirm.</p>
+<li class="install-substep">
+<div class="install-substep-head">
+  <span class="install-substep-num">a</span>
+  <span>Launch Escribano. macOS shows a "Not Opened" dialog.</span>
 </div>
+<p class="install-substep-hint">Click <strong>Done</strong> to dismiss it — there's no "Open" option here on modern macOS.</p>
+<figure class="install-shot install-shot--sm">
+  <img src="/img/install/not-opened.png" alt="&quot;Escribano&quot; Not Opened dialog with Done and Move to Bin buttons" loading="lazy" />
+</figure>
+</li>
 
-<div class="install-path-box">
-  <div class="install-path-label">If macOS still refuses</div>
-  <div class="install-breadcrumb">
-    <span class="install-crumb">System Settings</span>
-    <span class="install-crumb-sep">›</span>
-    <span class="install-crumb">Privacy &amp; Security</span>
-  </div>
-  <p class="install-path-step">Scroll down to the Escribano warning, then click:</p>
-  <p><span class="install-btn-mock install-btn-mock--primary">Open Anyway</span></p>
-  <p class="install-path-step">Confirm with <span class="install-btn-mock">Open</span> in the dialog that appears.</p>
+<li class="install-substep">
+<div class="install-substep-head">
+  <span class="install-substep-num">b</span>
+  <span>Go to Privacy &amp; Security.</span>
 </div>
+<div class="install-breadcrumb">
+  <span class="install-crumb">System Settings</span>
+  <span class="install-crumb-sep">›</span>
+  <span class="install-crumb install-crumb--highlight">Privacy &amp; Security</span>
+</div>
+<p class="install-substep-hint">Scroll down to the <strong>Security</strong> section. You'll see a row that says <em>"Escribano" was blocked to protect your Mac.</em> — click the <strong>Open Anyway</strong> button next to it.</p>
+<figure class="install-shot">
+  <img src="/img/install/privacy-security.png" alt="Privacy &amp; Security panel showing &quot;Escribano was blocked&quot; row with an Open Anyway button" loading="lazy" />
+</figure>
+</li>
 
+<li class="install-substep">
+<div class="install-substep-head">
+  <span class="install-substep-num">c</span>
+  <span>Confirm in the second dialog.</span>
 </div>
+<div class="install-note install-note--warn install-note--tight">
+  <strong>Careful:</strong> the blue default is <strong>Move to Bin</strong>. Don't hit Enter on habit — click <strong>Open Anyway</strong> instead.
+</div>
+<figure class="install-shot install-shot--sm">
+  <img src="/img/install/open-anyway-dialog.jpeg" alt="Confirmation dialog with Move to Bin as the blue default, then Open Anyway, then Done" loading="lazy" />
+</figure>
+</li>
+
+</ol>
 
 </div>
 </li>
@@ -144,7 +164,7 @@ layout: "single"
 <p>Once you receive a key, open <strong>Terminal</strong> and run:</p>
 
 ```
-escribano activate ESC-BETA-XXXX
+escribano-query activate ESC-BETA-XXXX
 ```
 
 <p>Replace <code>ESC-BETA-XXXX</code> with the key you received.</p>

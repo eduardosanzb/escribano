@@ -35,10 +35,10 @@ export const PYTHON_PACKAGES = {
    */
   vlm: [
     'mlx-vlm[torch]>=0.4.0', // Vision-language model (torch extra required for Qwen3 image preprocessing)
-    'mlx>=0.14.0',            // MLX inference framework
-    'mlx-lm>=0.9.0',          // LLM support in MLX (shared with LLM)
-    'torch',                  // Explicit: required by Qwen3 model processor (not reliably installed via [torch] extra)
-    'torchvision',            // Explicit: required by Qwen3VLVideoProcessor at model-load time
+    'mlx>=0.14.0', // MLX inference framework
+    'mlx-lm>=0.9.0', // LLM support in MLX (shared with LLM)
+    'torch', // Explicit: required by Qwen3 model processor (not reliably installed via [torch] extra)
+    'torchvision', // Explicit: required by Qwen3VLVideoProcessor at model-load time
   ] as const,
 
   /**
@@ -186,8 +186,16 @@ export function ensureEscribanoVenv(): string {
       // Create venv using standalone Python 3.12 if available, else system python3
       // Prefer the standalone Python 3.12 downloaded by the Swift app (PythonDownloader).
       // Fall back to system python3 if the standalone is not yet present.
-      const standalonePython = resolve(homedir(), '.escribano', 'python', 'bin', 'python3');
-      const pythonBin = existsSync(standalonePython) ? standalonePython : 'python3';
+      const standalonePython = resolve(
+        homedir(),
+        '.escribano',
+        'python',
+        'bin',
+        'python3'
+      );
+      const pythonBin = existsSync(standalonePython)
+        ? standalonePython
+        : 'python3';
       console.log(`[VLM] Using Python for venv creation: ${pythonBin}`);
       execSync(`"${pythonBin}" -m venv "${ESCRIBANO_VENV}"`, {
         encoding: 'utf-8',

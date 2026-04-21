@@ -6,6 +6,8 @@ description: "Download and set up Escribano in four steps"
 layout: "single"
 ---
 
+Free 7-day trial. Beta access unlocks continued use — [request access](/#beta).
+
 [**Download for macOS →**](https://github.com/eduardosanzb/escribano-releases/releases/latest)
 
 *Apple Silicon (M1+) · 16 GB RAM minimum · macOS 13 or later*
@@ -28,12 +30,14 @@ Escribano will begin capturing your screen in the background. A small icon appea
 
 ## 4. Activate your beta key
 
-If you received a beta invitation, open **Terminal** and run:
+The app runs free for **7 days**. After that you'll need a beta key to keep using it — we're inviting people in batches so we can talk to early users and shape the roadmap with them. [Request access →](/#beta)
+
+If you already received an invitation, open **Terminal** and run:
 
 ```
-escribano-query activate ESC-BETA-XXXX
+escribano activate ESC-BETA-XXXX
 ```
 
-Replace `ESC-BETA-XXXX` with the key you received. This unlocks unlimited history — the free tier shows only the last 7 days.
+Replace `ESC-BETA-XXXX` with the key you received.
 
 Questions? [info@escribano.work](mailto:info@escribano.work)

@@ -2549,6 +2549,41 @@ footer {
   font-style: italic;
 }
 
+.pricing-card.featured .pricing-footnote {
+  color: rgba(237, 229, 212, 0.75);
+}
+
+:root.dark-mode .pricing-card.featured .pricing-footnote {
+  color: var(--ink-soft);
+}
+
+.pricing-alt-cta {
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  margin-top: 0.75rem;
+  text-align: center;
+  color: rgba(237, 229, 212, 0.7);
+}
+
+.pricing-alt-cta a {
+  color: var(--terracotta-light);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(237, 229, 212, 0.25);
+}
+
+.pricing-alt-cta a:hover {
+  border-bottom-color: var(--terracotta-light);
+}
+
+:root.dark-mode .pricing-alt-cta {
+  color: var(--ink-soft);
+}
+
+:root.dark-mode .pricing-alt-cta a {
+  color: var(--terracotta);
+  border-bottom-color: rgba(0, 0, 0, 0.15);
+}
+
 /* ──────────────────────────────────────────────
    How it works — vertical column dividers
    ────────────────────────────────────────────── */

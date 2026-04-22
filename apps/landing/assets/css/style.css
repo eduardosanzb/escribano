@@ -2618,3 +2618,489 @@ footer {
   .use-term-footnote { flex-wrap: wrap; row-gap: 0.25rem; padding: 0.6rem 0.9rem; font-size: 0.65rem; }
   .use-term-footnote .footnote-opt { margin-left: 0; }
 }
+
+/* ──────────────────────────────────────────────
+   Get Started page — visual install steps
+   ────────────────────────────────────────────── */
+.install-intro {
+  text-align: center;
+  margin: 0 0 3.5rem;
+  padding: 2rem 1.5rem 2.5rem;
+  border: 1px solid var(--parchment-deep);
+  border-radius: 10px;
+  background: var(--surface-elevated);
+}
+.install-lede {
+  font-family: var(--sans);
+  font-size: 1.05rem;
+  color: var(--ink-soft);
+  max-width: 44rem;
+  margin: 0 auto 1.5rem;
+}
+.install-lede strong { color: var(--ink); }
+.install-cta-wrap { margin: 0 0 0.75rem; }
+.prose a.install-cta,
+a.install-cta {
+  display: inline-block;
+  padding: 0.85rem 1.6rem;
+  background: var(--terracotta);
+  color: var(--parchment);
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1rem;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.prose a.install-cta:hover,
+a.install-cta:hover { background: var(--terracotta-light); color: var(--parchment); }
+.install-specs {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+.install-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+.install-step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1.5rem;
+  align-items: flex-start;
+  padding: 1.75rem;
+  border: 1px solid var(--parchment-deep);
+  border-radius: 10px;
+  background: var(--surface-elevated);
+}
+.install-step-num {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  background: var(--terracotta);
+  color: var(--parchment);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--serif);
+  font-size: 1.4rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.install-step-body { min-width: 0; }
+.install-step-title {
+  font-family: var(--serif);
+  font-size: 1.6rem;
+  margin: 0.1rem 0 1rem;
+  color: var(--ink);
+}
+.install-step-body p {
+  font-family: var(--sans);
+  color: var(--ink-soft);
+  line-height: 1.65;
+  margin: 0 0 1rem;
+}
+.install-step-body code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--parchment-warm);
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  color: var(--ink);
+}
+
+/* Drag visual: app icon → Applications folder */
+.install-drag {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  margin: 1rem 0 0.5rem;
+  background: var(--parchment-warm);
+  border-radius: 8px;
+  border: 1px dashed var(--parchment-deep);
+}
+.install-drag-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+.install-drag-icon {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 0.85rem;
+  background: #1a1612;
+  color: var(--terracotta);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--serif);
+  font-size: 2.2rem;
+  font-weight: 500;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.install-drag-card--folder svg {
+  width: 3.5rem;
+  height: 3.5rem;
+  color: #3478f6;
+  fill: rgba(52, 120, 246, 0.18);
+}
+.install-drag-label {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.install-drag-arrow {
+  font-family: var(--sans);
+  font-size: 1.6rem;
+  color: var(--terracotta);
+  font-weight: 600;
+}
+
+/* Note boxes: warning + confirm */
+.install-note {
+  font-family: var(--sans);
+  font-size: 0.92rem;
+  padding: 0.9rem 1.1rem;
+  border-radius: 6px;
+  border-left: 3px solid;
+  margin: 0 0 1.25rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+.install-note strong { color: var(--ink); }
+.install-note--warn {
+  border-left-color: var(--gold);
+  background: rgba(196, 150, 58, 0.08);
+}
+.install-note--ok {
+  border-left-color: var(--terracotta);
+  background: rgba(184, 92, 56, 0.06);
+}
+
+/* Substep flow (unsigned-app 3-click walkthrough) */
+.install-substeps {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.install-substep {
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--parchment-deep);
+  border-radius: 8px;
+  background: var(--parchment);
+}
+.install-substep-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: var(--sans);
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 0.5rem;
+}
+.install-substep-num {
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  background: var(--parchment-warm);
+  border: 1px solid var(--parchment-deep);
+  color: var(--terracotta);
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  text-transform: lowercase;
+}
+.install-substep-hint {
+  font-family: var(--sans);
+  font-size: 0.92rem !important;
+  color: var(--ink-soft);
+  margin: 0.5rem 0 !important;
+  line-height: 1.6;
+}
+
+/* Dialog mock (macOS system dialog preview) */
+.install-dialog-mock {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--parchment-warm);
+  border: 1px solid var(--parchment-deep);
+  border-radius: 8px;
+  margin: 0.35rem 0 0.5rem;
+  flex-wrap: wrap;
+}
+.install-dialog-mock--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  max-width: 18rem;
+}
+.install-dialog-mock--stacked .install-btn-mock {
+  text-align: center;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.92rem;
+}
+.install-dialog-text {
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  color: var(--ink);
+  flex: 1;
+  min-width: 12rem;
+}
+.install-note--tight { margin-bottom: 0.75rem; padding: 0.7rem 0.95rem; font-size: 0.88rem; }
+.install-btn-mock--danger {
+  background: linear-gradient(180deg, #5b9dff 0%, #3478f6 100%);
+  border-color: #2964dc;
+  color: #fff;
+  font-weight: 600;
+}
+.install-btn-mock--highlight {
+  background: var(--parchment);
+  border-color: var(--terracotta);
+  color: var(--terracotta);
+  font-weight: 600;
+  box-shadow: 0 0 0 2px rgba(184, 92, 56, 0.15);
+}
+
+/* Screenshot figures for install steps */
+.install-shot {
+  margin: 0.75rem 0 0;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.10);
+  background: var(--parchment-warm);
+  max-width: 560px;
+}
+.install-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.install-shot--sm { max-width: 360px; }
+:root.dark-mode .install-shot { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); }
+
+/* Two-path branch layout (legacy — still used if needed) */
+.install-branch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1rem 0 0;
+}
+.install-path-box {
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--parchment-deep);
+  border-radius: 8px;
+  background: var(--parchment);
+}
+.install-path-label {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--terracotta);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.6rem;
+}
+.install-path-step {
+  font-family: var(--sans);
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  margin: 0.35rem 0 !important;
+}
+
+/* Keyboard + button mocks */
+.install-kbd {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  padding: 0.12rem 0.5rem;
+  background: var(--parchment-warm);
+  border: 1px solid var(--parchment-deep);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.install-plus {
+  font-family: var(--sans);
+  color: var(--ink-muted);
+  margin: 0 0.35rem;
+  font-weight: 600;
+}
+.install-btn-mock {
+  display: inline-block;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  padding: 0.25rem 0.75rem;
+  background: var(--parchment-warm);
+  border: 1px solid var(--parchment-deep);
+  border-radius: 5px;
+  color: var(--ink);
+  font-weight: 500;
+}
+.install-btn-mock--primary {
+  background: linear-gradient(180deg, #5b9dff 0%, #3478f6 100%);
+  border-color: #2964dc;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Breadcrumb for macOS menu paths */
+.install-breadcrumb {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.85rem;
+  background: var(--parchment-warm);
+  border: 1px solid var(--parchment-deep);
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  margin: 0.35rem 0 0.9rem;
+}
+.install-crumb { color: var(--ink); font-weight: 500; }
+.install-crumb-sep { color: var(--ink-muted); }
+.install-crumb--highlight {
+  color: var(--terracotta);
+  font-weight: 600;
+}
+.install-reassure {
+  font-style: italic;
+  color: var(--ink-muted) !important;
+  font-size: 0.88rem !important;
+}
+
+/* Unlock section */
+.install-unlock {
+  padding: 2rem 1.75rem;
+  border: 1px solid var(--parchment-deep);
+  border-radius: 10px;
+  background: var(--parchment);
+  margin-top: 2rem;
+}
+.install-unlock-title {
+  font-family: var(--serif);
+  font-size: 1.7rem;
+  margin: 0 0 1rem;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.install-unlock-tag {
+  font-family: var(--sans);
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+  padding: 0.2rem 0.55rem;
+  background: var(--parchment-warm);
+  border: 1px solid var(--parchment-deep);
+  border-radius: 999px;
+}
+.install-unlock-sub {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-muted);
+  margin: 1.75rem 0 0.75rem;
+  font-weight: 600;
+}
+
+.install-request-paths {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 0 0 1.25rem;
+}
+.install-request-card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--parchment-deep);
+  border-radius: 8px;
+  background: var(--surface-elevated);
+}
+.install-request-icon {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  background: var(--parchment-warm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.install-request-label {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+  margin-bottom: 0.15rem;
+}
+.install-request-card a {
+  font-family: var(--sans);
+  color: var(--terracotta);
+  font-weight: 500;
+  text-decoration: none;
+}
+.install-request-card a:hover { text-decoration: underline; }
+.install-questions {
+  font-family: var(--sans);
+  font-size: 0.88rem !important;
+  color: var(--ink-muted) !important;
+  margin-top: 1.5rem !important;
+  text-align: center;
+}
+
+/* Dark mode tweaks */
+:root.dark-mode .install-btn-mock--primary {
+  background: linear-gradient(180deg, #5b9dff 0%, #3478f6 100%);
+  color: #fff;
+}
+:root.dark-mode .install-drag {
+  background: var(--parchment-deep);
+}
+
+/* Mobile */
+@media (max-width: 700px) {
+  .install-step {
+    grid-template-columns: 1fr;
+    padding: 1.5rem 1.25rem;
+    gap: 0.9rem;
+  }
+  .install-step-num { margin-bottom: 0; }
+  .install-branch { grid-template-columns: 1fr; }
+  .install-request-paths { grid-template-columns: 1fr; }
+  .install-drag { flex-wrap: wrap; gap: 1rem; padding: 1.25rem; }
+  .install-drag-arrow { transform: rotate(90deg); }
+}

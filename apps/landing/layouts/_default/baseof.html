@@ -8,7 +8,7 @@
     (function() {
       const stored = localStorage.getItem('theme');
       const html = document.documentElement;
-      
+
       if (stored === 'light' || stored === 'dark') {
         html.classList.add(stored + '-mode');
         html.classList.remove(stored === 'light' ? 'dark-mode' : 'light-mode');
@@ -16,7 +16,7 @@
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         html.classList.add(prefersDark ? 'dark-mode' : 'light-mode');
         html.classList.remove(prefersDark ? 'light-mode' : 'dark-mode');
-        
+
         if (!stored) {
           localStorage.setItem('theme', 'system');
         }
@@ -83,35 +83,35 @@
     function updateDropdownIcon(theme) {
       const triggerIcon = document.querySelector('.current-theme-icon');
       if (!triggerIcon) return;
-      
+
       const icons = {
         light: '<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>',
         dark: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
         system: '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'
       };
-      
+
       triggerIcon.innerHTML = icons[theme] || icons.system;
     }
 
     function setTheme(theme) {
       localStorage.setItem('theme', theme);
-      
+
       let effectiveTheme = theme;
       if (theme === 'system') {
         effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       }
-      
+
       html.classList.remove('light-mode', 'dark-mode');
       html.classList.add(effectiveTheme + '-mode');
-      
+
       themeButtons.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.theme === theme);
       });
-      
+
       themeDropdownItems.forEach(item => {
         item.classList.toggle('active', item.dataset.theme === theme);
       });
-      
+
       updateDropdownIcon(theme);
     }
 
@@ -217,7 +217,7 @@
         lines: [
           { type: 'user', text: 'What was I debugging yesterday around 3pm?' },
           { type: 'out',  text: '' },
-          { type: 'tool', text: 'escribano search "error" --since 26h' },
+          { type: 'tool', text: 'escribano-query search "error" --since 26h' },
           { type: 'ok',   text: '4 observations found' },
           { type: 'out',  text: '' },
           { type: 'out',  text: '14:32  VS Code    middleware/auth.ts — 401 refresh' },
@@ -231,7 +231,7 @@
         loop: true,
         lines: [
           { type: 'user', text: 'What did I work on yesterday around 3pm?' },
-          { type: 'tool', text: 'escribano recent --since 26h --json' },
+          { type: 'tool', text: 'escribano-query recent --since 26h --json' },
           { type: 'ok',   text: '3 activity clusters found' },
           { type: 'out',  text: '' },
           { type: 'out',  text: '14:32  VS Code       Debugging JWT refresh bug' },
@@ -244,7 +244,7 @@
       'forensic': {
         loop: true,
         lines: [
-          { type: 'cmd',  text: 'escribano search "ECONNREFUSED" --since 7d' },
+          { type: 'cmd',  text: 'escribano-query search "ECONNREFUSED" --since 7d' },
           { type: 'out',  text: '' },
           { type: 'json', text: '{' },
           { type: 'json', text: '  "timestamp": "Tue 14:02",' },
@@ -256,7 +256,7 @@
       'pipeline': {
         loop: true,
         lines: [
-          { type: 'cmd',  text: 'escribano entities --kind framework --since 24h \\' },
+          { type: 'cmd',  text: 'escribano-query entities --kind framework --since 24h \\' },
           { type: 'cmd',  text: '  | jq -r \'.entities[].value\' | sort -u' },
           { type: 'out',  text: '' },
           { type: 'out',  text: 'drizzle' },

@@ -130,6 +130,31 @@ layout: "single"
 
 </ol>
 
+<section class="install-query">
+
+<h2 class="install-query-title">Query your work</h2>
+
+<p>Escribano captures your screen in the background. Now query that history from the command line.</p>
+
+<div class="install-query-examples">
+  <div class="install-query-example">
+    <code>escribano-query today --json</code>
+    <span>See what you did today</span>
+  </div>
+  <div class="install-query-example">
+    <code>escribano-query search "debugging" --since 1d</code>
+    <span>Find something specific</span>
+  </div>
+  <div class="install-query-example">
+    <code>escribano-query entities --kind software_tool</code>
+    <span>See what tools you used</span>
+  </div>
+</div>
+
+<p class="install-query-more">Read the <a href="https://docs.escribano.work" target="_blank" rel="noopener">full documentation</a> for more recipes and the complete CLI reference.</p>
+
+</section>
+
 <section class="install-unlock">
 
 <h2 class="install-unlock-title">Unlock full history <span class="install-unlock-tag">Optional</span></h2>

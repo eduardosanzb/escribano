@@ -7,6 +7,10 @@ what you're doing, and generates standups, session cards, or narrative summaries
 > **Download**: [GitHub Releases](https://github.com/eduardosanzb/escribano/releases/latest) — macOS Apple Silicon (M1+), 16 GB RAM minimum
 > **Platform**: macOS only · Everything runs locally · No cloud, no API keys
 
+> [!NOTE]
+> This repo contains the open-source typescript implementation; only the engine that transforms the audio/video into artifacts.
+> The Swift app code is not open-sourced atm; but the core is similar to this one.
+
 ---
 
 ## What you get back

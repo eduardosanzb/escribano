@@ -227,6 +227,18 @@
           { type: 'ai',   text: 'Yesterday at 14:32 you were debugging a JWT refresh bug in middleware/auth.ts. The fix landed at 14:47.' },
         ],
       },
+      'hero-query-mobile': {
+        loop: true,
+        lines: [
+          { type: 'user', text: 'What was I debugging yesterday?' },
+          { type: 'out',  text: '' },
+          { type: 'tool', text: 'escribano-query search "error"' },
+          { type: 'ok',   text: '4 observations found' },
+          { type: 'out',  text: '' },
+          { type: 'out',  text: '14:32  VS Code    auth.ts — 401 refresh' },
+          { type: 'ai',   text: 'You were debugging a JWT refresh bug. Fix landed at 14:47.' },
+        ],
+      },
       'agent-memory': {
         loop: true,
         lines: [
@@ -355,7 +367,9 @@
 
     async function startScene(term, states) {
       const key = term.dataset.scene;
-      const scene = SCENES[key];
+      const mobileKey = key + '-mobile';
+      const effectiveKey = (window.innerWidth <= 768 && SCENES[mobileKey]) ? mobileKey : key;
+      const scene = SCENES[effectiveKey];
       if (!scene) return;
       const screen = term.querySelector('[data-screen]');
       if (!screen) return;

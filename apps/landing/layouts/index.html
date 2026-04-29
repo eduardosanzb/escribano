@@ -210,6 +210,35 @@
   </div>
 </section>
 
+<section class="quick-start" id="quick-start">
+  <div class="quick-start-inner">
+    <div class="section-label">Quick start</div>
+    <h2>See exactly what you get.</h2>
+    
+    <div class="quick-start-example">
+      <div class="quick-start-command">
+        <span class="quick-start-prompt">$</span> escribano-query today --json
+      </div>
+      <pre class="quick-start-output"><code>{
+  "ok": true,
+  "api_version": 2,
+  "data": {
+    "moments": [
+      {
+        "bucket_start_iso": "2026-04-27T09:00:00Z",
+        "observation_count": 12,
+        "representative": {
+          "vlm_description": "Debugging JWT refresh flow in VS Code...",
+          "applications": ["VS Code", "Terminal"]
+        }
+      }
+    ]
+  }
+}</code></pre>
+    </div>
+  </div>
+</section>
+
 <section class="open-source-section" id="product">
   <div class="open-source">
     <div class="section-label">The product</div>
@@ -254,7 +283,7 @@
       <div class="persona-card fade-up">
         <div class="persona-role">Agent · Assistant</div>
         <h3>Give your coding agent a memory.</h3>
-        <p>Claude Code, Cursor, Aider — they forget the moment the session ends. Point them at Escribano's CLI and they can cite the exact moment a bug appeared, the tool you opened, the file you edited.</p>
+        <p>Give your coding agent a persistent memory of what you worked on.</p>
         <div class="use-term" data-scene="agent-memory" data-scene-order="0" aria-hidden="true">
           <div class="use-term-header">
             <span class="use-term-dot"></span>
@@ -269,7 +298,7 @@
       <div class="persona-card fade-up" style="transition-delay: 0.1s">
         <div class="persona-role">Developer · Engineer</div>
         <h3>Forensic recall, on demand.</h3>
-        <p>"What was that library I tried on Tuesday?" "When did the error first show up?" Query your own work like a database, instead of scrolling through browser history.</p>
+        <p>Query your own work like a database — no more scrolling through browser history.</p>
         <div class="use-term" data-scene="forensic" data-scene-order="1" aria-hidden="true">
           <div class="use-term-header">
             <span class="use-term-dot"></span>
@@ -284,7 +313,7 @@
       <div class="persona-card fade-up" style="transition-delay: 0.2s">
         <div class="persona-role">Agent builder · Researcher</div>
         <h3>Wire it into your own stack.</h3>
-        <p>Stable JSON, versioned API, local SQLite. Build the agent surface you actually want — an MCP server, a shell alias, a scheduled digest — on top of a substrate you own.</p>
+        <p>Build custom integrations on a stable JSON API and local SQLite.</p>
         <div class="use-term" data-scene="pipeline" data-scene-order="2" aria-hidden="true">
           <div class="use-term-header">
             <span class="use-term-dot"></span>

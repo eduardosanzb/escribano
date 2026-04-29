@@ -317,6 +317,48 @@ nav {
 
 .nav-cta:hover { background: var(--terracotta) !important; color: var(--cream) !important; }
 
+/* ── Mobile hamburger ── */
+.nav-menu-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  z-index: 101;
+}
+
+.nav-menu-toggle span {
+  display: block;
+  width: 1.5rem;
+  height: 2px;
+  background: var(--ink);
+  border-radius: 1px;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.nav-menu-toggle[aria-expanded="true"] span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.nav-menu-toggle[aria-expanded="true"] span:nth-child(2) {
+  opacity: 0;
+}
+
+.nav-menu-toggle[aria-expanded="true"] span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* ── Mobile menu panel ── */
+.nav-links {
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
 .hero {
   min-height: 100vh;
   display: grid;
@@ -946,13 +988,60 @@ footer {
 
 @media (max-width: 768px) {
   nav { padding: 1.1rem 1.5rem; }
-  .nav-links li:not(:last-child) { display: none; }
-  .nav-links li:has(.theme-dropdown),
-  .nav-links li:has(.theme-toggle-group) { display: block; }
-  .nav-links a.nav-cta { display: none !important; }
+  .nav-menu-toggle { display: flex; }
+  .nav-links {
+    position: fixed;
+    top: calc(1.1rem + 2.2rem + 1.1rem + 5px);
+    left: 1.5rem;
+    right: 1.5rem;
+    background: rgba(250, 247, 242, 0.97);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--parchment-deep);
+    border-radius: 8px;
+    padding: 1.5rem;
+    flex-direction: column;
+    gap: 0;
+    align-items: stretch;
+    opacity: 0;
+    transform: translateY(-8px);
+    pointer-events: none;
+    z-index: 99;
+  }
+  .nav-links.open {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .nav-links li {
+    display: block !important;
+    border-bottom: 1px solid var(--parchment-deep);
+  }
+  .nav-links li:last-child {
+    border-bottom: none;
+  }
+  .nav-links li:has(.theme-dropdown) {
+    border-bottom: none;
+    margin-top: 0.5rem;
+  }
+  .nav-links a {
+    display: block;
+    padding: 0.85rem 0;
+    font-size: 0.85rem;
+  }
+  .nav-links a.nav-cta {
+    display: block !important;
+    margin-top: 0.5rem;
+    text-align: center;
+  }
+  .nav-links li.nav-github a {
+    padding: 0.85rem 0;
+  }
+  .nav-links li.nav-github svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
   .desktop-only { display: none; }
   .mobile-only { display: block; }
-  .nav-links { gap: 1rem; }
   .hero {
     grid-template-columns: 1fr;
     min-height: auto;

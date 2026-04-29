@@ -2602,10 +2602,11 @@ footer {
   .hero-left .eyebrow    { order: 6; margin-top: 2rem; opacity: 0.7; }
 
   .use-term--hero { max-width: 100%; }
-  .use-term--hero .use-term-body { min-height: 180px; font-size: 0.7rem; }
-  .use-term--hero .use-term-header { padding: 0.55rem 0.8rem; }
-  .use-term-footnote { flex-wrap: wrap; row-gap: 0.25rem; padding: 0.6rem 0.9rem; font-size: 0.65rem; }
+  .use-term--hero .use-term-body { min-height: 240px; font-size: 0.76rem; }
+  .use-term--hero .use-term-header { padding: 0.6rem 1rem; }
+  .use-term-footnote { flex-wrap: wrap; row-gap: 0.25rem; padding: 0.65rem 1rem; font-size: 0.68rem; }
   .use-term-footnote .footnote-opt { margin-left: 0; }
+  .persona-card .use-term { display: none; }
 }
 
 /* ──────────────────────────────────────────────

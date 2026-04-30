@@ -71,62 +71,10 @@ const Pulse: React.FC<{left: number; top: number; delay: number; frame: number}>
   );
 };
 
-const WordReveal: React.FC<{
-  text: string;
-  frame: number;
-  baseDelay: number;
-  wordsPerDelay?: number;
-}> = ({text, frame, baseDelay, wordsPerDelay = 1}) => {
-  const words = text.split(' ');
-  return (
-    <>
-      {words.map((word, i) => {
-        const delay = baseDelay + i * 6 * wordsPerDelay;
-        return (
-          <span
-            key={i}
-            style={{
-              opacity: enterExit(frame, delay, delay + 20, 120, 150),
-              display: 'inline-block',
-              marginRight: '0.3em',
-            }}
-          >
-            {word}
-          </span>
-        );
-      })}
-    </>
-  );
-};
-
-const LineReveal: React.FC<{
-  lines: string[];
-  frame: number;
-  baseDelay: number;
-}> = ({lines, frame, baseDelay}) => {
-  return (
-    <>
-      {lines.map((line, i) => {
-        const delay = baseDelay + i * 8;
-        return (
-          <div
-            key={i}
-            style={{
-              opacity: enterExit(frame, delay, delay + 20, 120, 150),
-            }}
-          >
-            {line}
-          </div>
-        );
-      })}
-    </>
-  );
-};
-
 export const CaptureScene: React.FC<{startFrame: number}> = ({startFrame}) => {
   const frame = useCurrentFrame();
   const relativeFrame = frame - startFrame;
-  const opacity = enterExit(relativeFrame, 0, 25, 120, 150);
+  const opacity = enterExit(relativeFrame, 0, 25, 150, 190);
 
   // Dramatic screenshot entrance: frames 0-40
   const entranceProgress = Math.min(Math.max(relativeFrame / 40, 0), 1);
@@ -143,9 +91,10 @@ export const CaptureScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           left: 126,
           top: 262,
           width: 520,
+          willChange: 'transform, opacity',
         }}
       >
-        <div style={{opacity: enterExit(relativeFrame, 5, 30, 120, 150)}}>
+        <div style={{opacity: enterExit(relativeFrame, 5, 30, 150, 190)}}>
           <Label>Capture</Label>
         </div>
         <div
@@ -155,9 +104,10 @@ export const CaptureScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             fontSize: 74,
             lineHeight: 0.96,
             fontWeight: 400,
+            opacity: enterExit(relativeFrame, 5, 30, 150, 190),
           }}
         >
-          <WordReveal text="Capture, quietly" frame={relativeFrame} baseDelay={10} />
+          Capture, quietly
         </div>
         <div
           style={{
@@ -166,16 +116,10 @@ export const CaptureScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             fontSize: 32,
             lineHeight: 1.36,
             color: colors.inkSoft,
+            opacity: enterExit(relativeFrame, 15, 40, 150, 190),
           }}
         >
-          <LineReveal
-            lines={[
-              'A small menu-bar app watches your screen in the background.',
-              'Repeats are skipped, nothing is uploaded, and you can pause it whenever you want.',
-            ]}
-            frame={relativeFrame}
-            baseDelay={22}
-          />
+          Watches your screen in the background. Nothing is uploaded. Pause anytime.
         </div>
         <div
           style={{
@@ -183,7 +127,7 @@ export const CaptureScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             width: 290,
             height: 2,
             background: colors.amber,
-            opacity: 0.7 * enterExit(relativeFrame, 38, 58, 120, 150),
+            opacity: 0.7 * enterExit(relativeFrame, 38, 58, 150, 190),
           }}
         />
       </div>
@@ -199,8 +143,9 @@ export const CaptureScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           borderRadius: 28,
           background: '#050506',
           boxShadow: '0 34px 120px rgba(0,0,0,0.5)',
-          transform: `translateY(${screenshotTranslateY}px) scale(${screenshotScale * continuousZoom(relativeFrame, 1, 1.045, 150)})`,
+          transform: `translate3d(0, ${screenshotTranslateY}px, 0) scale(${screenshotScale * continuousZoom(relativeFrame, 1, 1.045, 150)})`,
           transformOrigin: 'center center',
+          willChange: 'transform, opacity',
         }}
       >
         <Img

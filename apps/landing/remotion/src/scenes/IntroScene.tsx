@@ -2,7 +2,7 @@ import React from 'react';
 import {useCurrentFrame} from 'remotion';
 import {Terminal} from '../Terminal';
 import {SCENES} from '../scenes';
-import {enterExit, float, soft} from '../motion';
+import {enterExit, float} from '../motion';
 
 const colors = {
   ink: '#E8E9EE',
@@ -36,37 +36,16 @@ const Label: React.FC<{children: React.ReactNode}> = ({children}) => (
   </div>
 );
 
-interface WordRevealProps {
-  text: string;
-  frame: number;
-  startFrame: number;
-  delayPerWord: number;
-}
-
-const WordReveal: React.FC<WordRevealProps> = ({text, frame, startFrame, delayPerWord}) => {
-  const words = text.split(' ');
-  return (
-    <>
-      {words.map((word, i) => {
-        const p = soft((frame - startFrame - i * delayPerWord) / 15);
-        return (
-          <span key={i} style={{opacity: p}}>
-            {word}{i < words.length - 1 ? ' ' : ''}
-          </span>
-        );
-      })}
-    </>
-  );
-};
-
 const Brand: React.FC<{progress: number; relativeFrame: number}> = ({progress, relativeFrame}) => {
-  const exitProgress = enterExit(relativeFrame, 90, 120, 90, 120);
+  const exitProgress = enterExit(relativeFrame, 140, 180, 140, 180);
   const scale = 0.95 + 0.05 * exitProgress;
+  const taglineProgress = enterExit(relativeFrame, 40, 70, 140, 180);
   return (
     <div
       style={{
         opacity: progress,
-        transform: `translateY(${(1 - progress) * 18}px) scale(${scale})`,
+        willChange: 'transform, opacity',
+        transform: `translate3d(0, ${(1 - progress) * 18}px, 0) scale(${scale})`,
       }}
     >
       <div
@@ -87,14 +66,11 @@ const Brand: React.FC<{progress: number; relativeFrame: number}> = ({progress, r
           fontSize: 40,
           color: colors.inkSoft,
           letterSpacing: 0,
+          opacity: taglineProgress,
+          willChange: 'opacity',
         }}
       >
-        <WordReveal
-          text="Your work, queryable by any agent."
-          frame={relativeFrame}
-          startFrame={40}
-          delayPerWord={8}
-        />
+        Your work, queryable by any agent.
       </div>
     </div>
   );
@@ -104,10 +80,10 @@ export const IntroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
   const frame = useCurrentFrame();
   const relativeFrame = frame - startFrame;
 
-  const terminalProgress = enterExit(relativeFrame, 0, 30, 90, 120);
-  const brandProgress = enterExit(relativeFrame, 10, 40, 90, 120);
+  const terminalProgress = enterExit(relativeFrame, 0, 30, 140, 180);
+  const brandProgress = enterExit(relativeFrame, 10, 40, 140, 180);
 
-  const exitProgress = enterExit(relativeFrame, 90, 120, 90, 120);
+  const exitProgress = enterExit(relativeFrame, 140, 180, 140, 180);
   const terminalScale = 0.95 + 0.05 * exitProgress;
 
   return (
@@ -119,7 +95,8 @@ export const IntroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           top: 220,
           width: 580,
           opacity: terminalProgress,
-          transform: `translateY(${float(relativeFrame, 90, 12)}px) translateX(${(1 - terminalProgress) * -30}px) scale(${terminalScale})`,
+          willChange: 'transform, opacity',
+          transform: `translate3d(${(1 - terminalProgress) * -30}px, ${float(relativeFrame, 90, 12)}px, 0) scale(${terminalScale})`,
         }}
       >
         <Terminal width={580} startFrame={startFrame} scene={SCENES['hero-query']} />
@@ -130,7 +107,8 @@ export const IntroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           left: 126,
           top: 316,
           opacity: brandProgress,
-          transform: `translateX(${(1 - brandProgress) * -30}px)`,
+          willChange: 'transform, opacity',
+          transform: `translate3d(${(1 - brandProgress) * -30}px, 0, 0)`,
         }}
       >
         <Label>Local evidence layer</Label>

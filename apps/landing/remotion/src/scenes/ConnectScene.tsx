@@ -1,5 +1,5 @@
 import React from 'react';
-import {staticFile, Img, useCurrentFrame, interpolate} from 'remotion';
+import {staticFile, Img, useCurrentFrame, interpolate, Easing} from 'remotion';
 import {enterExit, float} from '../motion';
 
 const colors = {
@@ -19,6 +19,11 @@ const colors = {
 const serif = "'Cormorant Garamond', Georgia, serif";
 const body = "'Spectral', Georgia, serif";
 const sans = "'DM Sans', system-ui, sans-serif";
+
+const bounce = (t: number) => {
+	const c = 1.70158;
+	return t * t * ((c + 1) * t - c);
+};
 
 const Label: React.FC<{children: React.ReactNode; style?: React.CSSProperties}> = ({
 	children,
@@ -48,10 +53,10 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 	const titleOpacity = enterExit(relativeFrame, 10, 35, 120, 150);
 	const bodyOpacity = enterExit(relativeFrame, 15, 40, 120, 150);
 
-	const underlineWidth = interpolate(
+	const connectionHeight = interpolate(
 		relativeFrame,
-		[40, 70],
-		[0, 290],
+		[50, 90],
+		[0, 120],
 		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
 	);
 
@@ -62,7 +67,30 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
 	);
 
+	const screenshotRotate = interpolate(
+		relativeFrame,
+		[0, 40],
+		[-2, 0],
+		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+	);
+
 	const screenshotY = 178 + float(relativeFrame, 140, 5);
+
+	const badgeScaleRaw = interpolate(
+		relativeFrame,
+		[40, 70],
+		[0, 1.15],
+		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+	);
+	const badgeScale2 = interpolate(
+		relativeFrame,
+		[55, 70],
+		[1.15, 1.0],
+		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+	);
+	const badgeScale = relativeFrame < 55 ? bounce(badgeScaleRaw / 1.15) * 1.15 : badgeScale2;
+
+	const scanLineY = ((relativeFrame * 30) % 180) - 10;
 
 	return (
 		<div style={{opacity: visibility}}>
@@ -76,7 +104,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 				}}
 			>
 				<div style={{opacity: textOpacity}}>
-					<Label>Connect</Label>
+					<Label>Understand</Label>
 				</div>
 				<div
 					style={{
@@ -88,7 +116,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						opacity: titleOpacity,
 					}}
 				>
-					Agents learn where to ask.
+					Understand, on-device
 				</div>
 				<div
 					style={{
@@ -100,19 +128,22 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						opacity: bodyOpacity,
 					}}
 				>
-					Claude Code, Cursor, Codex, Gemini, OpenCode. One local skill,
-					installed into the tools already in use.
+					Each moment is turned into a short, plain-language description of what you were doing — the tools, the files, the context. All of it stays on your machine.
 				</div>
-				<div
-					style={{
-						marginTop: 46,
-						width: underlineWidth,
-						height: 2,
-						background: colors.amber,
-						opacity: 0.7,
-					}}
-				/>
 			</div>
+
+			{/* Vertical connection line to the right of text block */}
+			<div
+				style={{
+					position: 'absolute',
+					left: 676,
+					top: 310,
+					width: 2,
+					height: connectionHeight,
+					background: colors.amber,
+					opacity: 0.7,
+				}}
+			/>
 
 			{/* Screenshot at right */}
 			<div
@@ -126,11 +157,23 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					background: '#050506',
 					boxShadow: '0 34px 120px rgba(0,0,0,0.5)',
 					border: '1px solid rgba(255,255,255,0.08)',
+					transform: `rotate(${screenshotRotate}deg)`,
 				}}
 			>
 				<Img
 					src={staticFile('assets/agents.png')}
 					style={{display: 'block', width: '100%'}}
+				/>
+				{/* scan line effect */}
+				<div
+					style={{
+						position: 'absolute',
+						left: 0,
+						right: 0,
+						height: 1,
+						background: 'rgba(255,255,255,0.1)',
+						transform: `translateY(${scanLineY}px)`,
+					}}
 				/>
 			</div>
 
@@ -151,6 +194,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					fontSize: 12,
 					fontWeight: 500,
 					color: '#fff',
+					transform: `scale(${badgeScale})`,
 				}}
 			>
 				C
@@ -171,6 +215,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					fontSize: 12,
 					fontWeight: 500,
 					color: '#fff',
+					transform: `scale(${badgeScale})`,
 				}}
 			>
 				G
@@ -191,6 +236,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					fontSize: 12,
 					fontWeight: 500,
 					color: '#fff',
+					transform: `scale(${badgeScale})`,
 				}}
 			>
 				O
@@ -211,6 +257,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					fontSize: 12,
 					fontWeight: 500,
 					color: '#fff',
+					transform: `scale(${badgeScale})`,
 				}}
 			>
 				X

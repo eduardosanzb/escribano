@@ -43,22 +43,21 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
   const frame = useCurrentFrame();
   const relativeFrame = frame - startFrame;
 
-  const overallOpacity = enterExit(relativeFrame, 0, 25, 120, 150);
+  const overallOpacity = enterExit(relativeFrame, 0, 25, 150, 190);
 
-  const textProgress = soft((relativeFrame - 10) / 20);
-  const titleProgress = soft((relativeFrame - 20) / 20);
-  const bodyProgress = soft((relativeFrame - 30) / 20);
+  const eyebrowOpacity = enterExit(relativeFrame, 5, 25, 150, 190);
+  const titleOpacity = enterExit(relativeFrame, 10, 35, 150, 190);
+  const bodyOpacity = enterExit(relativeFrame, 20, 45, 150, 190);
 
-  const cardOpacity = enterExit(relativeFrame, 40, 70, 120, 150);
+  const cardOpacity = enterExit(relativeFrame, 50, 80, 150, 190);
 
   const line1 = 'sources: 9 moments';
   const line2 = 'confidence: local evidence';
   const line3 = 'artifact: answer.md';
 
-  // Staggered reveal: each line slides up from translateY(10px) while fading in
-  // 12-frame stagger between lines
-  const line1Reveal = soft((relativeFrame - 50) / 20);
-  const line2Reveal = soft((relativeFrame - 62) / 20);
+  // Staggered reveal with single soft() pattern, +8 frames each
+  const line1Reveal = soft((relativeFrame - 58) / 20);
+  const line2Reveal = soft((relativeFrame - 66) / 20);
   const line3Reveal = soft((relativeFrame - 74) / 20);
 
   // Pulsing amber glow on artifact line
@@ -78,7 +77,7 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
   const floatY = float(relativeFrame, 160, 6);
 
   return (
-    <div style={{opacity: overallOpacity}}>
+    <div style={{opacity: overallOpacity, willChange: 'transform, opacity'}}>
       {/* Text block at left */}
       <div
         style={{
@@ -88,7 +87,7 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           width: 520,
         }}
       >
-        <div style={{opacity: textProgress, transform: `translateY(${(1 - textProgress) * 12}px)`}}>
+        <div style={{opacity: eyebrowOpacity, transform: `translateY(${(1 - eyebrowOpacity) * 12}px)`, willChange: 'transform, opacity'}}>
           <Label>Answer</Label>
         </div>
         <div
@@ -98,8 +97,9 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             fontSize: 74,
             lineHeight: 0.96,
             fontWeight: 400,
-            opacity: titleProgress,
-            transform: `translateY(${(1 - titleProgress) * 12}px)`,
+            opacity: titleOpacity,
+            transform: `translateY(${(1 - titleOpacity) * 12}px)`,
+            willChange: 'transform, opacity',
           }}
         >
           Ready to cite.
@@ -111,11 +111,12 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             fontSize: 32,
             lineHeight: 1.36,
             color: colors.inkSoft,
-            opacity: bodyProgress,
-            transform: `translateY(${(1 - bodyProgress) * 12}px)`,
+            opacity: bodyOpacity,
+            transform: `translateY(${(1 - bodyOpacity) * 12}px)`,
+            willChange: 'transform, opacity',
           }}
         >
-          Moments, timestamps, entities, and source context come back clean enough for an agent to use.
+          Timestamps, entities, and source context — clean enough for any agent to use.
         </div>
       </div>
 
@@ -163,6 +164,7 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           fontFamily: mono,
           fontSize: 24,
           lineHeight: 1.65,
+          willChange: 'transform, opacity',
         }}
       >
         <div
@@ -170,6 +172,7 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             color: colors.olive,
             opacity: line1Reveal,
             transform: `translateY(${(1 - line1Reveal) * 10}px)`,
+            willChange: 'transform, opacity',
           }}
         >
           {line1}
@@ -182,6 +185,7 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             display: 'flex',
             alignItems: 'center',
             gap: 12,
+            willChange: 'transform, opacity',
           }}
         >
           <span>{line2}</span>
@@ -211,6 +215,7 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             opacity: line3Reveal,
             transform: `translateY(${(1 - line3Reveal) * 10}px)`,
             textShadow: `0 0 20px rgba(232,168,56,${glowIntensity})`,
+            willChange: 'transform, opacity',
           }}
         >
           {line3}

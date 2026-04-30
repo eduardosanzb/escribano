@@ -85,11 +85,11 @@ const getSuggestion = (typedChars: number): string | null => {
 export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 	const frame = useCurrentFrame();
 	const relativeFrame = frame - startFrame;
-	const visibility = enterExit(relativeFrame, 0, 25, 120, 150);
+	const visibility = enterExit(relativeFrame, 0, 25, 150, 190);
 
-	const textOpacity = enterExit(relativeFrame, 5, 30, 120, 150);
-	const titleOpacity = enterExit(relativeFrame, 10, 35, 120, 150);
-	const bodyOpacity = enterExit(relativeFrame, 15, 40, 120, 150);
+	const textOpacity = enterExit(relativeFrame, 5, 25, 150, 190);
+	const titleOpacity = enterExit(relativeFrame, 10, 35, 150, 190);
+	const bodyOpacity = enterExit(relativeFrame, 20, 45, 150, 190);
 
 	const cmd = 'escribano-query recent --since 5m';
 	const typedChars = getCharsAtFrame(relativeFrame);
@@ -111,7 +111,7 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 	const suggestionOpacity = suggestion ? 0.25 : 0;
 
 	return (
-		<div style={{opacity: visibility}}>
+		<div style={{opacity: visibility, willChange: 'transform, opacity'}}>
 			{/* Text block at left */}
 			<div
 				style={{
@@ -121,7 +121,7 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					width: 520,
 				}}
 			>
-				<div style={{opacity: textOpacity}}>
+				<div style={{opacity: textOpacity, willChange: 'opacity'}}>
 					<Label>Query</Label>
 				</div>
 				<div
@@ -132,6 +132,7 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						lineHeight: 0.96,
 						fontWeight: 400,
 						opacity: titleOpacity,
+						willChange: 'opacity',
 					}}
 				>
 					Query, on your terms
@@ -144,11 +145,10 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						lineHeight: 1.36,
 						color: colors.inkSoft,
 						opacity: bodyOpacity,
+						willChange: 'opacity',
 					}}
 				>
-					Ask your agent — or the command line directly — what you were
-					working on. Escribano returns the evidence, cleanly structured,
-					ready to cite.
+					Ask your agent or the CLI what you worked on. Evidence comes back structured and ready to cite.
 				</div>
 				<div
 					style={{
@@ -157,6 +157,7 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						height: 2,
 						background: colors.amber,
 						opacity: 0.7 * enterExit(relativeFrame, 20, 45, 120, 150),
+						willChange: 'opacity',
 					}}
 				/>
 			</div>
@@ -173,7 +174,8 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					background: '#050506',
 					boxShadow: '0 34px 120px rgba(0,0,0,0.5)',
 					border: '1px solid rgba(255,255,255,0.08)',
-					transform: `translateX(${screenshotTranslate}px) rotate(${screenshotRotate}deg)`,
+					transform: `translate3d(${screenshotTranslate}px, 0, 0) rotate(${screenshotRotate}deg)`,
+					willChange: 'transform',
 				}}
 			>
 				<Img

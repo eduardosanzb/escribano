@@ -2,7 +2,7 @@ import React from 'react';
 import {useCurrentFrame} from 'remotion';
 import {Terminal} from '../Terminal';
 import {SCENES} from '../scenes';
-import {enterExit, float} from '../motion';
+import {enterExit, float, soft} from '../motion';
 
 const colors = {
   ink: '#E8E9EE',
@@ -36,36 +36,69 @@ const Label: React.FC<{children: React.ReactNode}> = ({children}) => (
   </div>
 );
 
-const Brand: React.FC<{progress: number}> = ({progress}) => (
-  <div
-    style={{
-      opacity: progress,
-      transform: `translateY(${(1 - progress) * 18}px)`,
-    }}
-  >
+interface WordRevealProps {
+  text: string;
+  frame: number;
+  startFrame: number;
+  delayPerWord: number;
+}
+
+const WordReveal: React.FC<WordRevealProps> = ({text, frame, startFrame, delayPerWord}) => {
+  const words = text.split(' ');
+  return (
+    <>
+      {words.map((word, i) => {
+        const p = soft((frame - startFrame - i * delayPerWord) / 15);
+        return (
+          <span key={i} style={{opacity: p}}>
+            {word}{i < words.length - 1 ? ' ' : ''}
+          </span>
+        );
+      })}
+    </>
+  );
+};
+
+const Brand: React.FC<{progress: number; relativeFrame: number}> = ({progress, relativeFrame}) => {
+  const exitProgress = enterExit(relativeFrame, 90, 120, 90, 120);
+  const scale = 0.95 + 0.05 * exitProgress;
+  return (
     <div
       style={{
-        fontFamily: serif,
-        fontSize: 132,
-        lineHeight: 0.9,
-        fontWeight: 500,
+        opacity: progress,
+        transform: `translateY(${(1 - progress) * 18}px) scale(${scale})`,
       }}
     >
-      Escrib<span style={{color: colors.amber}}>ano</span>
+      <div
+        style={{
+          fontFamily: serif,
+          fontSize: 132,
+          lineHeight: 0.9,
+          fontWeight: 500,
+          textShadow: '0 0 40px rgba(232,168,56,0.15)',
+        }}
+      >
+        Escrib<span style={{color: colors.amber}}>ano</span>
+      </div>
+      <div
+        style={{
+          marginTop: 28,
+          fontFamily: body,
+          fontSize: 40,
+          color: colors.inkSoft,
+          letterSpacing: 0,
+        }}
+      >
+        <WordReveal
+          text="Your work, queryable by any agent."
+          frame={relativeFrame}
+          startFrame={40}
+          delayPerWord={8}
+        />
+      </div>
     </div>
-    <div
-      style={{
-        marginTop: 28,
-        fontFamily: body,
-        fontSize: 40,
-        color: colors.inkSoft,
-        letterSpacing: 0,
-      }}
-    >
-      Private memory for agentic work.
-    </div>
-  </div>
-);
+  );
+};
 
 export const IntroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
   const frame = useCurrentFrame();
@@ -73,6 +106,9 @@ export const IntroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 
   const terminalProgress = enterExit(relativeFrame, 0, 30, 90, 120);
   const brandProgress = enterExit(relativeFrame, 10, 40, 90, 120);
+
+  const exitProgress = enterExit(relativeFrame, 90, 120, 90, 120);
+  const terminalScale = 0.95 + 0.05 * exitProgress;
 
   return (
     <>
@@ -83,7 +119,7 @@ export const IntroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           top: 220,
           width: 580,
           opacity: terminalProgress,
-          transform: `translateY(${float(relativeFrame, 120, 8)}px) translateX(${(1 - terminalProgress) * -30}px)`,
+          transform: `translateY(${float(relativeFrame, 90, 12)}px) translateX(${(1 - terminalProgress) * -30}px) scale(${terminalScale})`,
         }}
       >
         <Terminal width={580} startFrame={startFrame} scene={SCENES['hero-query']} />
@@ -97,8 +133,8 @@ export const IntroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           transform: `translateX(${(1 - brandProgress) * -30}px)`,
         }}
       >
-        <Label>Local-first work memory</Label>
-        <Brand progress={brandProgress} />
+        <Label>Local evidence layer</Label>
+        <Brand progress={brandProgress} relativeFrame={relativeFrame} />
       </div>
     </>
   );

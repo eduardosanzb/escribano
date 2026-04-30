@@ -50,7 +50,7 @@ export const OutroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
   const {fps} = useVideoConfig();
   const relativeFrame = frame - startFrame;
 
-  const visibility = enterExit(relativeFrame, 0, 30, 120, 150);
+  const visibility = enterExit(relativeFrame, 0, 30, 150, 190);
 
   // Dramatic entrance: scale from 0.8 to 1.0 with overshoot to 1.03 then settle to 1.0 over frames 0-50
   const entranceProgress = interpolate(relativeFrame, [0, 50], [0, 1], {
@@ -91,7 +91,7 @@ export const OutroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
-  const underlineOpacity = enterExit(relativeFrame, 40, 80, 120, 150);
+  const underlineOpacity = enterExit(relativeFrame, 40, 80, 150, 190);
 
   // Particle burst: 8 dots radiate outward from center at frame 30
   const particles = useMemo(() => createParticles(8), []);
@@ -162,7 +162,7 @@ export const OutroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
                 height: p.size,
                 borderRadius: '50%',
                 background: colors.amber,
-                transform: `translate(${x}px, ${y}px)`,
+                transform: `translate3d(${x}px, ${y}px, 0)`,
                 opacity: particleFade,
               }}
             />
@@ -177,6 +177,7 @@ export const OutroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           alignItems: 'center',
           transform: `scale(${textScale})`,
           opacity: textOpacity,
+          willChange: 'transform, opacity',
         }}
       >
         <Label>escribano.work</Label>
@@ -222,7 +223,7 @@ export const OutroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           fontSize: 18,
           letterSpacing: 2,
           color: colors.inkMuted,
-          transform: `translateY(${ctaBounce}px)`,
+          transform: `translate3d(0, ${ctaBounce}px, 0)`,
           opacity: interpolate(relativeFrame, [60, 80], [0, 1], {
             extrapolateLeft: 'clamp',
             extrapolateRight: 'clamp',

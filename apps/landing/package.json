@@ -2,6 +2,20 @@
   "name": "escribano-landing",
   "scripts": {
     "dev": "hugo server -D --navigateToChanged",
-    "build": "hugo --gc --minify"
+    "build": "hugo --gc --minify",
+    "video:preview": "remotion studio remotion/src/index.ts",
+    "video:render": "remotion render remotion/src/index.ts EscribanoDemo static/video/escribano-demo.remotion.mp4 --codec=h264 --pixel-format=yuv420p --crf=18 && ffmpeg -y -i static/video/escribano-demo.remotion.mp4 -an -vf scale=in_range=pc:out_range=tv,format=yuv420p -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -color_primaries bt709 -color_trc bt709 -colorspace bt709 -movflags +faststart static/video/escribano-demo.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.454",
+    "@remotion/media-utils": "^4.0.454",
+    "remotion": "^4.0.454",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
   }
 }

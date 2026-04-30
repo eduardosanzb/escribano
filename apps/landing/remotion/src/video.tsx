@@ -1,5 +1,6 @@
 import React from 'react';
 import {Stage} from './components/Stage';
+import {AmbientMusic} from './components/AmbientMusic';
 import {IntroScene} from './scenes/IntroScene';
 import {CaptureScene} from './scenes/CaptureScene';
 import {ConnectScene} from './scenes/ConnectScene';
@@ -10,6 +11,7 @@ import {OutroScene} from './scenes/OutroScene';
 export const EscribanoDemo: React.FC = () => {
   return (
     <Stage>
+      <AmbientMusic />
       <IntroScene startFrame={0} />
       <CaptureScene startFrame={80} />
       <ConnectScene startFrame={200} />

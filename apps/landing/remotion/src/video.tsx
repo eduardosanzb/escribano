@@ -13,11 +13,11 @@ export const EscribanoDemo: React.FC = () => {
     <Stage>
       <AmbientMusic />
       <IntroScene startFrame={0} />
-      <CaptureScene startFrame={80} />
-      <ConnectScene startFrame={200} />
-      <AskScene startFrame={320} />
-      <AnswerScene startFrame={440} />
-      <OutroScene startFrame={560} />
+      <CaptureScene startFrame={150} />
+      <ConnectScene startFrame={360} />
+      <AskScene startFrame={570} />
+      <AnswerScene startFrame={780} />
+      <OutroScene startFrame={990} />
     </Stage>
   );
 };

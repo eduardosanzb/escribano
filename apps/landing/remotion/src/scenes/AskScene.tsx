@@ -69,19 +69,6 @@ const getCharsAtFrame = (frame: number): number => {
 	return chars;
 };
 
-// Suggestions that appear after each word is typed
-const getSuggestion = (typedChars: number): string | null => {
-	const e1 = 'escribano-query'.length;           // 15
-	const e2 = e1 + ' recent'.length;              // 22
-	const e3 = e2 + ' --since'.length;             // 30
-	const e4 = e3 + ' 5m'.length;                  // 33
-
-	if (typedChars >= e1 && typedChars < e2) return 'escribano-query recent';
-	if (typedChars >= e2 && typedChars < e3) return 'escribano-query recent --since';
-	if (typedChars >= e3 && typedChars < e4) return 'escribano-query recent --since 5m';
-	return null;
-};
-
 export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 	const frame = useCurrentFrame();
 	const relativeFrame = frame - startFrame;
@@ -107,9 +94,6 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
 	);
 
-	const suggestion = getSuggestion(typedChars);
-	const suggestionOpacity = suggestion ? 0.25 : 0;
-
 	return (
 		<div style={{opacity: visibility, willChange: 'transform, opacity'}}>
 			{/* Text block at left */}
@@ -122,7 +106,7 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 				}}
 			>
 				<div style={{opacity: textOpacity, willChange: 'opacity'}}>
-					<Label>Query</Label>
+					<Label>Ask</Label>
 				</div>
 				<div
 					style={{
@@ -135,7 +119,7 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						willChange: 'opacity',
 					}}
 				>
-					Query, on your terms
+					Ask any agent
 				</div>
 				<div
 					style={{
@@ -148,7 +132,7 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						willChange: 'opacity',
 					}}
 				>
-					Ask your agent or the CLI what you worked on. Evidence comes back structured and ready to cite.
+					Claude Code, Cursor, Codex — ask what you worked on in plain language. Evidence comes back structured and ready to cite.
 				</div>
 				<div
 					style={{
@@ -166,9 +150,9 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 			<div
 				style={{
 					position: 'absolute',
-					left: 818,
-					top: 128 + float(relativeFrame, 130, 7),
-					width: 760,
+					left: 750,
+					top: 140 + float(relativeFrame, 130, 7),
+					width: 900,
 					borderRadius: 28,
 					overflow: 'hidden',
 					background: '#050506',
@@ -179,28 +163,10 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 				}}
 			>
 				<Img
-					src={staticFile('assets/query-json.png')}
+					src={staticFile('assets/claude-escribano.png')}
 					style={{display: 'block', width: '100%'}}
 				/>
 			</div>
-
-			{/* Command suggestion hints above typing area */}
-			{suggestion && (
-				<div
-					style={{
-						position: 'absolute',
-						left: 950,
-						bottom: 240,
-						fontFamily: mono,
-						fontSize: 18,
-						color: colors.inkMuted,
-						opacity: suggestionOpacity,
-						whiteSpace: 'nowrap',
-					}}
-				>
-					Try: {suggestion}
-				</div>
-			)}
 
 			{/* Command-line typing animation at bottom-left */}
 			<div
@@ -220,16 +186,6 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 			>
 				<span style={{color: colors.amber}}>$ </span>
 				{cmd.slice(0, typedChars)}
-				{/* cursor trail */}
-				<span
-					style={{
-						opacity: relativeFrame % 30 < 15 ? 0.15 : 0,
-						position: 'absolute',
-						marginLeft: -2,
-					}}
-				>
-					|
-				</span>
 				{/* Main cursor */}
 				<span style={{opacity: relativeFrame % 30 < 15 ? 1 : 0}}>|</span>
 			</div>

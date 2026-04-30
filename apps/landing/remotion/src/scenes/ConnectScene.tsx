@@ -1,6 +1,6 @@
 import React from 'react';
-import {staticFile, Img, useCurrentFrame, interpolate, Easing} from 'remotion';
-import {enterExit, float} from '../motion';
+import {useCurrentFrame, interpolate} from 'remotion';
+import {enterExit} from '../motion';
 
 const colors = {
 	ink: '#E8E9EE',
@@ -19,11 +19,7 @@ const colors = {
 const serif = "'Cormorant Garamond', Georgia, serif";
 const body = "'Spectral', Georgia, serif";
 const sans = "'DM Sans', system-ui, sans-serif";
-
-const bounce = (t: number) => {
-	const c = 1.70158;
-	return t * t * ((c + 1) * t - c);
-};
+const mono = "'Fira Code', 'SF Mono', monospace";
 
 const Label: React.FC<{children: React.ReactNode; style?: React.CSSProperties}> = ({
 	children,
@@ -43,6 +39,53 @@ const Label: React.FC<{children: React.ReactNode; style?: React.CSSProperties}> 
 	</div>
 );
 
+interface MomentCardProps {
+	time: string;
+	app: string;
+	description: string;
+	delay: number;
+	frame: number;
+}
+
+const MomentCard: React.FC<MomentCardProps> = ({time, app, description, delay, frame}) => {
+	const translateX = interpolate(
+		frame - delay,
+		[0, 30],
+		[60, 0],
+		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+	);
+	const opacity = interpolate(
+		frame - delay,
+		[0, 30],
+		[0, 1],
+		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+	);
+
+	return (
+		<div
+			style={{
+				width: 520,
+				padding: '20px 24px',
+				borderRadius: 16,
+				background: 'rgba(28,31,43,0.6)',
+				border: '1px solid rgba(255,255,255,0.08)',
+				transform: `translateX(${translateX}px)`,
+				opacity,
+				willChange: 'transform, opacity',
+			}}
+		>
+			<div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8}}>
+				<span style={{fontFamily: mono, fontSize: 14, color: colors.amber}}>{time}</span>
+				<span style={{color: colors.inkSoft}}>·</span>
+				<span style={{fontFamily: sans, fontSize: 14, color: colors.inkSoft}}>{app}</span>
+			</div>
+			<div style={{fontFamily: body, fontSize: 24, color: colors.ink, lineHeight: 1.3}}>
+				{description}
+			</div>
+		</div>
+	);
+};
+
 export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 	const frame = useCurrentFrame();
 	const relativeFrame = frame - startFrame;
@@ -52,45 +95,6 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 	const textOpacity = enterExit(relativeFrame, 5, 25, 150, 190);
 	const titleOpacity = enterExit(relativeFrame, 10, 35, 150, 190);
 	const bodyOpacity = enterExit(relativeFrame, 20, 45, 150, 190);
-
-	const connectionHeight = interpolate(
-		relativeFrame,
-		[50, 90],
-		[0, 120],
-		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-	);
-
-	const screenshotX = interpolate(
-		relativeFrame,
-		[0, 30],
-		[820, 720],
-		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-	);
-
-	const screenshotRotate = interpolate(
-		relativeFrame,
-		[0, 40],
-		[-2, 0],
-		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-	);
-
-	const screenshotY = 178 + float(relativeFrame, 140, 5);
-
-	const badgeScaleRaw = interpolate(
-		relativeFrame,
-		[40, 70],
-		[0, 1.15],
-		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-	);
-	const badgeScale2 = interpolate(
-		relativeFrame,
-		[55, 70],
-		[1.15, 1.0],
-		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-	);
-	const badgeScale = relativeFrame < 55 ? bounce(badgeScaleRaw / 1.15) * 1.15 : badgeScale2;
-
-	const scanLineY = ((relativeFrame * 30) % 180) - 10;
 
 	return (
 		<div style={{opacity: visibility, willChange: 'transform, opacity'}}>
@@ -135,140 +139,38 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 				</div>
 			</div>
 
-			{/* Vertical connection line to the right of text block */}
+			{/* Moment cards at right */}
 			<div
 				style={{
 					position: 'absolute',
-					left: 676,
-					top: 310,
-					width: 2,
-					height: connectionHeight,
-					background: colors.amber,
-					opacity: 0.7,
-				}}
-			/>
-
-			{/* Screenshot at right */}
-			<div
-				style={{
-					position: 'absolute',
-					left: screenshotX,
-					top: screenshotY,
-					width: 1050,
-					borderRadius: 28,
-					overflow: 'hidden',
-					background: '#050506',
-					boxShadow: '0 34px 120px rgba(0,0,0,0.5)',
-					border: '1px solid rgba(255,255,255,0.08)',
-					transform: `translate3d(0,0,0) rotate(${screenshotRotate}deg)`,
-					willChange: 'transform, opacity',
+					left: 850,
+					top: 180,
+					display: 'flex',
+					flexDirection: 'column',
+					gap: 20,
 				}}
 			>
-				<Img
-					src={staticFile('assets/agents.png')}
-					style={{display: 'block', width: '100%'}}
+				<MomentCard
+					time="14:32"
+					app="VS Code"
+					description="Debugging JWT refresh flow in middleware/auth.ts"
+					delay={20}
+					frame={relativeFrame}
 				/>
-				{/* scan line effect */}
-				<div
-					style={{
-						position: 'absolute',
-						left: 0,
-						right: 0,
-						height: 1,
-						background: 'rgba(255,255,255,0.1)',
-						transform: `translateY(${scanLineY}px)`,
-					}}
+				<MomentCard
+					time="14:47"
+					app="Terminal"
+					description="Committed fix for refresh-token expiry"
+					delay={35}
+					frame={relativeFrame}
 				/>
-			</div>
-
-			{/* Floating agent badges */}
-			<div
-				style={{
-					position: 'absolute',
-					left: 760 + float(relativeFrame, 90, 3),
-					top: 160 + float(relativeFrame, 110, 4),
-					width: 24,
-					height: 24,
-					borderRadius: 999,
-					background: colors.amber,
-					display: 'flex',
-					alignItems: 'center',
-					justifyContent: 'center',
-					fontFamily: sans,
-					fontSize: 12,
-					fontWeight: 500,
-					color: '#fff',
-					transform: `scale(${badgeScale})`,
-					willChange: 'transform, opacity',
-				}}
-			>
-				C
-			</div>
-			<div
-				style={{
-					position: 'absolute',
-					left: 1680 + float(relativeFrame, 120, 4),
-					top: 200 + float(relativeFrame, 80, 3),
-					width: 24,
-					height: 24,
-					borderRadius: 999,
-					background: colors.olive,
-					display: 'flex',
-					alignItems: 'center',
-					justifyContent: 'center',
-					fontFamily: sans,
-					fontSize: 12,
-					fontWeight: 500,
-					color: '#fff',
-					transform: `scale(${badgeScale})`,
-					willChange: 'transform, opacity',
-				}}
-			>
-				G
-			</div>
-			<div
-				style={{
-					position: 'absolute',
-					left: 1640 + float(relativeFrame, 100, 5),
-					top: 720 + float(relativeFrame, 130, 3),
-					width: 24,
-					height: 24,
-					borderRadius: 999,
-					background: colors.rust,
-					display: 'flex',
-					alignItems: 'center',
-					justifyContent: 'center',
-					fontFamily: sans,
-					fontSize: 12,
-					fontWeight: 500,
-					color: '#fff',
-					transform: `scale(${badgeScale})`,
-					willChange: 'transform, opacity',
-				}}
-			>
-				O
-			</div>
-			<div
-				style={{
-					position: 'absolute',
-					left: 740 + float(relativeFrame, 110, 4),
-					top: 680 + float(relativeFrame, 90, 5),
-					width: 24,
-					height: 24,
-					borderRadius: 999,
-					background: colors.amber,
-					display: 'flex',
-					alignItems: 'center',
-					justifyContent: 'center',
-					fontFamily: sans,
-					fontSize: 12,
-					fontWeight: 500,
-					color: '#fff',
-					transform: `scale(${badgeScale})`,
-					willChange: 'transform, opacity',
-				}}
-			>
-				X
+				<MomentCard
+					time="16:40"
+					app="GitHub"
+					description="Reviewing PR #214 with auth changes"
+					delay={50}
+					frame={relativeFrame}
+				/>
 			</div>
 		</div>
 	);

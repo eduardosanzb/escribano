@@ -41,6 +41,47 @@ const Label: React.FC<{children: React.ReactNode; style?: React.CSSProperties}> 
 	</div>
 );
 
+// Realistic typing: variable speed per word + pauses between words
+const getCharsAtFrame = (frame: number): number => {
+	const start = 20;
+	let f = frame - start;
+	if (f < 0) return 0;
+
+	const segments: {text: string; charFrames: number; pauseFrames: number}[] = [
+		{text: 'escribano-query', charFrames: 3, pauseFrames: 9},
+		{text: ' recent', charFrames: 3, pauseFrames: 8},
+		{text: ' --since', charFrames: 3, pauseFrames: 10},
+		{text: ' 5m', charFrames: 2, pauseFrames: 0},
+	];
+
+	let chars = 0;
+	for (const seg of segments) {
+		const segDuration = seg.text.length * seg.charFrames + seg.pauseFrames;
+		if (f >= segDuration) {
+			chars += seg.text.length;
+			f -= segDuration;
+		} else {
+			const typedInSeg = Math.floor(f / seg.charFrames);
+			chars += Math.min(typedInSeg, seg.text.length);
+			break;
+		}
+	}
+	return chars;
+};
+
+// Suggestions that appear after each word is typed
+const getSuggestion = (typedChars: number): string | null => {
+	const e1 = 'escribano-query'.length;           // 15
+	const e2 = e1 + ' recent'.length;              // 22
+	const e3 = e2 + ' --since'.length;             // 30
+	const e4 = e3 + ' 5m'.length;                  // 33
+
+	if (typedChars >= e1 && typedChars < e2) return 'escribano-query recent';
+	if (typedChars >= e2 && typedChars < e3) return 'escribano-query recent --since';
+	if (typedChars >= e3 && typedChars < e4) return 'escribano-query recent --since 5m';
+	return null;
+};
+
 export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 	const frame = useCurrentFrame();
 	const relativeFrame = frame - startFrame;
@@ -51,14 +92,23 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 	const bodyOpacity = enterExit(relativeFrame, 15, 40, 120, 150);
 
 	const cmd = 'escribano-query recent --since 5m';
-	const typedChars = Math.floor(
-		interpolate(
-			relativeFrame,
-			[20, 90],
-			[0, cmd.length],
-			{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-		),
+	const typedChars = getCharsAtFrame(relativeFrame);
+
+	const screenshotTranslate = interpolate(
+		relativeFrame,
+		[0, 35],
+		[60, 0],
+		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
 	);
+	const screenshotRotate = interpolate(
+		relativeFrame,
+		[0, 35],
+		[1, 0.4],
+		{extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+	);
+
+	const suggestion = getSuggestion(typedChars);
+	const suggestionOpacity = suggestion ? 0.25 : 0;
 
 	return (
 		<div style={{opacity: visibility}}>
@@ -72,7 +122,7 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 				}}
 			>
 				<div style={{opacity: textOpacity}}>
-					<Label>Ask</Label>
+					<Label>Query</Label>
 				</div>
 				<div
 					style={{
@@ -84,7 +134,7 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						opacity: titleOpacity,
 					}}
 				>
-					Query from the command line.
+					Query, on your terms
 				</div>
 				<div
 					style={{
@@ -96,8 +146,9 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						opacity: bodyOpacity,
 					}}
 				>
-					The answer starts as structured evidence, not another vague
-					activity chart.
+					Ask your agent — or the command line directly — what you were
+					working on. Escribano returns the evidence, cleanly structured,
+					ready to cite.
 				</div>
 				<div
 					style={{
@@ -122,7 +173,7 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					background: '#050506',
 					boxShadow: '0 34px 120px rgba(0,0,0,0.5)',
 					border: '1px solid rgba(255,255,255,0.08)',
-					transform: `rotate(${Math.sin(relativeFrame / 200) * 0.4}deg)`,
+					transform: `translateX(${screenshotTranslate}px) rotate(${screenshotRotate}deg)`,
 				}}
 			>
 				<Img
@@ -130,6 +181,24 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					style={{display: 'block', width: '100%'}}
 				/>
 			</div>
+
+			{/* Command suggestion hints above typing area */}
+			{suggestion && (
+				<div
+					style={{
+						position: 'absolute',
+						left: 950,
+						bottom: 240,
+						fontFamily: mono,
+						fontSize: 18,
+						color: colors.inkMuted,
+						opacity: suggestionOpacity,
+						whiteSpace: 'nowrap',
+					}}
+				>
+					Try: {suggestion}
+				</div>
+			)}
 
 			{/* Command-line typing animation at bottom-left */}
 			<div
@@ -149,6 +218,17 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 			>
 				<span style={{color: colors.amber}}>$ </span>
 				{cmd.slice(0, typedChars)}
+				{/* cursor trail */}
+				<span
+					style={{
+						opacity: relativeFrame % 30 < 15 ? 0.15 : 0,
+						position: 'absolute',
+						marginLeft: -2,
+					}}
+				>
+					|
+				</span>
+				{/* Main cursor */}
 				<span style={{opacity: relativeFrame % 30 < 15 ? 1 : 0}}>|</span>
 			</div>
 		</div>

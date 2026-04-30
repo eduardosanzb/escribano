@@ -55,23 +55,24 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
   const line2 = 'confidence: local evidence';
   const line3 = 'artifact: answer.md';
 
-  const line1Chars = Math.floor(
-    interpolate(relativeFrame, [50, 70], [0, line1.length], {
+  // Staggered reveal: each line slides up from translateY(10px) while fading in
+  // 12-frame stagger between lines
+  const line1Reveal = soft((relativeFrame - 50) / 20);
+  const line2Reveal = soft((relativeFrame - 62) / 20);
+  const line3Reveal = soft((relativeFrame - 74) / 20);
+
+  // Pulsing amber glow on artifact line
+  const glowIntensity = 0.3 + 0.2 * Math.sin(frame / 20);
+
+  // confidence meter fills from 0% to 100% over frames 70-110
+  const confidenceFill = interpolate(
+    relativeFrame,
+    [70, 110],
+    [0, 100],
+    {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
-    }),
-  );
-  const line2Chars = Math.floor(
-    interpolate(relativeFrame, [60, 80], [0, line2.length], {
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
-    }),
-  );
-  const line3Chars = Math.floor(
-    interpolate(relativeFrame, [70, 90], [0, line3.length], {
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
-    }),
+    },
   );
 
   const floatY = float(relativeFrame, 160, 6);
@@ -136,6 +137,15 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           src={staticFile('assets/agent-answer.png')}
           style={{display: 'block', width: '100%'}}
         />
+        {/* Focus vignette overlay */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'radial-gradient(ellipse at center, transparent 50%, rgba(5,5,6,0.6) 100%)',
+            pointerEvents: 'none',
+          }}
+        />
       </div>
 
       {/* Sources card at bottom-right */}
@@ -155,23 +165,55 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           lineHeight: 1.65,
         }}
       >
-        <div style={{color: colors.olive}}>
-          {line1.slice(0, line1Chars)}
-          {line1Chars < line1.length && (
-            <span style={{opacity: frame % 30 < 15 ? 1 : 0}}>|</span>
-          )}
+        <div
+          style={{
+            color: colors.olive,
+            opacity: line1Reveal,
+            transform: `translateY(${(1 - line1Reveal) * 10}px)`,
+          }}
+        >
+          {line1}
         </div>
-        <div style={{color: colors.inkSoft}}>
-          {line2.slice(0, line2Chars)}
-          {line2Chars < line2.length && (
-            <span style={{opacity: frame % 30 < 15 ? 1 : 0}}>|</span>
-          )}
+        <div
+          style={{
+            color: colors.inkSoft,
+            opacity: line2Reveal,
+            transform: `translateY(${(1 - line2Reveal) * 10}px)`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <span>{line2}</span>
+          {/* Confidence meter */}
+          <div
+            style={{
+              width: 80,
+              height: 4,
+              background: colors.line,
+              borderRadius: 2,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${confidenceFill}%`,
+                height: '100%',
+                background: colors.olive,
+                borderRadius: 2,
+              }}
+            />
+          </div>
         </div>
-        <div style={{color: colors.amber}}>
-          {line3.slice(0, line3Chars)}
-          {line3Chars < line3.length && (
-            <span style={{opacity: frame % 30 < 15 ? 1 : 0}}>|</span>
-          )}
+        <div
+          style={{
+            color: colors.amber,
+            opacity: line3Reveal,
+            transform: `translateY(${(1 - line3Reveal) * 10}px)`,
+            textShadow: `0 0 20px rgba(232,168,56,${glowIntensity})`,
+          }}
+        >
+          {line3}
         </div>
       </div>
     </div>

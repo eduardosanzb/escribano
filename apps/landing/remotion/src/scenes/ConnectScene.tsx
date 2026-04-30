@@ -47,11 +47,11 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 	const frame = useCurrentFrame();
 	const relativeFrame = frame - startFrame;
 
-	const visibility = enterExit(relativeFrame, 0, 25, 120, 150);
+	const visibility = enterExit(relativeFrame, 0, 25, 150, 190);
 
-	const textOpacity = enterExit(relativeFrame, 5, 30, 120, 150);
-	const titleOpacity = enterExit(relativeFrame, 10, 35, 120, 150);
-	const bodyOpacity = enterExit(relativeFrame, 15, 40, 120, 150);
+	const textOpacity = enterExit(relativeFrame, 5, 25, 150, 190);
+	const titleOpacity = enterExit(relativeFrame, 10, 35, 150, 190);
+	const bodyOpacity = enterExit(relativeFrame, 20, 45, 150, 190);
 
 	const connectionHeight = interpolate(
 		relativeFrame,
@@ -93,7 +93,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 	const scanLineY = ((relativeFrame * 30) % 180) - 10;
 
 	return (
-		<div style={{opacity: visibility}}>
+		<div style={{opacity: visibility, willChange: 'transform, opacity'}}>
 			{/* Text block at left */}
 			<div
 				style={{
@@ -101,9 +101,10 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					left: 126,
 					top: 262,
 					width: 520,
+					willChange: 'transform, opacity',
 				}}
 			>
-				<div style={{opacity: textOpacity}}>
+				<div style={{opacity: textOpacity, willChange: 'transform, opacity'}}>
 					<Label>Understand</Label>
 				</div>
 				<div
@@ -114,6 +115,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						lineHeight: 0.96,
 						fontWeight: 400,
 						opacity: titleOpacity,
+						willChange: 'transform, opacity',
 					}}
 				>
 					Understand, on-device
@@ -126,9 +128,10 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						lineHeight: 1.36,
 						color: colors.inkSoft,
 						opacity: bodyOpacity,
+						willChange: 'transform, opacity',
 					}}
 				>
-					Each moment is turned into a short, plain-language description of what you were doing — the tools, the files, the context. All of it stays on your machine.
+					Turns screen moments into plain-language descriptions. Tools, files, context — all on your machine.
 				</div>
 			</div>
 
@@ -157,7 +160,8 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					background: '#050506',
 					boxShadow: '0 34px 120px rgba(0,0,0,0.5)',
 					border: '1px solid rgba(255,255,255,0.08)',
-					transform: `rotate(${screenshotRotate}deg)`,
+					transform: `translate3d(0,0,0) rotate(${screenshotRotate}deg)`,
+					willChange: 'transform, opacity',
 				}}
 			>
 				<Img
@@ -195,6 +199,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					fontWeight: 500,
 					color: '#fff',
 					transform: `scale(${badgeScale})`,
+					willChange: 'transform, opacity',
 				}}
 			>
 				C
@@ -216,6 +221,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					fontWeight: 500,
 					color: '#fff',
 					transform: `scale(${badgeScale})`,
+					willChange: 'transform, opacity',
 				}}
 			>
 				G
@@ -237,6 +243,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					fontWeight: 500,
 					color: '#fff',
 					transform: `scale(${badgeScale})`,
+					willChange: 'transform, opacity',
 				}}
 			>
 				O
@@ -258,6 +265,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 					fontWeight: 500,
 					color: '#fff',
 					transform: `scale(${badgeScale})`,
+					willChange: 'transform, opacity',
 				}}
 			>
 				X

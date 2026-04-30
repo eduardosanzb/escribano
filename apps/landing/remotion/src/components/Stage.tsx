@@ -47,6 +47,48 @@ const TileStrip: React.FC = () => (
   />
 );
 
+interface ParticleProps {
+  frame: number;
+  x: number;
+  y: number;
+  size: number;
+  speedX: number;
+  speedY: number;
+  opacity: number;
+  color: string;
+}
+
+const Particle: React.FC<ParticleProps> = ({
+  frame,
+  x,
+  y,
+  size,
+  speedX,
+  speedY,
+  opacity,
+  color,
+}) => {
+  const left = (x + frame * speedX) % 1920;
+  const top = (y + frame * speedY) % 1080;
+  const currentSize = size * (0.8 + 0.2 * Math.sin(frame / 60));
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: left < 0 ? left + 1920 : left,
+        top: top < 0 ? top + 1080 : top,
+        width: currentSize,
+        height: currentSize,
+        borderRadius: 999,
+        background: color,
+        opacity,
+        pointerEvents: 'none',
+      }}
+    />
+  );
+};
+
 interface FloatingDotProps {
   frame: number;
   left: number;
@@ -81,6 +123,27 @@ const FloatingDot: React.FC<FloatingDotProps> = ({
     />
   );
 };
+
+const PARTICLES: Omit<ParticleProps, 'frame'>[] = [
+  {x: 120, y: 80, size: 2, speedX: 0.2, speedY: 0.15, opacity: 0.25, color: colors.amber},
+  {x: 480, y: 220, size: 1.5, speedX: -0.1, speedY: 0.3, opacity: 0.2, color: colors.olive},
+  {x: 860, y: 140, size: 3, speedX: 0.35, speedY: -0.2, opacity: 0.3, color: colors.rust},
+  {x: 1300, y: 360, size: 1, speedX: -0.25, speedY: 0.1, opacity: 0.15, color: colors.blue},
+  {x: 1700, y: 180, size: 2.5, speedX: 0.15, speedY: 0.4, opacity: 0.22, color: colors.amber},
+  {x: 340, y: 520, size: 1.5, speedX: -0.3, speedY: -0.15, opacity: 0.18, color: colors.olive},
+  {x: 720, y: 640, size: 2, speedX: 0.4, speedY: 0.25, opacity: 0.28, color: colors.rust},
+  {x: 1080, y: 480, size: 1, speedX: -0.2, speedY: -0.35, opacity: 0.15, color: colors.blue},
+  {x: 1560, y: 560, size: 2.5, speedX: 0.25, speedY: 0.1, opacity: 0.2, color: colors.amber},
+  {x: 200, y: 820, size: 1.5, speedX: -0.15, speedY: 0.2, opacity: 0.25, color: colors.olive},
+  {x: 620, y: 900, size: 3, speedX: 0.3, speedY: -0.25, opacity: 0.35, color: colors.rust},
+  {x: 980, y: 780, size: 1, speedX: -0.4, speedY: 0.15, opacity: 0.15, color: colors.blue},
+  {x: 1420, y: 860, size: 2, speedX: 0.1, speedY: -0.3, opacity: 0.2, color: colors.amber},
+  {x: 1840, y: 740, size: 1.5, speedX: -0.35, speedY: 0.4, opacity: 0.18, color: colors.olive},
+  {x: 260, y: 340, size: 2.5, speedX: 0.45, speedY: -0.1, opacity: 0.3, color: colors.rust},
+  {x: 540, y: 160, size: 1, speedX: -0.2, speedY: 0.35, opacity: 0.15, color: colors.blue},
+  {x: 1180, y: 240, size: 2, speedX: 0.15, speedY: -0.2, opacity: 0.22, color: colors.amber},
+  {x: 1620, y: 420, size: 1.5, speedX: -0.3, speedY: 0.25, opacity: 0.2, color: colors.olive},
+];
 
 export const Stage: React.FC<{children: React.ReactNode}> = ({children}) => {
   const frame = useCurrentFrame();
@@ -119,6 +182,11 @@ export const Stage: React.FC<{children: React.ReactNode}> = ({children}) => {
           pointerEvents: 'none',
         }}
       />
+
+      {/* Particles */}
+      {PARTICLES.map((p, i) => (
+        <Particle key={i} frame={frame} {...p} />
+      ))}
 
       {/* Grid overlay */}
       <div

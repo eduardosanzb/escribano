@@ -119,7 +119,7 @@ export const CaptureScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             opacity: enterExit(relativeFrame, 15, 40, 150, 190),
           }}
         >
-          Watches your screen in the background. Nothing is uploaded. Pause anytime.
+          Records your screen in the background. Nothing leaves your machine.
         </div>
         <div
           style={{
@@ -136,9 +136,9 @@ export const CaptureScene: React.FC<{startFrame: number}> = ({startFrame}) => {
       <div
         style={{
           position: 'absolute',
-          left: 710,
-          top: 178 + float(relativeFrame, 150, 6),
-          width: 1030,
+          left: 900,
+          top: 200 + float(relativeFrame, 150, 6),
+          width: 480,
           overflow: 'hidden',
           borderRadius: 28,
           background: '#050506',
@@ -149,7 +149,7 @@ export const CaptureScene: React.FC<{startFrame: number}> = ({startFrame}) => {
         }}
       >
         <Img
-          src={staticFile('assets/health.png')}
+          src={staticFile('assets/menu-app.png')}
           style={{
             display: 'block',
             width: '100%',

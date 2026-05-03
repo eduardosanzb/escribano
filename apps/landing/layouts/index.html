@@ -120,14 +120,62 @@
         <h3>Query, on your terms</h3>
         <p>Ask your agent — or the command line directly — what you were working on. Escribano returns the evidence, cleanly structured, ready to cite.</p>
 
-        <div class="step-mock step-mock--video" aria-hidden="true">
-          <video autoplay loop muted playsinline controls class="demo-video">
-            <source src="/video/escribano-demo.mp4" type="video/mp4">
-            Your browser does not support the video tag.
-          </video>
+        <div class="step-mock step-mock--query" aria-hidden="true">
+          <div class="use-term use-term--step" data-scene="agent-memory" data-scene-order="0">
+            <div class="use-term-header">
+              <span class="use-term-dot"></span>
+              <span class="use-term-dot"></span>
+              <span class="use-term-dot"></span>
+              <span class="use-term-title">Claude Code</span>
+            </div>
+            <div class="use-term-body" data-screen></div>
+          </div>
         </div>
       </div>
 
+    </div>
+  </div>
+</section>
+
+<section class="agent-section" id="agents">
+  <div class="agent-inner">
+    <div class="agent-copy fade-up">
+      <div class="section-label">For AI agents</div>
+      <h2>Give your agent a memory of what happened outside the repo.</h2>
+      <p class="agent-lead">
+        Your coding agent can inspect files and Git history. It cannot know what you saw, searched, debugged, or discussed unless that context is captured somewhere.
+      </p>
+
+      <div class="agent-points">
+        <div class="agent-point">
+          <div class="agent-point-label">Recover the trail</div>
+          <p>Find the tools, timestamps, files, and screenshots behind a decision.</p>
+        </div>
+        <div class="agent-point">
+          <div class="agent-point-label">Prime the next edit</div>
+          <p>Pull relevant local context before Claude Code, Cursor, or Codex starts changing files.</p>
+        </div>
+        <div class="agent-point">
+          <div class="agent-point-label">Cite the evidence</div>
+          <p>Return structured moments an agent can quote without slurping raw screenshots by default.</p>
+        </div>
+      </div>
+
+      <div class="agent-actions">
+        <a href="/get-started/" class="btn-primary">Read the agent guide</a>
+        <a href="https://docs.escribano.work" class="btn-ghost" target="_blank" rel="noopener">View docs <span>→</span></a>
+      </div>
+    </div>
+
+    <div class="agent-demo fade-up" style="transition-delay: 0.12s">
+      <div class="agent-video-frame">
+        <div class="agent-video-label"><span class="q-dot"></span> capture → understand → query → cite</div>
+        <video autoplay loop muted playsinline controls class="agent-video">
+          <source src="/video/escribano-demo.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+      </div>
+      <p class="agent-caption">A full local loop: screen moments become evidence your agent can ask for.</p>
     </div>
   </div>
 </section>

@@ -50,9 +50,9 @@ export const AmbientMusic: React.FC = () => {
 
 		// === UPRIGHT BASS (root notes, long sustain) ===
 		const bassRoots = [
-			{time: 0, freq: 73.42, duration: 1.5},
-			{time: measureDuration, freq: 49.0, duration: 1.5},
-			{time: 2 * measureDuration, freq: 65.41, duration: 1.5},
+			{time: 0, freq: 146.83, duration: 1.5},
+			{time: measureDuration, freq: 98.0, duration: 1.5},
+			{time: 2 * measureDuration, freq: 130.81, duration: 1.5},
 		];
 
 		for (let loopStart = 0; loopStart < duration; loopStart += 3 * measureDuration) {

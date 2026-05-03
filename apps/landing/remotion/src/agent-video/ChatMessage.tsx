@@ -46,7 +46,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
       style={{
         fontFamily: AGENT_FONTS.mono,
         color: isUser ? '#1a1612' : '#3d3530',
-        fontSize: 15,
+        fontSize: 24,
         lineHeight: 1.7,
       }}
     >

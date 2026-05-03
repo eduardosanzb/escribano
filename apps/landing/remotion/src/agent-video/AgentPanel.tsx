@@ -1,8 +1,11 @@
 import React from 'react';
-import {useCurrentFrame, useVideoConfig, interpolate, spring} from 'remotion';
+import {useCurrentFrame, useVideoConfig, interpolate, spring, Easing} from 'remotion';
 import {ChatMessage} from './ChatMessage';
 import {ThinkingBlock} from './ThinkingBlock';
 import {AnswerBlock} from './AnswerBlock';
+import {MiniCliCall} from './MiniCliCall';
+import {DocumentDraft} from './DocumentDraft';
+import {LogoLockup} from './LogoLockup';
 import {AGENT_COLORS, AGENT_FONTS} from './AgentStage';
 
 export const AgentPanel: React.FC = () => {
@@ -10,19 +13,41 @@ export const AgentPanel: React.FC = () => {
   const {fps} = useVideoConfig();
 
   const promptText = 'summarize my research on vector databases from this afternoon';
-  const promptStart = 20;
+  const promptStart = 40;
   const promptSpeed = 2;
-  const promptEnd = promptStart + promptText.length * promptSpeed;
 
-  const thinkingStart = 156;
-  const answerStart = 460;
+  const thinkingStart = 160;
+  const answerStart = 720;
+  const docPromptStart = 920;
+  const miniCliStart = 1040;
+  const documentStart = 1160;
+  const logoStart = 1500;
 
   const panelOpacity = interpolate(frame, [0, 20], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
 
-  const scrollOffset = frame > 600 ? (frame - 600) * 0.5 : 0;
+  // Fade out chat content before logo (start later so more doc is visible)
+  const chatFadeOut = interpolate(
+    frame,
+    [1460, 1550],
+    [1, 0],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // Smooth scroll with ease-in-out curve — scroll further to expose full doc
+  const scrollProgress = interpolate(
+    frame,
+    [400, 1450],
+    [0, 1],
+    {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing: Easing.inOut(Easing.ease),
+    }
+  );
+  const scrollOffset = scrollProgress * 1400;
 
   return (
     <div
@@ -42,6 +67,7 @@ export const AgentPanel: React.FC = () => {
           paddingTop: 60,
           paddingBottom: 80,
           transform: `translateY(${-scrollOffset}px)`,
+          opacity: chatFadeOut,
         }}
       >
         <ChatMessage
@@ -57,7 +83,27 @@ export const AgentPanel: React.FC = () => {
         {frame >= answerStart && (
           <AnswerBlock frame={frame} startFrame={answerStart} />
         )}
+        {frame >= docPromptStart && (
+          <div style={{marginTop: 48}}>
+            <ChatMessage
+              text="create research doc"
+              frame={frame}
+              startFrame={docPromptStart}
+              isUser={true}
+              speed={promptSpeed}
+            />
+          </div>
+        )}
+        {frame >= miniCliStart && (
+          <MiniCliCall frame={frame} startFrame={miniCliStart} />
+        )}
+        {frame >= documentStart && (
+          <DocumentDraft frame={frame} startFrame={documentStart} />
+        )}
       </div>
+      {frame >= logoStart && (
+        <LogoLockup frame={frame} startFrame={logoStart} />
+      )}
     </div>
   );
 };

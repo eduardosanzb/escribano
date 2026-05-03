@@ -40,6 +40,103 @@
   </div>
 </section>
 
+<section class="agent-section" id="agents">
+  <div class="agent-inner">
+    <div class="agent-copy fade-up">
+      <div class="section-label">For AI agents</div>
+      <h2>Context your agents can ask for.</h2>
+      <p class="agent-lead">
+        Your coding agent can inspect files and Git history. It cannot know what you saw, searched, debugged, or discussed unless that context is captured somewhere.
+      </p>
+    </div>
+
+    <!-- Desktop video thumbnail -->
+    <div class="agent-demo agent-demo--desktop fade-up" style="transition-delay: 0.12s">
+      <div class="video-thumbnail" data-video-open data-video-desktop>
+        <video class="agent-video-thumb" preload="metadata" muted playsinline>
+          <source src="/video/escribano-agent-memory.mp4" type="video/mp4">
+        </video>
+        <div class="video-play-overlay">
+          <div class="video-play-btn">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+          <span class="video-play-text">Watch the demo</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile video thumbnail -->
+    <div class="agent-demo agent-demo--mobile fade-up" style="transition-delay: 0.12s">
+      <div class="video-thumbnail" data-video-open data-video-mobile>
+        <video class="agent-video-thumb" preload="metadata" muted playsinline>
+          <source src="/video/escribano-agent-memory-mobile.mp4" type="video/mp4">
+        </video>
+        <div class="video-play-overlay">
+          <div class="video-play-btn">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+          <span class="video-play-text">Watch the demo</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Desktop lightbox -->
+    <div class="video-lightbox" data-video-lightbox data-lightbox-desktop>
+      <div class="video-lightbox-backdrop" data-video-close></div>
+      <div class="video-lightbox-content">
+        <button class="video-lightbox-close" data-video-close aria-label="Close video">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+        <video class="video-lightbox-player" controls>
+          <source src="/video/escribano-agent-memory.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+      </div>
+    </div>
+
+    <!-- Mobile lightbox -->
+    <div class="video-lightbox video-lightbox--mobile" data-video-lightbox data-lightbox-mobile>
+      <div class="video-lightbox-backdrop" data-video-close></div>
+      <div class="video-lightbox-content">
+        <button class="video-lightbox-close" data-video-close aria-label="Close video">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+        <video class="video-lightbox-player" controls>
+          <source src="/video/escribano-agent-memory-mobile.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+      </div>
+    </div>
+
+    <div class="agent-points fade-up" style="transition-delay: 0.24s">
+      <div class="agent-point">
+        <div class="agent-point-label">Recover the trail</div>
+        <p>Find the tools, timestamps, files, and screenshots behind a decision.</p>
+      </div>
+      <div class="agent-point">
+        <div class="agent-point-label">Prime the next edit</div>
+        <p>Pull relevant local context before Claude Code, Cursor, or Codex starts changing files.</p>
+      </div>
+      <div class="agent-point">
+        <div class="agent-point-label">Cite the evidence</div>
+        <p>Return structured moments an agent can quote without slurping raw screenshots by default.</p>
+      </div>
+    </div>
+
+    <div class="agent-actions fade-up" style="transition-delay: 0.36s">
+      <a href="https://docs.escribano.work/s/91ccfd89-8a34-4934-b71d-23cd175c949a/doc/ai-agent-use-cases-4gDLvTho4e" class="btn-primary" target="_blank" rel="noopener">Read the agent docs</a>
+    </div>
+  </div>
+</section>
+
 <section class="how" id="how">
   <div class="how-inner">
     <div class="section-label">How it works</div>
@@ -133,48 +230,6 @@
         </div>
       </div>
 
-    </div>
-  </div>
-</section>
-
-<section class="agent-section" id="agents">
-  <div class="agent-inner">
-    <div class="agent-copy fade-up">
-      <div class="section-label">For AI agents</div>
-        <h2>Context your agents can ask for.</h2>
-      <p class="agent-lead">
-        Your coding agent can inspect files and Git history. It cannot know what you saw, searched, debugged, or discussed unless that context is captured somewhere.
-      </p>
-
-      <div class="agent-points">
-        <div class="agent-point">
-          <div class="agent-point-label">Recover the trail</div>
-          <p>Find the tools, timestamps, files, and screenshots behind a decision.</p>
-        </div>
-        <div class="agent-point">
-          <div class="agent-point-label">Prime the next edit</div>
-          <p>Pull relevant local context before Claude Code, Cursor, or Codex starts changing files.</p>
-        </div>
-        <div class="agent-point">
-          <div class="agent-point-label">Cite the evidence</div>
-          <p>Return structured moments an agent can quote without slurping raw screenshots by default.</p>
-        </div>
-      </div>
-
-        <div class="agent-actions">
-          <a href="https://docs.escribano.work/s/91ccfd89-8a34-4934-b71d-23cd175c949a/doc/how-to-use-escribano-0gF2PsiUeK?q=escribano%20-qyery#h-agent-integration" class="btn-primary" target="_blank" rel="noopener">Read the agent docs</a>
-        </div>
-    </div>
-
-    <div class="agent-demo fade-up" style="transition-delay: 0.12s">
-      <div class="agent-video-frame">
-        <div class="agent-video-label"><span class="q-dot"></span> capture → understand → query → cite</div>
-        <video autoplay loop muted playsinline controls class="agent-video">
-          <source src="/video/escribano-demo.mp4" type="video/mp4">
-          Your browser does not support the video tag.
-        </video>
-      </div>
-      <p class="agent-caption">A full local loop: screen moments become evidence your agent can ask for.</p>
     </div>
   </div>
 </section>
@@ -404,5 +459,73 @@
   <div class="gdpr-dot"></div>
   All data processed locally on your device. GDPR compliant by default. We do not train on your sessions.
 </div>
+
+<script>
+  // Video lightbox
+  (function() {
+    // Set all thumbnail videos to first frame
+    document.querySelectorAll('.agent-video-thumb').forEach(v => {
+      v.currentTime = 0.1;
+    });
+
+    // Desktop lightbox
+    const desktopOpen = document.querySelector('[data-video-desktop]');
+    const desktopLightbox = document.querySelector('[data-lightbox-desktop]');
+    const desktopPlayer = desktopLightbox?.querySelector('.video-lightbox-player');
+
+    if (desktopOpen && desktopLightbox) {
+      desktopOpen.addEventListener('click', () => {
+        desktopLightbox.classList.add('is-open');
+        document.body.style.overflow = 'hidden';
+        if (desktopPlayer) {
+          desktopPlayer.currentTime = 0;
+          desktopPlayer.play();
+        }
+      });
+      desktopLightbox.querySelectorAll('[data-video-close]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          desktopLightbox.classList.remove('is-open');
+          document.body.style.overflow = '';
+          if (desktopPlayer) desktopPlayer.pause();
+        });
+      });
+    }
+
+    // Mobile lightbox
+    const mobileOpen = document.querySelector('[data-video-mobile]');
+    const mobileLightbox = document.querySelector('[data-lightbox-mobile]');
+    const mobilePlayer = mobileLightbox?.querySelector('.video-lightbox-player');
+
+    if (mobileOpen && mobileLightbox) {
+      mobileOpen.addEventListener('click', () => {
+        mobileLightbox.classList.add('is-open');
+        document.body.style.overflow = 'hidden';
+        if (mobilePlayer) {
+          mobilePlayer.currentTime = 0;
+          mobilePlayer.play();
+        }
+      });
+      mobileLightbox.querySelectorAll('[data-video-close]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          mobileLightbox.classList.remove('is-open');
+          document.body.style.overflow = '';
+          if (mobilePlayer) mobilePlayer.pause();
+        });
+      });
+    }
+
+    // Close all on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.video-lightbox.is-open').forEach(lb => {
+          lb.classList.remove('is-open');
+          const p = lb.querySelector('.video-lightbox-player');
+          if (p) p.pause();
+        });
+        document.body.style.overflow = '';
+      }
+    });
+  })();
+</script>
 
 {{ end }}

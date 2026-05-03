@@ -61,7 +61,7 @@ export const AnswerBlock: React.FC<AnswerBlockProps> = ({
       style={{
         marginTop: 24,
         fontFamily: "'DM Sans', system-ui, sans-serif",
-        fontSize: 15,
+        fontSize: 24,
         lineHeight: 1.7,
         color: '#1a1612',
       }}
@@ -138,7 +138,7 @@ export const AnswerBlock: React.FC<AnswerBlockProps> = ({
                 background: '#ede5d4',
                 border: '1px solid #d4c9b5',
                 color: '#3d3530',
-                fontSize: 13,
+                fontSize: 19,
                 fontFamily: "'DM Sans', system-ui, sans-serif",
               }}
             >

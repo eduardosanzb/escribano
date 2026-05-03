@@ -11,7 +11,7 @@ import {audioBufferToDataUrl} from '@remotion/media-utils';
 
 export const AmbientMusic: React.FC = () => {
 	const {durationInFrames, fps} = useVideoConfig();
-	const [handle] = useState(() => delayRender('Generating energetic audio'));
+	const [handle] = useState(() => delayRender('Generating bossa nova audio'));
 	const [audioBuffer, setAudioBuffer] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -31,144 +31,135 @@ export const AmbientMusic: React.FC = () => {
 		masterGain.connect(masterComp);
 		masterComp.connect(ctx.destination);
 
-		// Volume envelope: fade in 0→0.35 over 2s, hold, fade out over 2s
+		// Volume envelope: fade in 0→0.25 over 2s, hold, fade out over 2s
 		masterGain.gain.setValueAtTime(0, 0);
-		masterGain.gain.linearRampToValueAtTime(0.35, Math.min(2, duration));
+		masterGain.gain.linearRampToValueAtTime(0.25, Math.min(2, duration));
 		if (duration > 4) {
-			masterGain.gain.setValueAtTime(0.35, duration - 2);
+			masterGain.gain.setValueAtTime(0.25, duration - 2);
 		}
 		masterGain.gain.linearRampToValueAtTime(0, duration);
 
-		// Sidechain gain (ducked by kick)
+		// Sidechain gain (ducked by conga for bass)
 		const sidechainGain = ctx.createGain();
 		sidechainGain.gain.value = 1.0;
 		sidechainGain.connect(masterGain);
 
-		// === KICK DRUM (4-on-the-floor, 120 BPM = every 0.5s) ===
-		const bpm = 120;
+		const bpm = 90;
 		const beatInterval = 60 / bpm;
+		const measureDuration = 4 * beatInterval;
 
-		for (let t = 0; t < duration; t += beatInterval) {
-			// Kick body: sine sweep
-			const osc = ctx.createOscillator();
-			osc.type = 'sine';
-			osc.frequency.setValueAtTime(150, t);
-			osc.frequency.exponentialRampToValueAtTime(50, t + 0.12);
-
-			const gain = ctx.createGain();
-			gain.gain.setValueAtTime(0.8, t);
-			gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-
-			osc.connect(gain);
-			gain.connect(masterGain);
-			osc.start(t);
-			osc.stop(t + 0.3);
-
-			// Click/transient
-			const click = ctx.createOscillator();
-			click.type = 'square';
-			click.frequency.setValueAtTime(800, t);
-			click.frequency.exponentialRampToValueAtTime(100, t + 0.02);
-			const clickGain = ctx.createGain();
-			clickGain.gain.setValueAtTime(0.15, t);
-			clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-			click.connect(clickGain);
-			clickGain.connect(masterGain);
-			click.start(t);
-			click.stop(t + 0.06);
-
-			// Sidechain duck: dip music by 40% for 150ms after kick
-			sidechainGain.gain.setValueAtTime(1.0, t);
-			sidechainGain.gain.linearRampToValueAtTime(0.6, t + 0.02);
-			sidechainGain.gain.linearRampToValueAtTime(1.0, t + 0.15);
-		}
-
-		// === BASSLINE (quarter notes, root of each chord) ===
-		const bassNotes = [
-			{time: 0, freq: 65.41, duration: 0.45},   // C2
-			{time: 0.5, freq: 65.41, duration: 0.45},
-			{time: 1.0, freq: 65.41, duration: 0.45},
-			{time: 1.5, freq: 65.41, duration: 0.45},
-			{time: 2.0, freq: 55.0, duration: 0.45},   // A1
-			{time: 2.5, freq: 55.0, duration: 0.45},
-			{time: 3.0, freq: 55.0, duration: 0.45},
-			{time: 3.5, freq: 55.0, duration: 0.45},
-			{time: 4.0, freq: 43.65, duration: 0.45},  // F1
-			{time: 4.5, freq: 43.65, duration: 0.45},
-			{time: 5.0, freq: 43.65, duration: 0.45},
-			{time: 5.5, freq: 43.65, duration: 0.45},
+		// === UPRIGHT BASS (root notes, long sustain) ===
+		const bassRoots = [
+			{time: 0, freq: 73.42, duration: 1.5},
+			{time: measureDuration, freq: 49.0, duration: 1.5},
+			{time: 2 * measureDuration, freq: 65.41, duration: 1.5},
 		];
 
-		// Loop bassline for full duration
-		const loopDuration = 6; // seconds per chord cycle
-		for (let loopStart = 0; loopStart < duration; loopStart += loopDuration) {
-			for (const note of bassNotes) {
+		for (let loopStart = 0; loopStart < duration; loopStart += 3 * measureDuration) {
+			for (const note of bassRoots) {
 				const t = loopStart + note.time;
 				if (t >= duration) break;
 
 				const osc = ctx.createOscillator();
-				osc.type = 'sawtooth';
+				osc.type = 'sine';
 				osc.frequency.value = note.freq;
 
 				const gain = ctx.createGain();
-				gain.gain.setValueAtTime(0.12, t);
-				gain.gain.setTargetAtTime(0.001, t + 0.05, 0.15);
+				gain.gain.setValueAtTime(0.1, t);
+				gain.gain.setTargetAtTime(0.001, t + 0.1, 0.4);
 
-				const filter = ctx.createBiquadFilter();
-				filter.type = 'lowpass';
-				filter.frequency.value = 400;
-				filter.Q.value = 1;
-
-				osc.connect(filter);
-				filter.connect(gain);
+				osc.connect(gain);
 				gain.connect(sidechainGain);
 				osc.start(t);
 				osc.stop(Math.min(t + note.duration, duration));
 			}
 		}
 
-		// === CHORD STABS (sawtooth, staccato) ===
-		const chords = [
-			{time: 0, freqs: [130.81, 196.0, 261.63]},
-			{time: 2, freqs: [110.0, 164.81, 220.0]},
-			{time: 4, freqs: [87.31, 130.81, 174.61]},
+		// === CONGA (tumbao pattern) ===
+		const congaHits: number[] = [];
+		const congaPattern = [
+			beatInterval,
+			1.5 * beatInterval,
+			3 * beatInterval,
+			3.5 * beatInterval,
 		];
 
-		for (let loopStart = 0; loopStart < duration; loopStart += 6) {
-			for (const chord of chords) {
-				const t = loopStart + chord.time;
+		for (let measureStart = 0; measureStart < duration; measureStart += measureDuration) {
+			for (const offset of congaPattern) {
+				const t = measureStart + offset;
 				if (t >= duration) break;
+				congaHits.push(t);
 
-				for (const freq of chord.freqs) {
-					const osc = ctx.createOscillator();
-					osc.type = 'sawtooth';
-					osc.frequency.value = freq;
-
-					const gain = ctx.createGain();
-					gain.gain.setValueAtTime(0.04, t);
-					gain.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
-
-					const filter = ctx.createBiquadFilter();
-					filter.type = 'lowpass';
-					filter.frequency.setValueAtTime(2000, t);
-					filter.frequency.exponentialRampToValueAtTime(600, t + 0.5);
-
-					osc.connect(filter);
-					filter.connect(gain);
-					gain.connect(sidechainGain);
-					osc.start(t);
-					osc.stop(Math.min(t + 1, duration));
+				const noise = ctx.createBufferSource();
+				const buffer = ctx.createBuffer(1, Math.floor(sampleRate * 0.05), sampleRate);
+				const data = buffer.getChannelData(0);
+				for (let i = 0; i < data.length; i++) {
+					data[i] = Math.random() * 2 - 1;
 				}
+				noise.buffer = buffer;
+
+				const gain = ctx.createGain();
+				gain.gain.setValueAtTime(0.08, t);
+				gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+
+				const filter = ctx.createBiquadFilter();
+				filter.type = 'lowpass';
+				filter.frequency.value = 600;
+
+				noise.connect(filter);
+				filter.connect(gain);
+				gain.connect(masterGain);
+				noise.start(t);
+				noise.stop(t + 0.05);
 			}
 		}
 
-		// === HI-HATS (off-beats) ===
-		for (let t = 0; t < duration; t += beatInterval) {
-			const hatTime = t + beatInterval / 2; // off-beat
-			if (hatTime >= duration) break;
+		// Sidechain ducking from conga (10% dip, very subtle)
+		for (const t of congaHits) {
+			sidechainGain.gain.setValueAtTime(1.0, t);
+			sidechainGain.gain.linearRampToValueAtTime(0.9, t + 0.02);
+			sidechainGain.gain.linearRampToValueAtTime(1.0, t + 0.1);
+		}
 
+		// === BRUSHED SNARE (backbeat on 2 and 4) ===
+		const snareBeats = [beatInterval, 3 * beatInterval];
+
+		for (let measureStart = 0; measureStart < duration; measureStart += measureDuration) {
+			for (const offset of snareBeats) {
+				const t = measureStart + offset;
+				if (t >= duration) break;
+
+				const noise = ctx.createBufferSource();
+				const buffer = ctx.createBuffer(1, Math.floor(sampleRate * 0.08), sampleRate);
+				const data = buffer.getChannelData(0);
+				for (let i = 0; i < data.length; i++) {
+					data[i] = Math.random() * 2 - 1;
+				}
+				noise.buffer = buffer;
+
+				const gain = ctx.createGain();
+				gain.gain.setValueAtTime(0.03, t);
+				gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+
+				const filter = ctx.createBiquadFilter();
+				filter.type = 'bandpass';
+				filter.frequency.value = 3000;
+				filter.Q.value = 1;
+
+				noise.connect(filter);
+				filter.connect(gain);
+				gain.connect(masterGain);
+				noise.start(t);
+				noise.stop(t + 0.08);
+			}
+		}
+
+		// === SHAKER (every eighth note) ===
+		const eighthNoteInterval = beatInterval / 2;
+
+		for (let t = 0; t < duration; t += eighthNoteInterval) {
 			const noise = ctx.createBufferSource();
-			const buffer = ctx.createBuffer(1, sampleRate * 0.1, sampleRate);
+			const buffer = ctx.createBuffer(1, Math.floor(sampleRate * 0.02), sampleRate);
 			const data = buffer.getChannelData(0);
 			for (let i = 0; i < data.length; i++) {
 				data[i] = Math.random() * 2 - 1;
@@ -176,40 +167,71 @@ export const AmbientMusic: React.FC = () => {
 			noise.buffer = buffer;
 
 			const gain = ctx.createGain();
-			gain.gain.setValueAtTime(0.06, hatTime);
-			gain.gain.exponentialRampToValueAtTime(0.001, hatTime + 0.05);
+			gain.gain.setValueAtTime(0.015, t);
+			gain.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
 
 			const filter = ctx.createBiquadFilter();
 			filter.type = 'highpass';
-			filter.frequency.value = 8000;
+			filter.frequency.value = 5000;
 
 			noise.connect(filter);
 			filter.connect(gain);
 			gain.connect(masterGain);
-			noise.start(hatTime);
-			noise.stop(hatTime + 0.1);
+			noise.start(t);
+			noise.stop(t + 0.02);
 		}
 
-		// === SHIMMER/PAD (sustained, low volume) ===
-		for (let loopStart = 0; loopStart < duration; loopStart += 6) {
-			for (let i = 0; i < 3; i++) {
-				const t = loopStart + i * 2;
-				if (t >= duration) break;
-				const rootFreq = chords[i].freqs[0];
+		// === RHODES PIANO CHORDS (arpeggios) ===
+		const chords = [
+			{
+				time: 0,
+				freqs: [146.83, 174.61, 220.0, 261.63, 329.63],
+			},
+			{
+				time: measureDuration,
+				freqs: [98.0, 123.47, 146.83, 174.61, 220.0, 329.63],
+			},
+			{
+				time: 2 * measureDuration,
+				freqs: [130.81, 164.81, 196.0, 246.94, 293.66],
+			},
+		];
 
-				const osc = ctx.createOscillator();
-				osc.type = 'sine';
-				osc.frequency.value = rootFreq * 2;
+		for (let loopStart = 0; loopStart < duration; loopStart += 3 * measureDuration) {
+			for (const chord of chords) {
+				const chordStart = loopStart + chord.time;
+				if (chordStart >= duration) break;
 
-				const gain = ctx.createGain();
-				gain.gain.setValueAtTime(0.02, t);
-				gain.gain.linearRampToValueAtTime(0.015, t + 1.5);
-				gain.gain.linearRampToValueAtTime(0.001, t + 2);
+				for (let i = 0; i < chord.freqs.length; i++) {
+					const t = chordStart + i * 0.1;
+					if (t >= duration) break;
 
-				osc.connect(gain);
-				gain.connect(sidechainGain);
-				osc.start(t);
-				osc.stop(Math.min(t + 2, duration));
+					const osc = ctx.createOscillator();
+					osc.type = 'sine';
+					osc.frequency.value = chord.freqs[i];
+
+					const osc2 = ctx.createOscillator();
+					osc2.type = 'sine';
+					osc2.frequency.value = chord.freqs[i];
+					osc2.detune.value = 5;
+
+					const gain = ctx.createGain();
+					gain.gain.setValueAtTime(0.04, t);
+					gain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+
+					const filter = ctx.createBiquadFilter();
+					filter.type = 'lowpass';
+					filter.frequency.value = 2000;
+
+					osc.connect(filter);
+					osc2.connect(filter);
+					filter.connect(gain);
+					gain.connect(masterGain);
+					osc.start(t);
+					osc.stop(Math.min(t + 0.6, duration));
+					osc2.start(t);
+					osc2.stop(Math.min(t + 0.6, duration));
+				}
 			}
 		}
 

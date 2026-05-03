@@ -2504,17 +2504,157 @@ footer {
   color: var(--ink-soft);
 }
 
-/* Chat bubbles (step 03) ─────────────── */
-.step-mock--video {
+/* Query terminal (step 03) ───────────── */
+.step-mock--query {
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 18px 40px rgba(26,22,18,0.14), 0 2px 4px rgba(26,22,18,0.05);
 }
 
-.demo-video {
-  width: 100%;
-  display: block;
+.use-term--step {
+  background: var(--ink);
   border-radius: 12px;
+  overflow: hidden;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+}
+
+:root.dark-mode .use-term--step {
+  background: #07080c;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+
+.use-term--step .use-term-body {
+  height: 230px;
+  font-size: 0.64rem;
+}
+
+/* ──────────────────────────────────────────────
+   AI agents section
+   ────────────────────────────────────────────── */
+.agent-section {
+  background: var(--cream);
+  border-top: 1px solid var(--parchment-deep);
+  border-bottom: 1px solid var(--parchment-deep);
+}
+
+.agent-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 4rem;
+  align-items: center;
+}
+
+.agent-copy { min-width: 0; }
+
+.agent-copy h2 {
+  font-family: var(--serif);
+  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  font-weight: 300;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  margin-bottom: 1.35rem;
+  max-width: 12ch;
+}
+
+.agent-lead {
+  font-family: var(--serif-body);
+  font-size: 1.08rem;
+  font-weight: 300;
+  color: var(--ink-soft);
+  line-height: 1.7;
+  max-width: 42ch;
+  margin-bottom: 2.25rem;
+}
+
+.agent-points {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 2.25rem;
+}
+
+.agent-point {
+  padding-left: 1rem;
+  border-left: 2px solid var(--terracotta);
+}
+
+.agent-point-label {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--terracotta);
+  margin-bottom: 0.35rem;
+}
+
+.agent-point p {
+  font-family: var(--serif-body);
+  font-size: 0.98rem;
+  font-weight: 300;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.agent-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.agent-demo { min-width: 0; }
+
+.agent-video-frame {
+  background: var(--ink);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(26,22,18,0.22);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+:root.dark-mode .agent-video-frame {
+  background: #07080c;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.45);
+}
+
+.agent-video-label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(245,240,232,0.62);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.agent-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #050506;
+}
+
+.agent-caption {
+  margin-top: 1rem;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  letter-spacing: 0.03em;
+}
+
+@media (max-width: 900px) {
+  .agent-inner {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  .agent-copy h2 { max-width: 14ch; }
 }
 
 /* Quick start section */

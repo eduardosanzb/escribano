@@ -3,19 +3,17 @@ import {AbsoluteFill, useCurrentFrame} from 'remotion';
 import {float, parallax} from '../motion';
 
 export const AGENT_COLORS = {
-  ink: '#E8E9EE',
-  inkSoft: '#9395A5',
-  inkMuted: '#5C5F72',
-  bg: '#0A0A0F',
-  surface: '#15171F',
-  elevated: '#1C1F2B',
-  line: '#2A2D3A',
-  amber: '#E8A838',
-  amberLight: '#F0BC5A',
-  olive: '#4A9E7A',
-  rust: '#B85C38',
-  blue: '#314573',
-  cream: '#F5F0E8',
+  ink: '#1a1612',
+  inkSoft: '#3d3530',
+  inkMuted: '#7a6e66',
+  parchment: '#f5f0e8',
+  cream: '#faf7f2',
+  surface: '#ede5d4',
+  surfaceElev: '#e8e0ce',
+  line: '#d4c9b5',
+  terracotta: '#b85c38',
+  olive: '#5c6b3a',
+  amber: '#c4963a',
 };
 
 export const AGENT_FONTS = {
@@ -51,7 +49,7 @@ const TileStrip: React.FC = () => (
       left: 0,
       right: 0,
       height: 6,
-      background: `repeating-linear-gradient(90deg, ${AGENT_COLORS.rust} 0 18px, ${AGENT_COLORS.blue} 18px 36px, ${AGENT_COLORS.amber} 36px 54px, ${AGENT_COLORS.blue} 54px 72px)`,
+      background: `repeating-linear-gradient(90deg, ${AGENT_COLORS.terracotta} 0 18px, ${AGENT_COLORS.olive} 18px 36px, ${AGENT_COLORS.amber} 36px 54px, ${AGENT_COLORS.olive} 54px 72px)`,
     }}
   />
 );
@@ -74,59 +72,39 @@ export const BrandWordmark: React.FC<{size?: number; centered?: boolean}> = ({
       }}
     >
       Escrib
-      <span style={{color: AGENT_COLORS.amber}}>a</span>
+      <span style={{color: AGENT_COLORS.terracotta}}>a</span>
       no
     </span>
   );
 };
 
-export const AgentStage: React.FC<{children: React.ReactNode}> = ({children}) => {
+export const AgentStage: React.FC<{
+  children: React.ReactNode;
+  thinkingIntensity?: number;
+  connectionIntensity?: number;
+}> = ({children, thinkingIntensity = 0, connectionIntensity = 0}) => {
   const frame = useCurrentFrame();
 
-  const oliveX = 74 + parallax(frame, 200, 3);
-  const oliveY = 12 + parallax(frame, 250, 2);
-  const amberX = 8 + parallax(frame, 220, 2);
-  const amberY = 92 + parallax(frame, 180, 3);
-
-  const gridOpacity = 0.28 + float(frame, 180, 0.08);
+  const dotGridOpacity = thinkingIntensity * 0.12;
 
   return (
     <AbsoluteFill
       style={{
-        background: `linear-gradient(180deg, ${AGENT_COLORS.bg} 0%, ${AGENT_COLORS.surface} 100%)`,
+        background: `linear-gradient(180deg, #faf7f2 0%, #f5f0e8 100%)`,
         color: AGENT_COLORS.ink,
         overflow: 'hidden',
       }}
     >
       <style>{css}</style>
 
-      {/* Radial gradient overlays */}
+      {/* Dot grid overlay */}
       <div
         style={{
           position: 'absolute',
           inset: 0,
-          background: `radial-gradient(circle at ${oliveX}% ${oliveY}%, rgba(74,158,122,0.2), transparent 34%)`,
-          pointerEvents: 'none',
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: `radial-gradient(circle at ${amberX}% ${amberY}%, rgba(232,168,56,0.18), transparent 28%)`,
-          pointerEvents: 'none',
-        }}
-      />
-
-      {/* Grid overlay */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage:
-            'linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px)',
-          backgroundSize: '72px 72px',
-          opacity: gridOpacity,
+          backgroundImage: 'radial-gradient(circle, rgba(26,22,18,0.06) 1px, transparent 1px)',
+          backgroundSize: '48px 48px',
+          opacity: dotGridOpacity,
           pointerEvents: 'none',
         }}
       />
@@ -138,10 +116,24 @@ export const AgentStage: React.FC<{children: React.ReactNode}> = ({children}) =>
           inset: 0,
           backgroundImage:
             "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E\")",
-          opacity: 0.15,
+          opacity: 0.08,
           pointerEvents: 'none',
         }}
       />
+
+      {/* Connecting lines layer */}
+      <svg
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          opacity: connectionIntensity,
+          pointerEvents: 'none',
+        }}
+      >
+        {/* Line coordinates will be wired later */}
+      </svg>
 
       <TileStrip />
 

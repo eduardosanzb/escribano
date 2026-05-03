@@ -116,7 +116,7 @@ export const AnswerScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             willChange: 'transform, opacity',
           }}
         >
-          Timestamps, entities, and source context — clean enough for any agent to use.
+          Timestamps, entities, and source context — clean enough for any agent to cite.
         </div>
       </div>
 

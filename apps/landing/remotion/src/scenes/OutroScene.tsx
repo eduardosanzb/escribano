@@ -180,7 +180,7 @@ export const OutroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
           willChange: 'transform, opacity',
         }}
       >
-        <Label>escribano.work</Label>
+        <Label>Escrib<span style={{color: colors.amber}}>a</span>no</Label>
         <div
           style={{
             marginTop: 32,
@@ -190,7 +190,7 @@ export const OutroScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             textAlign: 'center',
           }}
         >
-          Ask your work what happened.
+          Your work, queryable by any agent.
         </div>
 
         {/* Underline draws from center outward */}

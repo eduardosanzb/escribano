@@ -135,7 +135,7 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						willChange: 'transform, opacity',
 					}}
 				>
-					Turns screen moments into plain-language descriptions. Tools, files, context — all on your machine.
+					Each moment is turned into a short, plain-language description — the tools, the files, the context. All of it stays on your machine.
 				</div>
 			</div>
 
@@ -153,14 +153,14 @@ export const ConnectScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 				<MomentCard
 					time="14:32"
 					app="VS Code"
-					description="Debugging JWT refresh flow in middleware/auth.ts"
+					description="Debugging a JWT refresh flow in middleware/auth.ts — repeated 401 responses in the inspector"
 					delay={20}
 					frame={relativeFrame}
 				/>
 				<MomentCard
 					time="14:47"
 					app="Terminal"
-					description="Committed fix for refresh-token expiry"
+					description="Committed the fix for refresh-token expiry and pushed to the feature branch"
 					delay={35}
 					frame={relativeFrame}
 				/>

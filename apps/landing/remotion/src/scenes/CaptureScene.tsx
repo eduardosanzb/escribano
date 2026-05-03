@@ -119,7 +119,7 @@ export const CaptureScene: React.FC<{startFrame: number}> = ({startFrame}) => {
             opacity: enterExit(relativeFrame, 15, 40, 150, 190),
           }}
         >
-          Records your screen in the background. Nothing leaves your machine.
+          A small menu-bar app watches your screen in the background. Repeats are skipped, nothing is uploaded, and you can pause it whenever you want.
         </div>
         <div
           style={{

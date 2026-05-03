@@ -132,7 +132,7 @@ export const AskScene: React.FC<{startFrame: number}> = ({startFrame}) => {
 						willChange: 'opacity',
 					}}
 				>
-					Claude Code, Cursor, Codex — ask what you worked on in plain language. Evidence comes back structured and ready to cite.
+					Ask your agent — or the command line directly — what you were working on. Evidence comes back structured and ready to cite.
 				</div>
 				<div
 					style={{

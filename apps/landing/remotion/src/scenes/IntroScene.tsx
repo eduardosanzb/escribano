@@ -57,7 +57,7 @@ const Brand: React.FC<{progress: number; relativeFrame: number}> = ({progress, r
           textShadow: '0 0 40px rgba(232,168,56,0.15)',
         }}
       >
-        Escrib<span style={{color: colors.amber}}>ano</span>
+        Escrib<span style={{color: colors.amber}}>a</span>no
       </div>
       <div
         style={{

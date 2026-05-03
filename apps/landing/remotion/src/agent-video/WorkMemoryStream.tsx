@@ -380,7 +380,7 @@ export const WorkMemoryStream: React.FC<{mode: WorkMemoryMode}> = ({mode}) => {
 
       {mode === 'receipts' && (
         <div style={{display: 'flex', flexDirection: 'column-reverse', gap: 6}}>
-          {[...fileEvidence, ...signalEvidence].map((item, i) => {
+          {[...fileEvidence, ...signalEvidence].slice(0, 4).map((item, i) => {
             const pulse = i % 2 === 0;
             const pulseColor = i % 4 === 0 ? colors.amber : colors.olive;
             return (

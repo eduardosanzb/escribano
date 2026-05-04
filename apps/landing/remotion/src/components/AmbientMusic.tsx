@@ -66,7 +66,8 @@ export const AmbientMusic: React.FC = () => {
 				osc.frequency.value = note.freq;
 
 				const gain = ctx.createGain();
-				gain.gain.setValueAtTime(0.04, t);
+				gain.gain.setValueAtTime(0, t);
+				gain.gain.linearRampToValueAtTime(0.04, t + 0.005);
 				gain.gain.setTargetAtTime(0.001, t + 0.1, 0.4);
 
 				osc.connect(gain);
@@ -100,7 +101,8 @@ export const AmbientMusic: React.FC = () => {
 				noise.buffer = buffer;
 
 				const gain = ctx.createGain();
-				gain.gain.setValueAtTime(0.08, t);
+				gain.gain.setValueAtTime(0, t);
+				gain.gain.linearRampToValueAtTime(0.08, t + 0.002);
 				gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
 
 				const hp = ctx.createBiquadFilter();
@@ -144,7 +146,8 @@ export const AmbientMusic: React.FC = () => {
 				noise.buffer = buffer;
 
 				const gain = ctx.createGain();
-				gain.gain.setValueAtTime(0.03, t);
+				gain.gain.setValueAtTime(0, t);
+				gain.gain.linearRampToValueAtTime(0.03, t + 0.002);
 				gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
 
 				const filter = ctx.createBiquadFilter();
@@ -173,7 +176,8 @@ export const AmbientMusic: React.FC = () => {
 			noise.buffer = buffer;
 
 			const gain = ctx.createGain();
-			gain.gain.setValueAtTime(0.015, t);
+			gain.gain.setValueAtTime(0, t);
+			gain.gain.linearRampToValueAtTime(0.015, t + 0.002);
 			gain.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
 
 			const filter = ctx.createBiquadFilter();
@@ -191,15 +195,15 @@ export const AmbientMusic: React.FC = () => {
 		const chords = [
 			{
 				time: 0,
-				freqs: [146.83, 174.61, 220.0, 261.63, 329.63],
+				freqs: [174.61, 220.0, 261.63, 329.63, 392.0],
 			},
 			{
 				time: measureDuration,
-				freqs: [98.0, 123.47, 146.83, 174.61, 220.0, 329.63],
+				freqs: [174.61, 220.0, 261.63, 329.63, 392.0, 493.88],
 			},
 			{
 				time: 2 * measureDuration,
-				freqs: [130.81, 164.81, 196.0, 246.94, 293.66],
+				freqs: [196.0, 246.94, 293.66, 349.23, 440.0],
 			},
 		];
 
@@ -222,7 +226,8 @@ export const AmbientMusic: React.FC = () => {
 					osc2.detune.value = 5;
 
 					const gain = ctx.createGain();
-					gain.gain.setValueAtTime(0.04, t);
+					gain.gain.setValueAtTime(0, t);
+					gain.gain.linearRampToValueAtTime(0.04, t + 0.01);
 					gain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
 
 					const filter = ctx.createBiquadFilter();

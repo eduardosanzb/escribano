@@ -327,6 +327,47 @@ Opens at `http://localhost:3456` with:
 - **Debug** (`/debug.html`) — Frame-by-frame inspection with VLM descriptions
 - **Stats** (`/stats.html`) — Processing run history and phase breakdowns
 
+## Remotion Video System
+
+The landing page includes a Remotion-based video generation system for marketing content (agent demo videos, social media clips).
+
+### Available Compositions
+
+| Composition | Dimensions | Aspect | Use Case |
+|-------------|-----------|--------|----------|
+| **EscribanoDemo** | 1920×1080 | 16:9 | Website hero section |
+| **EscribanoAgentMemory** | 1920×1080 | 16:9 | Desktop agent demo |
+| **EscribanoAgentMemoryMobile** | 1080×1920 | 9:16 | Mobile/Reels |
+| **EscribanoAgentMemoryLinkedIn** | 1080×1350 | 4:5 | LinkedIn feed |
+
+### Render Commands
+
+```bash
+cd apps/landing
+
+pnpm video:preview              # Preview in browser
+pnpm video:render:desktop       # 1920×1080 landscape
+pnpm video:render:mobile        # 1080×1920 vertical
+pnpm video:render:linkedin      # 1080×1350 vertical (LinkedIn)
+pnpm video:render:all           # All formats in parallel
+```
+
+Rendered videos output to `apps/landing/static/video/`.
+
+### Responsive Panel Architecture
+
+The `AgentPanelMobile` component uses `useVideoConfig()` to derive all layout values from the actual canvas size. This means the same component renders correctly on both 9:16 (mobile/Reels) and 4:5 (LinkedIn) without code duplication.
+
+Key principle: Content components (`ChatMessage`, `ThinkingBlock`, `AnswerBlock`, etc.) are layout-agnostic. Only the panel wrapper handles positioning.
+
+To add a new portrait format, register a new composition in `root.tsx` with your target dimensions — no component changes needed.
+
+### Asset Management
+
+**Critical**: Remotion's `staticFile()` resolves from the **current working directory** (CWD), not from the `remotion/` subdirectory. When `pnpm video:preview` runs from `apps/landing/`, `staticFile('assets/foo.png')` looks in `apps/landing/public/assets/foo.png`, NOT `apps/landing/remotion/public/assets/foo.png`.
+
+**Rule**: Every image added to `remotion/public/assets/` must also be copied to `apps/landing/public/assets/`.
+
 ## Resume Safety
 
 The pipeline saves progress aggressively to enable crash recovery:

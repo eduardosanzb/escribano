@@ -1,5 +1,5 @@
 import React from 'react';
-import {useCurrentFrame, interpolate, Easing} from 'remotion';
+import {useCurrentFrame, useVideoConfig, interpolate, Easing} from 'remotion';
 import {ChatMessage} from './ChatMessage';
 import {ThinkingBlock} from './ThinkingBlock';
 import {AnswerBlock} from './AnswerBlock';
@@ -9,6 +9,7 @@ import {LogoLockup} from './LogoLockup';
 
 export const AgentPanelMobile: React.FC = () => {
   const frame = useCurrentFrame();
+  const {width, height} = useVideoConfig();
 
   const promptText = 'summarize my research on vector databases from this afternoon';
   const promptStart = 40;
@@ -45,7 +46,7 @@ export const AgentPanelMobile: React.FC = () => {
       easing: Easing.inOut(Easing.ease),
     }
   );
-  const scrollOffset = scrollProgress * 1200;
+  const scrollOffset = scrollProgress * Math.round(height * 0.625);
 
   return (
     <div
@@ -53,17 +54,17 @@ export const AgentPanelMobile: React.FC = () => {
         position: 'absolute',
         left: 0,
         top: 0,
-        width: 1080,
-        height: 1920,
+        width,
+        height,
         opacity: panelOpacity,
       }}
     >
       <div
         style={{
-          width: 940,
-          marginLeft: 70,
-          paddingTop: 120,
-          paddingBottom: 120,
+          width: Math.round(width * 0.87),
+          marginLeft: Math.round(width * 0.065),
+          paddingTop: Math.round(height * 0.063),
+          paddingBottom: Math.round(height * 0.063),
           transform: `translateY(${-scrollOffset}px)`,
           opacity: chatFadeOut,
         }}

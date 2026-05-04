@@ -223,19 +223,24 @@ export const AmbientMusic: React.FC = () => {
 					const osc2 = ctx.createOscillator();
 					osc2.type = 'sine';
 					osc2.frequency.value = chord.freqs[i];
-					osc2.detune.value = 5;
+					osc2.detune.value = 2;
 
 					const gain = ctx.createGain();
 					gain.gain.setValueAtTime(0, t);
-					gain.gain.linearRampToValueAtTime(0.04, t + 0.01);
+					gain.gain.linearRampToValueAtTime(0.03, t + 0.025);
 					gain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+
+					const hp = ctx.createBiquadFilter();
+					hp.type = 'highpass';
+					hp.frequency.value = 150;
 
 					const filter = ctx.createBiquadFilter();
 					filter.type = 'lowpass';
 					filter.frequency.value = 2000;
 
-					osc.connect(filter);
-					osc2.connect(filter);
+					osc.connect(hp);
+					osc2.connect(hp);
+					hp.connect(filter);
 					filter.connect(gain);
 					gain.connect(masterGain);
 					osc.start(t);

@@ -31,6 +31,14 @@ export const Root: React.FC = () => {
         width={1080}
         height={1920}
       />
+      <Composition
+        id="EscribanoAgentMemoryLinkedIn"
+        component={EscribanoAgentMemoryMobile}
+        durationInFrames={AGENT_MEMORY_DURATION_MOBILE}
+        fps={60}
+        width={1080}
+        height={1350}
+      />
     </>
   );
 };

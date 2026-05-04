@@ -8,7 +8,8 @@
     "video:render": "remotion render remotion/src/index.ts --audio-sample-rate=48000 --concurrency=1",
     "video:render:desktop": "pnpm video:render EscribanoAgentMemory static/video/escribano-agent-memory.mp4 --codec=h264 --crf=18",
     "video:render:mobile": "pnpm video:render EscribanoAgentMemoryMobile static/video/escribano-agent-memory-mobile.mp4 --codec=h264 --crf=18",
-    "video:render:all": "pnpm video:render:desktop & pnpm video:render:mobile"
+    "video:render:linkedin": "pnpm video:render EscribanoAgentMemoryLinkedIn static/video/escribano-agent-memory-linkedin.mp4 --codec=h264 --crf=18",
+    "video:render:all": "pnpm video:render:desktop & pnpm video:render:mobile & pnpm video:render:linkedin"
   },
   "dependencies": {
     "@remotion/animation-utils": "4.0.454",

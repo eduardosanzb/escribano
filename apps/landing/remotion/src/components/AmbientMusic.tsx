@@ -23,19 +23,19 @@ export const AmbientMusic: React.FC = () => {
 		// Master chain
 		const masterGain = ctx.createGain();
 		const masterComp = ctx.createDynamicsCompressor();
-		masterComp.threshold.value = -12;
+		masterComp.threshold.value = -18;
 		masterComp.knee.value = 6;
-		masterComp.ratio.value = 4;
+		masterComp.ratio.value = 8;
 		masterComp.attack.value = 0.003;
 		masterComp.release.value = 0.1;
 		masterGain.connect(masterComp);
 		masterComp.connect(ctx.destination);
 
-		// Volume envelope: fade in 0→0.25 over 2s, hold, fade out over 2s
+		// Volume envelope: fade in 0→0.15 over 2s, hold, fade out over 2s
 		masterGain.gain.setValueAtTime(0, 0);
-		masterGain.gain.linearRampToValueAtTime(0.25, Math.min(2, duration));
+		masterGain.gain.linearRampToValueAtTime(0.15, Math.min(2, duration));
 		if (duration > 4) {
-			masterGain.gain.setValueAtTime(0.25, duration - 2);
+			masterGain.gain.setValueAtTime(0.15, duration - 2);
 		}
 		masterGain.gain.linearRampToValueAtTime(0, duration);
 
@@ -65,7 +65,7 @@ export const AmbientMusic: React.FC = () => {
 				osc.frequency.value = note.freq;
 
 				const gain = ctx.createGain();
-				gain.gain.setValueAtTime(0.1, t);
+				gain.gain.setValueAtTime(0.04, t);
 				gain.gain.setTargetAtTime(0.001, t + 0.1, 0.4);
 
 				osc.connect(gain);

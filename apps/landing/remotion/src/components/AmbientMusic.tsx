@@ -6,54 +6,34 @@ import {
 	continueRender,
 	cancelRender,
 	interpolate,
+  useCurrentFrame,
 } from 'remotion';
 import {audioBufferToDataUrl} from '@remotion/media-utils';
 
 export const AmbientMusic: React.FC = () => {
+  const frame = useCurrentFrame();
 	const {durationInFrames, fps} = useVideoConfig();
 	const [handle] = useState(() => delayRender('Generating bossa nova audio'));
 	const [audioBuffer, setAudioBuffer] = useState<string | null>(null);
 
 	useEffect(() => {
-		const sampleRate = 44100;
+		const sampleRate = 48000;
 		const length = Math.floor(sampleRate * (durationInFrames / fps));
 		const ctx = new OfflineAudioContext(2, length, sampleRate);
 		const duration = durationInFrames / fps;
 
-		// Master chain
 		const masterGain = ctx.createGain();
-		const masterComp = ctx.createDynamicsCompressor();
-		masterComp.threshold.value = -18;
-		masterComp.knee.value = 6;
-		masterComp.ratio.value = 8;
-		masterComp.attack.value = 0.003;
-		masterComp.release.value = 0.1;
-		masterGain.connect(masterComp);
-		masterComp.connect(ctx.destination);
-
-		// Volume envelope: fade in 0→0.15 over 2s, hold, fade out over 2s
-		masterGain.gain.setValueAtTime(0, 0);
-		masterGain.gain.linearRampToValueAtTime(0.15, Math.min(2, duration));
-		if (duration > 4) {
-			masterGain.gain.setValueAtTime(0.15, duration - 2);
-		}
-		masterGain.gain.linearRampToValueAtTime(0, duration);
-
-		// Sidechain gain (ducked by conga for bass)
-		const sidechainGain = ctx.createGain();
-		sidechainGain.gain.value = 1.0;
-		sidechainGain.connect(masterGain);
+		masterGain.connect(ctx.destination);
 
 		const bpm = 90;
 		const beatInterval = 60 / bpm;
 		const measureDuration = 4 * beatInterval;
 
-		// === UPRIGHT BASS (root notes, long sustain) ===
-		// 98Hz removed — too low for laptop/phone speakers
+		// === UPRIGHT BASS ===
 		const bassRoots = [
-			{time: 0, freq: 146.83, duration: 1.5},
-			{time: measureDuration, freq: 196.0, duration: 1.5},
-			{time: 2 * measureDuration, freq: 130.81, duration: 1.5},
+			{time: 0, freq: 196.0, duration: 1.5},
+			{time: measureDuration, freq: 246.94, duration: 1.5},
+			{time: 2 * measureDuration, freq: 174.61, duration: 1.5},
 		];
 
 		for (let loopStart = 0; loopStart < duration; loopStart += 3 * measureDuration) {
@@ -66,19 +46,19 @@ export const AmbientMusic: React.FC = () => {
 				osc.frequency.value = note.freq;
 
 				const gain = ctx.createGain();
+				const end = Math.min(t + note.duration, duration);
 				gain.gain.setValueAtTime(0, t);
-				gain.gain.linearRampToValueAtTime(0.04, t + 0.005);
-				gain.gain.setTargetAtTime(0.001, t + 0.1, 0.4);
+				gain.gain.linearRampToValueAtTime(0.04, t + 0.01);
+				gain.gain.exponentialRampToValueAtTime(0.0001, end);
 
 				osc.connect(gain);
-				gain.connect(sidechainGain);
+				gain.connect(masterGain);
 				osc.start(t);
-				osc.stop(Math.min(t + note.duration, duration));
+				osc.stop(end);
 			}
 		}
 
-		// === CONGA (tumbao pattern) ===
-		const congaHits: number[] = [];
+		// === CONGA ===
 		const congaPattern = [
 			beatInterval,
 			1.5 * beatInterval,
@@ -90,7 +70,6 @@ export const AmbientMusic: React.FC = () => {
 			for (const offset of congaPattern) {
 				const t = measureStart + offset;
 				if (t >= duration) break;
-				congaHits.push(t);
 
 				const noise = ctx.createBufferSource();
 				const buffer = ctx.createBuffer(1, Math.floor(sampleRate * 0.05), sampleRate);
@@ -122,14 +101,7 @@ export const AmbientMusic: React.FC = () => {
 			}
 		}
 
-		// Sidechain ducking from conga (10% dip, very subtle)
-		for (const t of congaHits) {
-			sidechainGain.gain.setValueAtTime(1.0, t);
-			sidechainGain.gain.linearRampToValueAtTime(0.9, t + 0.02);
-			sidechainGain.gain.linearRampToValueAtTime(1.0, t + 0.1);
-		}
-
-		// === BRUSHED SNARE (backbeat on 2 and 4) ===
+		// === BRUSHED SNARE ===
 		const snareBeats = [beatInterval, 3 * beatInterval];
 
 		for (let measureStart = 0; measureStart < duration; measureStart += measureDuration) {
@@ -163,7 +135,7 @@ export const AmbientMusic: React.FC = () => {
 			}
 		}
 
-		// === SHAKER (every eighth note) ===
+		// === SHAKER ===
 		const eighthNoteInterval = beatInterval / 2;
 
 		for (let t = 0; t < duration; t += eighthNoteInterval) {
@@ -191,19 +163,19 @@ export const AmbientMusic: React.FC = () => {
 			noise.stop(t + 0.02);
 		}
 
-		// === RHODES PIANO CHORDS (arpeggios) ===
+		// === RHODES PIANO CHORDS ===
 		const chords = [
 			{
 				time: 0,
-				freqs: [174.61, 220.0, 261.63, 329.63, 392.0],
+				freqs: [220.0, 261.63, 329.63, 392.0, 493.88],
 			},
 			{
 				time: measureDuration,
-				freqs: [174.61, 220.0, 261.63, 329.63, 392.0, 493.88],
+				freqs: [220.0, 261.63, 329.63, 392.0, 493.88, 587.33],
 			},
 			{
 				time: 2 * measureDuration,
-				freqs: [196.0, 246.94, 293.66, 349.23, 440.0],
+				freqs: [261.63, 329.63, 392.0, 493.88, 587.33],
 			},
 		];
 
@@ -217,36 +189,28 @@ export const AmbientMusic: React.FC = () => {
 					if (t >= duration) break;
 
 					const osc = ctx.createOscillator();
-					osc.type = 'sine';
+					osc.type = 'triangle';
 					osc.frequency.value = chord.freqs[i];
-
-					const osc2 = ctx.createOscillator();
-					osc2.type = 'sine';
-					osc2.frequency.value = chord.freqs[i];
-					osc2.detune.value = 2;
 
 					const gain = ctx.createGain();
 					gain.gain.setValueAtTime(0, t);
-					gain.gain.linearRampToValueAtTime(0.03, t + 0.025);
+					gain.gain.linearRampToValueAtTime(0.025, t + 0.04);
 					gain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
 
 					const hp = ctx.createBiquadFilter();
 					hp.type = 'highpass';
-					hp.frequency.value = 150;
+					hp.frequency.value = 200;
 
 					const filter = ctx.createBiquadFilter();
 					filter.type = 'lowpass';
-					filter.frequency.value = 2000;
+					filter.frequency.value = 1600;
 
 					osc.connect(hp);
-					osc2.connect(hp);
 					hp.connect(filter);
 					filter.connect(gain);
 					gain.connect(masterGain);
 					osc.start(t);
 					osc.stop(Math.min(t + 0.6, duration));
-					osc2.start(t);
-					osc2.stop(Math.min(t + 0.6, duration));
 				}
 			}
 		}

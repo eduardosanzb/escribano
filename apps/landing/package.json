@@ -1,18 +1,20 @@
 {
   "name": "escribano-landing",
   "scripts": {
+
     "dev": "hugo server -D --navigateToChanged",
     "build": "hugo --gc --minify",
     "video:preview": "remotion studio remotion/src/index.ts",
-    "video:render": "remotion render remotion/src/index.ts EscribanoDemo static/video/escribano-demo.remotion.mp4 --codec=h264 --pixel-format=yuv420p --crf=18 && scripts/post-process-video.sh static/video/escribano-demo.remotion.mp4 static/video/escribano-demo.mp4 192k",
-    "video:render:agent": "remotion render remotion/src/index.ts EscribanoAgentMemory static/video/escribano-agent-memory.remotion.mp4 --codec=h264 --pixel-format=yuv420p --crf=18 && scripts/post-process-video.sh static/video/escribano-agent-memory.remotion.mp4 static/video/escribano-agent-memory.mp4",
-    "video:render:agent:mobile": "remotion render remotion/src/index.ts EscribanoAgentMemoryMobile static/video/escribano-agent-memory-mobile.remotion.mp4 --codec=h264 --pixel-format=yuv420p --crf=18 && scripts/post-process-video.sh static/video/escribano-agent-memory-mobile.remotion.mp4 static/video/escribano-agent-memory-mobile.mp4"
+    "video:render": "remotion render remotion/src/index.ts --audio-sample-rate=48000 --concurrency=1",
+    "video:render:desktop": "pnpm video:render EscribanoAgentMemory static/video/escribano-agent-memory.mp4 --codec=h264 --crf=18",
+    "video:render:mobile": "pnpm video:render EscribanoAgentMemoryMobile static/video/escribano-agent-memory-mobile.mp4 --codec=h264 --crf=18",
+    "video:render:all": "pnpm video:render:desktop & pnpm video:render:mobile"
   },
   "dependencies": {
     "@remotion/animation-utils": "4.0.454",
     "@remotion/cli": "^4.0.454",
     "@remotion/install-whisper-cpp": "4.0.454",
-    "@remotion/media-utils": "^4.0.454",
+    "@remotion/media-utils": "^4.0.456",
     "@remotion/three": "4.0.454",
     "@remotion/transitions": "4.0.454",
     "react": "^19.2.5",

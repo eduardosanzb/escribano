@@ -1,5 +1,9 @@
+packages:
+  - 'apps/*'
+
 ignoredBuiltDependencies:
   - better-sqlite3
+  - esbuild
 
 onlyBuiltDependencies:
   - better-sqlite3

@@ -924,8 +924,11 @@ def main() -> None:
     if setproctitle is not None:
         try:
             setproctitle.setproctitle(f"escribano-bridge-{BRIDGE_MODE}")
+            log(f"Process title set to 'escribano-bridge-{BRIDGE_MODE}'", "info")
         except Exception as err:  # pragma: no cover - best effort
-            log(f"Failed to set process title: {err}", "debug")
+            log(f"Failed to set process title: {err}", "info")
+    else:
+        log("[MLX] setproctitle not installed — process will appear as \"python3\" in Activity Monitor", "warning")
 
     # Adjust socket path based on mode (VLM and LLM use separate sockets)
     base_socket = SOCKET_PATH.replace(".sock", "")

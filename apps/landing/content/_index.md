@@ -1,4 +1,4 @@
 ---
-title: "Escribano — Your AI Scribe for Deep Work"
-description: "Turn hours of deep work into structured, shareable summaries. AI-powered session intelligence for knowledge workers."
+title: "Escribano — Private Work Memory for AI Agents"
+description: "Give Claude Code, Codex, Cursor, and OpenCode local memory of what you actually worked on. Evidence-backed recall and drafts, on your Mac."
 ---

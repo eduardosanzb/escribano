@@ -132,22 +132,22 @@ layout: "single"
 
 <section class="install-query">
 
-<h2 class="install-query-title">Query your work</h2>
+<h2 class="install-query-title">Give your agents memory</h2>
 
-<p>Escribano captures your screen in the background. Now query that history from the command line.</p>
+<p>Escribano captures screen evidence in the background. Use the CLI directly, or give compact output to Claude Code, Codex, OpenCode, Cursor, or another local agent.</p>
 
 <div class="install-query-examples">
   <div class="install-query-example">
     <code>escribano-query today --json</code>
-    <span>See what you did today</span>
+    <span>See what happened today</span>
   </div>
   <div class="install-query-example">
     <code>escribano-query search "debugging" --since 1d</code>
-    <span>Find something specific</span>
+    <span>Recover a work thread</span>
   </div>
   <div class="install-query-example">
     <code>escribano-query entities --kind software_tool</code>
-    <span>See what tools you used</span>
+    <span>Prime an agent with tools and context</span>
   </div>
 </div>
 

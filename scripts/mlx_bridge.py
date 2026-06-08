@@ -44,9 +44,13 @@ def timeout_handler(signum, frame):
 
 
 # Configuration from environment (all defaults come from TypeScript config.ts)
-MODEL_NAME = os.environ.get(
-    "ESCRIBANO_VLM_MODEL", "mlx-community/Qwen3.5-0.8B-8bit"
-)
+# CRITICAL: Escribano must always provide a local model path. There is no
+# safe default — falling back to HuggingFace hides configuration errors and
+# causes silent downloads on fresh machines.
+MODEL_NAME = os.environ.get("ESCRIBANO_VLM_MODEL")
+if not MODEL_NAME:
+    print(json.dumps({"status": "fatal", "error": "ESCRIBANO_VLM_MODEL not set. The Swift app must provide a local CDN model path."}))
+    sys.exit(1)
 BATCH_SIZE = int(os.environ.get("ESCRIBANO_VLM_BATCH_SIZE", "2"))
 MAX_TOKENS_VLM = int(os.environ.get("ESCRIBANO_VLM_MAX_TOKENS", "4000"))
 

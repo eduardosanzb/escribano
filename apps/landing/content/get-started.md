@@ -2,13 +2,13 @@
 title: "Get Started"
 date: 2026-04-09
 draft: false
-description: "Download and set up Escribano in four steps"
+description: "Download and set up Escribano in three steps"
 layout: "single"
 ---
 
 <div class="install-intro">
   <p class="install-lede">Free: query your last <strong>7 days</strong> of history. A beta key unlocks unlimited history — <a href="/#beta">request one</a>, no payment required.</p>
-  <p class="install-cta-wrap"><a class="install-cta" href="https://github.com/eduardosanzb/escribano-releases/releases/latest" target="_blank" rel="noopener">Download for macOS →</a></p>
+  <p class="install-cta-wrap"><a class="install-cta" href="https://escribano.work/download">Download for macOS →</a></p>
   <p class="install-specs">Apple Silicon (M1+) · 16 GB RAM minimum · macOS 13 or later</p>
 </div>
 
@@ -42,62 +42,6 @@ layout: "single"
 <div class="install-step-num" aria-hidden="true">2</div>
 <div class="install-step-body">
 
-<h2 class="install-step-title">First launch</h2>
-<div class="install-note install-note--warn">
-  <strong>Heads up:</strong> the app isn't signed with an Apple Developer ID yet, so macOS will block it. Three clicks to get past it:
-</div>
-
-<ol class="install-substeps">
-
-<li class="install-substep">
-<div class="install-substep-head">
-  <span class="install-substep-num">a</span>
-  <span>Launch Escribano. macOS shows a "Not Opened" dialog.</span>
-</div>
-<p class="install-substep-hint">Click <strong>Done</strong> to dismiss it — there's no "Open" option here on modern macOS.</p>
-<figure class="install-shot install-shot--sm">
-  <img src="/img/install/not-opened.png" alt="&quot;Escribano&quot; Not Opened dialog with Done and Move to Bin buttons" loading="lazy" />
-</figure>
-</li>
-
-<li class="install-substep">
-<div class="install-substep-head">
-  <span class="install-substep-num">b</span>
-  <span>Go to Privacy &amp; Security.</span>
-</div>
-<div class="install-breadcrumb">
-  <span class="install-crumb">System Settings</span>
-  <span class="install-crumb-sep">›</span>
-  <span class="install-crumb install-crumb--highlight">Privacy &amp; Security</span>
-</div>
-<p class="install-substep-hint">Scroll down to the <strong>Security</strong> section. You'll see a row that says <em>"Escribano" was blocked to protect your Mac.</em> — click the <strong>Open Anyway</strong> button next to it.</p>
-<figure class="install-shot">
-  <img src="/img/install/privacy-security.png" alt="Privacy &amp; Security panel showing &quot;Escribano was blocked&quot; row with an Open Anyway button" loading="lazy" />
-</figure>
-</li>
-
-<li class="install-substep">
-<div class="install-substep-head">
-  <span class="install-substep-num">c</span>
-  <span>Confirm in the second dialog.</span>
-</div>
-<div class="install-note install-note--warn install-note--tight">
-  <strong>Careful:</strong> the blue default is <strong>Move to Bin</strong>. Don't hit Enter on habit — click <strong>Open Anyway</strong> instead.
-</div>
-<figure class="install-shot install-shot--sm">
-  <img src="/img/install/open-anyway-dialog.jpeg" alt="Confirmation dialog with Move to Bin as the blue default, then Open Anyway, then Done" loading="lazy" />
-</figure>
-</li>
-
-</ol>
-
-</div>
-</li>
-
-<li class="install-step">
-<div class="install-step-num" aria-hidden="true">3</div>
-<div class="install-step-body">
-
 <h2 class="install-step-title">Grant Screen Recording</h2>
 <p>Escribano will prompt you on first launch. Click <span class="install-btn-mock install-btn-mock--primary">Open System Settings</span>, then enable Escribano here:</p>
 
@@ -115,7 +59,7 @@ layout: "single"
 </li>
 
 <li class="install-step">
-<div class="install-step-num" aria-hidden="true">4</div>
+<div class="install-step-num" aria-hidden="true">3</div>
 <div class="install-step-body">
 
 <h2 class="install-step-title">Start working</h2>

@@ -238,9 +238,39 @@ def signal_handler(signum: int, frame: Any) -> None:
     sys.exit(0)
 
 
+def resolve_model_path(model_name: str) -> tuple[str, str]:
+    """
+    Classify model_name as local path or remote repo ID.
+    Returns (resolved_path, source_kind) where source_kind is 'local path' or 'HuggingFace repo'.
+    For local paths: expand ~, verify directory exists, verify config.json exists.
+    Logs diagnostics and exits if the local path is invalid.
+    """
+    # Heuristic: absolute paths or paths containing / or \ are treated as local
+    expanded = os.path.expanduser(model_name)
+    is_local = expanded.startswith("/") or expanded.startswith("~") or os.path.sep in expanded
+
+    if is_local:
+        log(f"Model appears to be a local path: {expanded}")
+        if not os.path.isdir(expanded):
+            log(f"Local model directory does not exist: {expanded}", "error")
+            sys.exit(1)
+        config_path = os.path.join(expanded, "config.json")
+        if not os.path.isfile(config_path):
+            log(f"Local model directory missing config.json: {config_path}", "error")
+            sys.exit(1)
+        log(f"Local model directory exists: {expanded}")
+        log(f"config.json exists: {config_path}")
+        return expanded, "local path"
+
+    return model_name, "HuggingFace repo"
+
+
 def load_model() -> tuple[Any, Any, Any]:
     """Load MLX-VLM model."""
-    log(f"Loading model: {MODEL_NAME}")
+    resolved_name, source_kind = resolve_model_path(MODEL_NAME)
+    log(f"Loading model: {resolved_name}")
+    log(f"Model source: {source_kind}")
+    log(f"HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE', 'not set')}")
     log("This may take 30-120 seconds on first run or after memory clear...")
     start = time.time()
 
@@ -250,13 +280,13 @@ def load_model() -> tuple[Any, Any, Any]:
         from mlx_vlm.utils import load_config
 
         log("Loading model weights into memory (this takes the longest)...", "debug")
-        model_obj, processor_obj = load(MODEL_NAME)
+        model_obj, processor_obj = load(resolved_name)
 
         log("Loading model config...", "debug")
-        config_obj = load_config(MODEL_NAME)
+        config_obj = load_config(resolved_name)
 
         duration = time.time() - start
-        log(f"Model loaded in {duration:.1f}s")
+        log(f"Model loaded in {duration:.1f}s ({source_kind})")
 
         return model_obj, processor_obj, config_obj
     except ImportError as e:

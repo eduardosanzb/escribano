@@ -245,9 +245,9 @@ def resolve_model_path(model_name: str) -> tuple[str, str]:
     For local paths: expand ~, verify directory exists, verify config.json exists.
     Logs diagnostics and exits if the local path is invalid.
     """
-    # Heuristic: absolute paths or paths containing / or \ are treated as local
+    # Absolute paths (after ~ expansion) are treated as local
     expanded = os.path.expanduser(model_name)
-    is_local = expanded.startswith("/") or expanded.startswith("~") or os.path.sep in expanded
+    is_local = os.path.isabs(expanded)
 
     if is_local:
         log(f"Model appears to be a local path: {expanded}")

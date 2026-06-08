@@ -8,7 +8,7 @@ layout: "single"
 
 <div class="install-intro">
   <p class="install-lede">Free: query your last <strong>7 days</strong> of history. A beta key unlocks unlimited history — <a href="/#beta">request one</a>, no payment required.</p>
-  <p class="install-cta-wrap"><a class="install-cta" href="https://escribano.work/download">Download for macOS →</a></p>
+  <p class="install-cta-wrap"><a class="install-cta" href="https://downloads.escribano.work/releases/stable/Escribano.dmg">Download for macOS →</a></p>
   <p class="install-specs">Apple Silicon (M1+) · 16 GB RAM minimum · macOS 13 or later</p>
 </div>
 

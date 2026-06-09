@@ -8,9 +8,36 @@ layout: "single"
 
 <div class="install-intro">
   <p class="install-lede">Free: query your last <strong>7 days</strong> of history. A beta key unlocks unlimited history — <a href="/#beta">request one</a>, no payment required.</p>
-  <p class="install-cta-wrap"><a class="install-cta" href="https://downloads.escribano.work/releases/stable/Escribano.dmg">Download for macOS →</a></p>
+  <p class="install-cta-wrap"><a id="download-cta" class="install-cta" href="https://downloads.escribano.work/releases/stable/Escribano.dmg">Download for macOS →</a></p>
   <p class="install-specs">Apple Silicon (M1+) · 16 GB RAM minimum · macOS 13 or later</p>
 </div>
+
+<script>
+(function() {
+  try {
+    fetch('https://downloads.escribano.work/releases/stable/latest.json', { cache: 'no-store' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        try {
+          if (data.schema_version !== 1) return;
+          var url = data.dmg_url;
+          if (typeof url !== 'string') return;
+          if (!url.startsWith('https://downloads.escribano.work/releases/stable/Escribano-')) return;
+          if (!url.endsWith('.dmg')) return;
+          var el = document.getElementById('download-cta');
+          if (!el) return;
+          el.href = url;
+          var version = data.version;
+          if (typeof version === 'string' && version.length > 0) {
+            el.textContent = 'Download ' + version + ' for macOS →';
+            el.setAttribute('data-release-version', version);
+          }
+        } catch (e) {}
+      })
+      .catch(function() {});
+  } catch (e) {}
+})();
+</script>
 
 <ol class="install-steps">
 
